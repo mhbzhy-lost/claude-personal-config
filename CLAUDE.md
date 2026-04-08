@@ -1,15 +1,9 @@
 # 输出格式：模型标签
 
-在以下三个时机，**输出的第一个词之前**必须加 `[model_name]` 标签（model_name 为当前实际使用的模型名）：
+每次 agent 向用户输出文本时（不包含 tool call），**输出的第一个词之前**必须加 `[model_name]` 标签（model_name 为当前实际使用的模型名，例如 `[claude-opus-4-6]`、`[claude-sonnet-4-6]`）。
 
-| 时机 | 示例标签 |
-|---|---|
-| 每次用户发起交互后的第一次回答 | `[claude-sonnet-4-6]` |
-| 进入 plan mode（`EnterPlanMode`）后第一次输出 | `[claude-opus-4-6]` |
-| 退出 plan mode（`ExitPlanMode`）后第一次输出 | `[claude-sonnet-4-6]` |
-
-- 每次用户消息都需要加标签，不限于 session 内的第一次
-- 标签单独成行，正文另起一行
+- 适用于所有文本输出，包括但不限于：用户交互后的首次回答、进入/退出 plan mode 后的输出、以及同一轮内的多段文本输出
+- 标签不单独成行，直接作为正文的前缀，后接正文内容
 
 ---
 
