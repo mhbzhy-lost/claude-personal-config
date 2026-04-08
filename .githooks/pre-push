@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# git push 前触发，将仓库内容同步到 ~/.claude/
+set -e
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+exec "$REPO_ROOT/sync.sh"
