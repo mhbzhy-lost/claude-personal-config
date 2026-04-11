@@ -45,6 +45,31 @@
 
 ---
 
+# 会话链式执行
+
+当用户说"完成后自动开启新会话执行任务X"（或类似表述）时：
+
+1. 完成当前任务
+2. 用 Bash 工具将任务X的描述写入 `~/.claude_chain_next`（覆盖写入）
+3. 告知用户"已排队下一个任务，请输入 /exit 退出当前会话以自动启动"
+
+**前提**：用户的 `~/.zshrc` 中需有以下包装函数，否则信号文件不会被处理：
+
+```zsh
+function claude() {
+    command claude "$@"
+    local next_file="${HOME}/.claude_chain_next"
+    if [[ -f "$next_file" ]]; then
+        local next_task
+        next_task=$(cat "$next_file")
+        rm -f "$next_file"
+        exec command claude "$next_task"
+    fi
+}
+```
+
+---
+
 # 开发计划执行后的提交
 
 **从磁盘读取开发计划并完成执行后，必须按照 Git Commit Message 规范进行一次提交。**
