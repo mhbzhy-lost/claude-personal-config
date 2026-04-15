@@ -7,6 +7,37 @@
 
 ---
 
+# 优先使用 MCP 工具与 Skills
+
+**执行任何任务前，必须先检索当前上下文中可用的 MCP 工具和 Skills，优先利用它们完成工作。**
+
+原则：
+- **先查后做**：动手写代码或调用通用工具前，先检查 system-reminder 中列出的 MCP 工具（`mcp__*`）和 Skills（可通过 Skill tool 调用），判断是否已有现成能力可以直接使用
+- **工具优先于手写**：如果 MCP 或 Skill 能完成目标（如文件操作、API 调用、组件用法查询、代码生成等），必须优先使用，避免自己从零编写代码引入幻觉风险
+- **Skills 即文档**：当任务涉及特定框架/组件（如 Ant Design、Playwright、ProComponents 等），先调用对应 Skill 获取准确用法，而非凭记忆编写
+- **未知则搜索**：如果不确定是否有匹配的工具，使用 ToolSearch 检索 deferred tools，使用 Skill 列表匹配可用 skill
+
+禁止行为：
+- 在有对应 MCP 工具或 Skill 可用的情况下，跳过它们直接手写实现
+- 凭记忆编写框架/库的 API 用法而不先查阅 Skill 或官方文档
+
+---
+
+# 并行编码子任务必须使用 dev-expert
+
+**当主模型打算并行分发开发/编码类子任务（feature 实现、重构、bug 修复、跨模块改动等）给 subagent 时，必须指定 `subagent_type: dev-expert`，以保证并行 subagent 使用 Opus 模型、不发生降级。**
+
+适用范围：
+- 一次性派发多个 Agent 并行修改代码、编写实现、写测试等编码任务
+- 单个编码子任务若希望强制 Opus 质量，也可指定 dev-expert
+
+不适用范围（无需强制使用 dev-expert）：
+- 非编码任务（探索/搜索、计划撰写、审查、问答、文档）
+- 已有更专用的 agent（Explore、Plan、test-expert、plan-validator、pua:* 等）时，按原专用 agent 处理
+- 主模型自己在主会话中串行执行的编码任务
+
+---
+
 # 开发计划执行前的预检
 
 **从磁盘读取开发计划并准备执行前，必须调用一次 `plan-validator` agent 进行预检。**
@@ -44,31 +75,6 @@
 采用 Conventional Commits 风格的轻量化中文版：type/scope 英文，subject/body 中文。
 
 **需要创建 commit 时**，先读 `~/.claude/guidelines/git-commit.md` 获取完整规范（字段约束、示例、反例、拆分原则）。无 commit 任务时无需加载。
-
----
-
-# 会话链式执行
-
-当用户说"完成后自动开启新会话执行任务X"（或类似表述）时：
-
-1. 完成当前任务
-2. 用 Bash 工具将任务X的描述写入 `~/.claude_chain_next`（覆盖写入）
-3. 告知用户"已排队下一个任务，请输入 /exit 退出当前会话以自动启动"
-
-**前提**：用户的 `~/.zshrc` 中需有以下包装函数，否则信号文件不会被处理：
-
-```zsh
-function claude() {
-    command claude "$@"
-    local next_file="${HOME}/.claude_chain_next"
-    if [[ -f "$next_file" ]]; then
-        local next_task
-        next_task=$(cat "$next_file")
-        rm -f "$next_file"
-        exec command claude "$next_task"
-    fi
-}
-```
 
 ---
 
