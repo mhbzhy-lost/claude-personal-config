@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sync.sh
+# init_claude.sh
 #
 # 将 claude-config 中需要被 Claude Code 加载的配置项，以符号链接形式挂到
 # ~/.claude/ 下。相比历史版本（rsync 复制内容），本脚本：
@@ -38,7 +38,7 @@ link_item() {
       echo "[warn] $dst_path is a symlink pointing to $cur (expected $src_path). Please verify and fix manually."
     fi
   elif [ -e "$dst_path" ]; then
-    echo "[warn] $dst_path exists as real file/dir. Check if backup needed, then 'rm -rf $dst_path' and rerun sync.sh."
+    echo "[warn] $dst_path exists as real file/dir. Check if backup needed, then 'rm -rf $dst_path' and rerun init_claude.sh."
   else
     ln -s "$src_path" "$dst_path"
     echo "[linked] $dst_path -> $src_path"
@@ -48,6 +48,7 @@ link_item() {
 # Items that should live as symlinks under ~/.claude/
 link_item "CLAUDE.md"
 link_item "agents"
+link_item "guidelines"
 
 # skills/ 必须不存在（MCP 架构下禁用原生 skill 加载）
 if [ -e "$DST/skills" ] || [ -L "$DST/skills" ]; then
@@ -162,7 +163,7 @@ if [ -f "$ZSHRC" ] && grep -q "$CHAIN_MARKER" "$ZSHRC"; then
 else
   cat >> "$ZSHRC" << 'EOF'
 
-# claude 会话链式执行包装函数（由 claude-config/sync.sh 注入）
+# claude 会话链式执行包装函数（由 claude-config/init_claude.sh 注入）
 function claude() {
     command claude "$@"
     local next_file="${HOME}/.claude_chain_next"
