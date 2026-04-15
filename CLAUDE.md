@@ -7,19 +7,38 @@
 
 ---
 
-# 优先使用 MCP 工具与 Skills
+# 优先使用 MCP 工具
 
-**执行任何任务前，必须先检索当前上下文中可用的 MCP 工具和 Skills，优先利用它们完成工作。**
+**执行任何任务前，必须先检索当前上下文中可用的 MCP 工具，优先利用它们完成工作。**
 
 原则：
-- **先查后做**：动手写代码或调用通用工具前，先检查 system-reminder 中列出的 MCP 工具（`mcp__*`）和 Skills（可通过 Skill tool 调用），判断是否已有现成能力可以直接使用
-- **工具优先于手写**：如果 MCP 或 Skill 能完成目标（如文件操作、API 调用、组件用法查询、代码生成等），必须优先使用，避免自己从零编写代码引入幻觉风险
-- **Skills 即文档**：当任务涉及特定框架/组件（如 Ant Design、Playwright、ProComponents 等），先调用对应 Skill 获取准确用法，而非凭记忆编写
-- **未知则搜索**：如果不确定是否有匹配的工具，使用 ToolSearch 检索 deferred tools，使用 Skill 列表匹配可用 skill
+- **先查后做**：动手写代码或调用通用工具前，先检查 system-reminder 中列出的 MCP 工具（`mcp__*`），判断是否已有现成能力可以直接使用
+- **工具优先于手写**：如果 MCP 工具能完成目标（如文件操作、API 调用等），必须优先使用，避免自己从零编写代码
+- **未知则搜索**：如果不确定是否有匹配的工具，使用 ToolSearch 检索 deferred tools
+
+---
+
+# Skill 加载流程（强制）
+
+Skill 不再通过 Claude Code 原生机制预加载，而是由 `skill-catalog` MCP server 按需服务。**凭记忆写框架/组件代码会引入幻觉，必须先查 skill。**
+
+主 agent 遇到涉及特定技术栈的任务时，按序执行：
+
+1. **判断技术栈**：调用
+   `Agent({ subagent_type: "stack-detector", prompt: <user 原始 prompt> })`
+   拿到 `{"tech_stack": [...]}`
+2. **查询 skill 清单**：调用 `mcp__skill_catalog__list_skills({ tech_stack })` 拿到 skill 概览
+3. **按需加载详情**：对相关 skill 调用 `mcp__skill_catalog__get_skill({ name })`
+4. **开始实际任务**
+
+例外（可跳过步骤 1-3）：
+- 纯探索/搜索/问答类任务
+- 同一会话已走过 stack-detector，后续同栈任务直接复用 `tech_stack`（必要时可再次 list_skills 看新清单）
+- 用户在 prompt 中已明确指定技术栈（如 "用 Next.js 写"），可跳过步骤 1，直接用该 tag 查询
 
 禁止行为：
-- 在有对应 MCP 工具或 Skill 可用的情况下，跳过它们直接手写实现
-- 凭记忆编写框架/库的 API 用法而不先查阅 Skill 或官方文档
+- 跳过 skill 查询直接凭记忆编写框架/组件 API
+- 绕过 skill-catalog 直接 Read `claude-config/skills/` 下的 SKILL.md（除非 MCP server 故障做应急）
 
 ---
 

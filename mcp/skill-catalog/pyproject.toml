@@ -1,0 +1,19 @@
+[project]
+name = "skill-catalog"
+version = "0.1.0"
+description = "MCP server for progressive skill disclosure by tech stack"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=1.0.0",
+  "python-frontmatter>=1.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

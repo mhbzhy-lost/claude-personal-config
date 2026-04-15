@@ -1,0 +1,38 @@
+---
+name: ant-input
+description: "Ant Design Input 组件文档与用法。通过鼠标或键盘输入内容，是最基础的表单域的包装。Use when building React + antd web apps and need to implement Input."
+component: Input
+group: 数据录入
+applies_to:
+  markers_any:
+    - "dependency: antd"
+tech_stack: [antd]
+---
+
+# Input（输入框）
+
+> 来源：https://ant.design/components/input-cn
+
+## 用途
+
+通过鼠标或键盘输入内容，是最基础的表单域的包装。
+
+## 何时使用
+
+- 需要用户输入表单域内容时。
+- 提供组合型输入框，带搜索的输入框，还可以进行大小选择。
+
+## 基础用法
+
+```tsx
+import React from 'react';
+import { Input } from 'antd';
+
+const App: React.FC = () => <Input placeholder="Basic usage" />;
+
+export default App;
+```
+
+## 组合提示
+
+通常与 `Form`、`Button`、`AutoComplete` 搭配使用。
