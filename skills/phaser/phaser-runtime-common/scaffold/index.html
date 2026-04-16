@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Phaser Runtime Scaffold</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  #game { width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
+<script>
+// ============================================================
+// Phaser Runtime Scaffold
+// 供 runner.py 通过 page.evaluate 注入 Scene 代码并探查状态
+// ============================================================
+
+window.__errors = [];
+window.__ready = false;          // scaffold 本身是否加载完成
+window.__sceneReady = false;     // 当前 Scene 是否进入 create 后状态
+window.__game = null;
+window.__activeScene = null;
+
+// 全局错误收集
+window.addEventListener('error', (e) => {
+  window.__errors.push({ type: 'error', message: e.message, stack: e.error && e.error.stack });
+});
+window.addEventListener('unhandledrejection', (e) => {
+  window.__errors.push({ type: 'unhandledrejection', message: String(e.reason) });
+});
+
+// 等待 Phaser 加载
+function __whenPhaserReady(cb) {
+  if (typeof Phaser !== 'undefined') { cb(); return; }
+  const t = setInterval(() => {
+    if (typeof Phaser !== 'undefined') { clearInterval(t); cb(); }
+  }, 20);
+}
+
+__whenPhaserReady(() => { window.__ready = true; });
+
+// ------------------------------------------------------------
+// __runScene(sceneClassCode, config)
+// sceneClassCode: 字符串形式的一个 JS 表达式，eval 后应得到
+//   一个继承 Phaser.Scene 的类，或一个 { preload, create, update } 对象
+// config: { width, height, physicsDebug, physics, preloadOnly }
+// ------------------------------------------------------------
+window.__runScene = function(sceneClassCode, config) {
+  config = config || {};
+  window.__errors = [];
+  window.__sceneReady = false;
+  window.__activeScene = null;
+
+  if (window.__game) {
+    try { window.__game.destroy(true); } catch (e) {}
+    window.__game = null;
+  }
+
+  let SceneDef;
+  try {
+    SceneDef = eval('(' + sceneClassCode + ')');
+  } catch (e) {
+    window.__errors.push({ type: 'eval', message: e.message, stack: e.stack });
+    return false;
+  }
+
+  // 包一层，使得 create 完成后我们能记录 activeScene
+  let WrappedScene;
+  if (typeof SceneDef === 'function') {
+    WrappedScene = class extends SceneDef {
+      create() {
+        if (super.create) super.create.apply(this, arguments);
+        window.__activeScene = this;
+        window.__sceneReady = true;
+      }
+    };
+  } else {
+    // 对象字面量形式
+    const orig = SceneDef.create;
+    WrappedScene = Object.assign({}, SceneDef, {
+      create: function() {
+        if (orig) orig.apply(this, arguments);
+        window.__activeScene = this;
+        window.__sceneReady = true;
+      },
+    });
+  }
+
+  const gameConfig = {
+    type: Phaser.AUTO,
+    width: config.width || 800,
+    height: config.height || 600,
+    parent: 'game',
+    backgroundColor: config.backgroundColor || '#000000',
+    physics: {
+      default: config.physics || 'arcade',
+      arcade: { debug: !!config.physicsDebug, gravity: config.gravity || { x: 0, y: 0 } },
+    },
+    scene: WrappedScene,
+  };
+
+  try {
+    window.__game = new Phaser.Game(gameConfig);
+  } catch (e) {
+    window.__errors.push({ type: 'game-init', message: e.message, stack: e.stack });
+    return false;
+  }
+  return true;
+};
+
+// ------------------------------------------------------------
+// __probe(expr): 在活跃 scene 上下文求值
+// expr 字符串里可以用 scene.xxx 访问当前 scene
+// ------------------------------------------------------------
+window.__probe = function(expr) {
+  const scene = window.__activeScene;
+  if (!scene) throw new Error('no active scene; call __runScene first and wait for __sceneReady');
+  try {
+    // eslint-disable-next-line no-new-func
+    const fn = new Function('scene', 'game', 'Phaser', 'return (' + expr + ');');
+    return fn(scene, window.__game, Phaser);
+  } catch (e) {
+    return { __error: e.message, __stack: e.stack };
+  }
+};
+
+// ------------------------------------------------------------
+// __collectSample(exprs): 批量求值一组表达式，返回 { expr: value }
+// ------------------------------------------------------------
+window.__collectSample = function(exprs) {
+  const out = {};
+  for (const e of exprs) {
+    try {
+      out[e] = window.__probe(e);
+    } catch (err) {
+      out[e] = { __error: err.message };
+    }
+  }
+  return out;
+};
+
+// ------------------------------------------------------------
+// __dumpLoaded(): 在 preload-only 模式下，汇总已加载资源元信息
+// ------------------------------------------------------------
+window.__dumpLoaded = function() {
+  const scene = window.__activeScene;
+  if (!scene) return { textures: [], audio: [], json: [], tilemap: [] };
+  const result = { textures: [], audio: [], json: [], tilemap: [], xml: [], binary: [] };
+
+  try {
+    const texKeys = scene.textures.getTextureKeys();
+    for (const k of texKeys) {
+      if (k === '__DEFAULT' || k === '__MISSING' || k === '__WHITE') continue;
+      const tex = scene.textures.get(k);
+      const src = tex.source[0];
+      result.textures.push({
+        key: k,
+        width: src ? src.width : null,
+        height: src ? src.height : null,
+        frameNames: tex.getFrameNames(),
+        frameCount: tex.frameTotal,
+      });
+    }
+  } catch (e) { result.textures_error = e.message; }
+
+  try {
+    const audioCache = scene.cache.audio.entries.entries;
+    for (const k in audioCache) {
+      const a = audioCache[k];
+      result.audio.push({ key: k, duration: a && a.duration });
+    }
+  } catch (e) { result.audio_error = e.message; }
+
+  try {
+    const jsonCache = scene.cache.json.entries.entries;
+    for (const k in jsonCache) {
+      result.json.push({ key: k, preview: Object.keys(jsonCache[k] || {}).slice(0, 20) });
+    }
+  } catch (e) { result.json_error = e.message; }
+
+  try {
+    const mapCache = scene.cache.tilemap.entries.entries;
+    for (const k in mapCache) {
+      const m = mapCache[k];
+      result.tilemap.push({
+        key: k,
+        layers: (m && m.data && m.data.layers || []).map(l => l.name),
+        tilesets: (m && m.data && m.data.tilesets || []).map(t => t.name),
+      });
+    }
+  } catch (e) { result.tilemap_error = e.message; }
+
+  return result;
+};
+</script>
+</body>
+</html>
