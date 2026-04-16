@@ -1,7 +1,7 @@
 ---
 name: harmony-napi-binding
 description: "HarmonyOS NAPI C++ 绑定：类型映射、ArkTS<->C++ 转换、异步工作、线程安全函数。"
-tech_stack: [harmonyos]
+tech_stack: [harmonyos, cpp]
 ---
 
 # HarmonyOS NAPI C++ 绑定
