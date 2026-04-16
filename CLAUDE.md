@@ -18,12 +18,15 @@
 1. **判断技术栈**：调用
    `Agent({ subagent_type: "stack-detector", prompt: <user 原始 prompt> })`
    拿到 `{"tech_stack": [...]}`
-2. **查询知识清单**：调用 `mcp__skill_catalog__list_skills({ tech_stack })` 获取可用知识条目
-3. **按需加载详情**：对相关条目调用 `mcp__skill_catalog__get_skill({ name })` 获取完整内容
+2. **筛选相关 skill**：调用
+   `Agent({ subagent_type: "skill-matcher", prompt: <包含 tech_stack + user 原始 prompt，可选 top_n / language> })`
+   拿到 `{"skills": ["skill-a", "skill-b", ...]}`。该 agent 会在隔离子上下文内自行调用 `list_skills` 并完成语义筛选，主上下文只接收最终 name 列表。
+3. **按需加载详情**：对 skill-matcher 返回的每个 name，调用 `mcp__skill-catalog__get_skill({ name })` 获取完整内容
 4. **基于检索到的知识开始实际任务**
 
 禁止行为：
 - 跳过知识检索直接凭记忆编写框架/组件 API
+- **主 agent 直接调用 `mcp__skill-catalog__list_skills`**（该职责已由 skill-matcher 吸收；需要候选清单必须通过 skill-matcher）
 
 ---
 
