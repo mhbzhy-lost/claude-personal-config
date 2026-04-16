@@ -149,11 +149,36 @@ PYEOF
 fi
 
 # ---------------------------------------------------------------------------
+# 初始化 skill-catalog MCP server 的 Python 虚拟环境
+# ---------------------------------------------------------------------------
+SKILL_CATALOG_DIR="$SRC/mcp/skill-catalog"
+SKILL_CATALOG_VENV="$SKILL_CATALOG_DIR/.venv"
+
+if [ ! -f "$SKILL_CATALOG_VENV/bin/python" ]; then
+  echo "[venv] 创建 skill-catalog 虚拟环境..."
+  if command -v uv >/dev/null 2>&1; then
+    uv venv "$SKILL_CATALOG_VENV" --python ">=3.11"
+    uv pip install --python "$SKILL_CATALOG_VENV/bin/python" -e "$SKILL_CATALOG_DIR"
+  elif command -v python3 >/dev/null 2>&1 \
+      && python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' 2>/dev/null; then
+    python3 -m venv "$SKILL_CATALOG_VENV"
+    "$SKILL_CATALOG_VENV/bin/pip" install -e "$SKILL_CATALOG_DIR"
+  else
+    echo "[error] 需要 python>=3.11 或 uv 来初始化 skill-catalog 环境，跳过"
+  fi
+  if [ -f "$SKILL_CATALOG_VENV/bin/python" ]; then
+    echo "[venv] skill-catalog 环境就绪: $SKILL_CATALOG_VENV"
+  fi
+else
+  echo "[venv] skill-catalog 环境已存在，跳过创建"
+fi
+
+# ---------------------------------------------------------------------------
 # 注册 MCP server：通过 claude CLI 注册到 user scope (~/.claude.json)
 # Claude Code 不从 settings.json 读取 MCP 配置，必须用 CLI 注册
 # ---------------------------------------------------------------------------
 if command -v claude >/dev/null 2>&1; then
-  MCP_CMD="$SRC/mcp/skill-catalog/.venv/bin/python"
+  MCP_CMD="$SKILL_CATALOG_VENV/bin/python"
   EXPECTED_ENV="SKILL_LIBRARY_PATH=$SRC/skills"
 
   # 检查是否已注册且配置一致
@@ -171,7 +196,7 @@ if command -v claude >/dev/null 2>&1; then
     echo "[mcp] skill-catalog 已注册到 user scope"
   fi
 else
-  echo "[warn] claude CLI 不可用，跳过 MCP server 注册。请手动执行：claude mcp add -s user -e SKILL_LIBRARY_PATH=$SRC/skills -- skill-catalog $SRC/mcp/skill-catalog/.venv/bin/python -m skill_catalog.server"
+  echo "[warn] claude CLI 不可用，跳过 MCP server 注册。请手动执行：claude mcp add -s user -e SKILL_LIBRARY_PATH=$SRC/skills -- skill-catalog $SKILL_CATALOG_VENV/bin/python -m skill_catalog.server"
 fi
 
 # ---------------------------------------------------------------------------
