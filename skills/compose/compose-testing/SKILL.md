@@ -2,6 +2,7 @@
 name: compose-testing
 description: "Compose 测试：ComposeTestRule、semantics 查询、断言、Espresso 共存、截图测试。"
 tech_stack: [compose]
+language: [kotlin]
 ---
 
 # Jetpack Compose 测试

@@ -2,6 +2,7 @@
 name: langgraph-js
 description: "LangGraph JS/TS API：Annotation 状态定义、MessagesAnnotation、图构建与执行、与 Python 版差异对照。"
 tech_stack: [langgraph]
+language: [typescript]
 ---
 
 # LangGraph JS/TS（JavaScript / TypeScript API）

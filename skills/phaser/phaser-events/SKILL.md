@@ -2,6 +2,7 @@
 name: phaser-events
 description: "Phaser 3.90 游戏开发：事件系统。 Phaser 有多个 EventEmitter，每个作用域不同："
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：事件系统

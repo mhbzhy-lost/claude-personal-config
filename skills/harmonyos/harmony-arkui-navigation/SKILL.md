@@ -2,6 +2,7 @@
 name: harmony-arkui-navigation
 description: "ArkUI 导航体系：Navigation/NavPathStack/NavDestination/Tabs/router 模块与页面转场。"
 tech_stack: [harmonyos]
+language: [arkts]
 ---
 
 # ArkUI 页面路由与导航

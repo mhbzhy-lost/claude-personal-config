@@ -2,6 +2,7 @@
 name: phaser-math
 description: "Phaser 3.90 游戏开发：数学工具库。 所有缓动函数输入/输出均为 0~1："
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：数学工具库

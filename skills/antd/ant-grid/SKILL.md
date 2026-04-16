@@ -2,6 +2,7 @@
 name: ant-grid
 description: "Ant Design Grid 组件文档与用法。Grid 组件使用指南。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # Grid（栅格）

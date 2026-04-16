@@ -2,6 +2,7 @@
 name: ant-timeline
 description: "Ant Design Timeline 组件文档与用法。垂直展示的时间流信息。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # Timeline（时间轴）

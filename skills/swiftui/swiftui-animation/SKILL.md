@@ -2,6 +2,7 @@
 name: swiftui-animation
 description: "SwiftUI 动画：withAnimation/PhaseAnimator/KeyframeAnimator/matchedGeometryEffect/transition/symbolEffect。"
 tech_stack: [swiftui]
+language: [swift]
 ---
 
 # SwiftUI 动画与转场

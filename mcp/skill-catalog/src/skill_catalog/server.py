@@ -33,19 +33,29 @@ catalog = _load_catalog()
 
 
 @mcp.tool()
-def list_skills(tech_stack: list[str]) -> dict:
-    """List skills matching one or more tech stack tags.
+def list_skills(
+    tech_stack: list[str] | None = None,
+    language: list[str] | None = None,
+) -> dict:
+    """List skills filtered by tech stack and/or programming language.
 
     Args:
-        tech_stack: Tag names to filter by. Pass an empty list to get every skill
-            that declares a `tech_stack` field. If any tag in the list is unknown,
-            the full catalog is returned as a fallback (so the caller can still
-            see what's available).
+        tech_stack: Platform/framework tags (e.g. ["harmonyos"], ["django"]).
+            When provided, only skills whose tech_stack intersects this list
+            are returned.  Pass None or empty list to leave unconstrained.
+        language: Programming language tags (e.g. ["python"], ["cpp"]).
+            When provided, only skills whose language field intersects this
+            list are returned; language-agnostic skills (no language field)
+            are excluded.  Pass None or empty list to leave unconstrained.
+
+    Both empty → returns nothing.
+    Only one provided → the other dimension is unconstrained.
+    Both provided → skills must match on both dimensions.
 
     Returns:
-        {"skills": [{"name", "description", "tech_stack"}, ...]}
+        {"skills": [{"name", "description", "tech_stack", "language"?}, ...]}
     """
-    return catalog.list_skills(tech_stack)
+    return catalog.list_skills(tech_stack, language=language)
 
 
 @mcp.tool()

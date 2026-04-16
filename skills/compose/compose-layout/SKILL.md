@@ -2,6 +2,7 @@
 name: compose-layout
 description: "Jetpack Compose 布局：Row/Column/Box/ConstraintLayout/Lazy 列表/Grid/Modifier 链语义/自定义 Layout。"
 tech_stack: [compose]
+language: [kotlin]
 ---
 
 # Jetpack Compose 布局体系

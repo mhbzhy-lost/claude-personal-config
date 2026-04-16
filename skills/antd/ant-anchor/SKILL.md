@@ -2,6 +2,7 @@
 name: ant-anchor
 description: "Ant Design Anchor 组件文档与用法。用于跳转到页面指定位置。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # Anchor（锚点）

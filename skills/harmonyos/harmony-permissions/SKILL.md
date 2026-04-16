@@ -2,6 +2,7 @@
 name: harmony-permissions
 description: "HarmonyOS 权限管理：声明、分级、动态申请、常用权限速查、沙箱机制。"
 tech_stack: [harmonyos]
+language: [arkts]
 ---
 
 # HarmonyOS 权限与安全

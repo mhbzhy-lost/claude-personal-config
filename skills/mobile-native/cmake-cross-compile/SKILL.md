@@ -1,7 +1,8 @@
 ---
 name: cmake-cross-compile
 description: "CMake 交叉编译：toolchain file 编写、find_package 行为、符号可见性、LTO、多平台对比。"
-tech_stack: [mobile-native, android, harmonyos, cpp]
+tech_stack: [mobile-native, android, harmonyos]
+language: [cpp]
 ---
 
 # CMake 交叉编译通用模式

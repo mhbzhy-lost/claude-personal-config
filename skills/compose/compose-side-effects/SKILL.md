@@ -2,6 +2,7 @@
 name: compose-side-effects
 description: "Compose 副作用 API：LaunchedEffect/DisposableEffect/SideEffect/rememberCoroutineScope/produceState。"
 tech_stack: [compose]
+language: [kotlin]
 ---
 
 # Jetpack Compose 副作用 API

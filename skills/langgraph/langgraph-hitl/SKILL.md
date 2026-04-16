@@ -2,6 +2,7 @@
 name: langgraph-hitl
 description: "LangGraph 人机协作：interrupt() 动态中断、Command(resume) 恢复执行、静态断点、多步审批流程。"
 tech_stack: [langgraph]
+language: [python]
 ---
 
 # LangGraph 人机协作

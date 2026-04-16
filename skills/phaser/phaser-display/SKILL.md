@@ -2,6 +2,7 @@
 name: phaser-display
 description: "Phaser 3.90 游戏开发：Display（颜色、对齐、遮罩）。 与 FX.ColorMatrix 共用，此处为独立 Display 版本："
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：Display（颜色、对齐、遮罩）

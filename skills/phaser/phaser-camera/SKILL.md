@@ -2,6 +2,7 @@
 name: phaser-camera
 description: "Phaser 3.90 游戏开发：摄像机系统。"
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：摄像机系统

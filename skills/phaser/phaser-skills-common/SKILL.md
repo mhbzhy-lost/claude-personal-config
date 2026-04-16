@@ -2,6 +2,7 @@
 name: phaser-skills-common
 description: "Phaser 3.90 游戏开发：Phaser Skills 套件总览。 本套件内容基于 Phaser 3.90.0（代号 \"Tsugumi\"），发布于 2025 年 5 月 23 日。"
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser Skills 套件总览

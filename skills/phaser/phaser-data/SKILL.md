@@ -2,6 +2,7 @@
 name: phaser-data
 description: "Phaser 3.90 游戏开发：Data Manager（数据管理）。 Phaser 提供两种 DataManager 用途："
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：Data Manager（数据管理）

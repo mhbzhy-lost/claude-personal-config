@@ -2,6 +2,7 @@
 name: django-middleware
 description: "Django 中间件编写、内置中间件详解、缓存框架与 Session 配置"
 tech_stack: [django]
+language: [python]
 ---
 
 # Django Middleware（中间件、缓存与 Session）

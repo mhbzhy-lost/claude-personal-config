@@ -2,6 +2,7 @@
 name: harmony-media
 description: "HarmonyOS 多媒体：图片编解码、AVPlayer 音视频播放、AVRecorder 录制、相机、媒体库。"
 tech_stack: [harmonyos]
+language: [arkts]
 ---
 
 # HarmonyOS 多媒体

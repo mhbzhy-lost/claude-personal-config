@@ -2,6 +2,7 @@
 name: ant-menu
 description: "Ant Design Menu 组件文档与用法。为页面和功能提供导航的菜单列表。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # Menu（导航菜单）

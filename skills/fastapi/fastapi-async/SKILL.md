@@ -2,6 +2,7 @@
 name: fastapi-async
 description: "async/await 用法决策、BackgroundTasks 后台任务、并发请求处理、线程池执行同步代码、def 与 async def 的选择"
 tech_stack: [fastapi]
+language: [python]
 ---
 
 # FastAPI Async -- 异步与并发

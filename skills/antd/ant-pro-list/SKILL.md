@@ -2,6 +2,7 @@
 name: ant-pro-list
 description: "ProList 高级列表，支持卡片/列表视图切换、内置搜索、分页、操作按钮。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # ProList（高级列表）

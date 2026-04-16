@@ -2,6 +2,7 @@
 name: playwright-react-spa
 description: "Playwright + React SPA 测试模式。覆盖 hydration 等待、React Router 导航、React Query/fetch mock、localStorage auth token 注入、SSE 流测试、受控表单交互。"
 tech_stack: [playwright, react]
+language: [typescript]
 ---
 
 # Playwright + React SPA 测试 Skill

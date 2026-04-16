@@ -2,6 +2,7 @@
 name: phaser-game-objects
 description: "Phaser 3.90 游戏开发：游戏对象与对象管理。 大量频繁创建/销毁对象（子弹、粒子、敌人）时必须使用对象池，避免 GC 抖动。"
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：游戏对象与对象管理

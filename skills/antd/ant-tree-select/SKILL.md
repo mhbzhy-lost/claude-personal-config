@@ -2,6 +2,7 @@
 name: ant-tree-select
 description: "Ant Design TreeSelect 组件文档与用法。类似 Select 的选择控件，可选择的数据结构是一个树形结构时，可以使用 TreeSelect，例如公司层级、学科系统、分类目录等等。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # TreeSelect（树选择）

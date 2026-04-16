@@ -2,6 +2,7 @@
 name: harmony-ui-advanced
 description: "ArkUI 高级 UI：@Builder/@Styles/@Extend、动画系统、Canvas 绘制、自定义弹窗。"
 tech_stack: [harmonyos]
+language: [arkts]
 ---
 
 # ArkUI 高级 UI 模式

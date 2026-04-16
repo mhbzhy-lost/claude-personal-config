@@ -2,6 +2,7 @@
 name: nextjs-server-components
 description: "React Server Components 在 Next.js 15 的使用模型：RSC 默认、'use client' / 'use server' 指令、组件组合模式、props 序列化边界。"
 tech_stack: [nextjs]
+language: [typescript]
 ---
 
 # React Server Components（Next.js 15）

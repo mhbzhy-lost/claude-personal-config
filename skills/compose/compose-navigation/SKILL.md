@@ -2,6 +2,7 @@
 name: compose-navigation
 description: "Compose Navigation：NavHost/NavController、type-safe routes、嵌套图、deep link、返回结果。"
 tech_stack: [compose]
+language: [kotlin]
 ---
 
 # Jetpack Compose Navigation

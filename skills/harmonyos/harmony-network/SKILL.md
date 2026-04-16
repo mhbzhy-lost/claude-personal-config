@@ -2,6 +2,7 @@
 name: harmony-network
 description: "HarmonyOS 网络通信：HTTP 请求、WebSocket、网络状态监听、证书锁定。"
 tech_stack: [harmonyos]
+language: [arkts]
 ---
 
 # HarmonyOS 网络通信

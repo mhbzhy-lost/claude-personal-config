@@ -2,6 +2,7 @@
 name: django-admin
 description: "Django Admin 注册与定制：ModelAdmin 选项、Inline、自定义 Action 与模板覆写"
 tech_stack: [django]
+language: [python]
 ---
 
 # Django Admin（后台管理）

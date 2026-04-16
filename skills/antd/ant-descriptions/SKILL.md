@@ -2,6 +2,7 @@
 name: ant-descriptions
 description: "Ant Design Descriptions 组件文档与用法。展示多个只读字段的组合。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # Descriptions（描述列表）

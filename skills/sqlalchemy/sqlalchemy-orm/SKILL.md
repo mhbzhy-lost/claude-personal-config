@@ -2,6 +2,7 @@
 name: sqlalchemy-orm
 description: "SQLAlchemy 2.0 ORM 模型定义、关系映射与查询 API"
 tech_stack: [sqlalchemy]
+language: [python]
 ---
 
 # SQLAlchemy ORM（模型与查询）

@@ -94,9 +94,25 @@ skills/<category>/<skill-name>/
 ---
 name: <skill-name>
 description: <一句话描述>
-tech_stack: <所属技术栈 tag，如 antd、playwright>
+tech_stack: [<平台/框架 tag>]
+language: [<编程语言 tag>]      # 可选，语言无关的 skill 不写此字段
 ---
 ```
+
+**字段说明**：
+
+| 字段 | 用途 | 取值示例 |
+|------|------|----------|
+| `tech_stack` | 平台/框架维度 | `[harmonyos]`、`[android]`、`[django]`、`[antd]` |
+| `language` | 编程语言维度 | `[python]`、`[typescript]`、`[kotlin]`、`[arkts]`、`[cpp]` |
+
+**`language` 字段规则**：
+- **需要写代码接入特定 SDK** 的 skill → 必须标注 `language`
+- **仅涉及 CLI / 配置文件 / HTTP API / SQL** 的 skill → 不写 `language`（语言无关）
+- **跨语言 skill**（如同时覆盖 Python 和 TS SDK）→ 写多值：`language: [python, typescript]`
+- **`tech_stack` 与 `language` 禁止出现重复值**：语言标签（如 `cpp`）只放 `language`，不放 `tech_stack`
+
+**常用语言标签**：`python`、`typescript`、`javascript`、`kotlin`、`swift`、`java`、`cpp`、`arkts`
 
 **正文结构**：
 ```markdown

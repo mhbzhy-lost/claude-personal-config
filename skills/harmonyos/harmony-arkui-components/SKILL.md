@@ -2,6 +2,7 @@
 name: harmony-arkui-components
 description: "ArkUI 常用组件：Text/Image/Button/TextInput/Toggle/Slider/Progress/Select/Search 等核心 UI 元素。"
 tech_stack: [harmonyos]
+language: [arkts]
 ---
 
 # ArkUI 常用组件

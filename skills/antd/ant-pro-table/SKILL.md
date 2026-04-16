@@ -2,6 +2,7 @@
 name: ant-pro-table
 description: "ProTable 高级表格，内置搜索表单、工具栏、CRUD 操作、分页。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # ProTable（高级数据表格）

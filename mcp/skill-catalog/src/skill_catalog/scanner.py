@@ -15,6 +15,7 @@ class SkillRecord:
     name: str
     description: str
     tech_stack: list[str]
+    language: list[str]  # empty → language-agnostic
     path: Path  # absolute path to the SKILL.md file
     body: str   # markdown body (frontmatter stripped)
 
@@ -78,10 +79,19 @@ class SkillCatalog:
             else:
                 tech_stack = []
 
+            language_raw = meta.get("language", [])
+            if isinstance(language_raw, str):
+                language = [language_raw]
+            elif isinstance(language_raw, list):
+                language = [str(l) for l in language_raw]
+            else:
+                language = []
+
             record = SkillRecord(
                 name=name,
                 description=description,
                 tech_stack=tech_stack,
+                language=language,
                 path=skill_md.resolve(),
                 body=post.content,
             )
@@ -94,34 +104,67 @@ class SkillCatalog:
     # Public API
     # ------------------------------------------------------------------
 
-    def list_skills(self, tech_stack: list[str]) -> dict:
+    def list_skills(
+        self,
+        tech_stack: list[str] | None = None,
+        language: list[str] | None = None,
+    ) -> dict:
         """Return skill metadata matching the query.
 
-        - Empty list → every skill that declares a `tech_stack` field
-        - Any unknown tag → full catalog (fallback by design)
-        - Otherwise → union of skills whose tags intersect the query
+        Filtering rules:
+        - Both empty/None → return nothing (empty list).
+        - Only *tech_stack* provided → skills whose ``tech_stack`` intersects
+          the query, regardless of language.
+        - Only *language* provided → skills whose ``language`` intersects the
+          query, regardless of tech_stack.  Language-agnostic skills (no
+          ``language`` field) are **excluded**.
+        - Both provided → skills must match on **both** dimensions.
+          Language-agnostic skills are **excluded** when *language* is set.
         """
-        if not tech_stack:
-            matched = [r for r in self.by_name.values() if r.tech_stack]
-        else:
-            has_unknown = any(tag not in self.by_tag for tag in tech_stack)
-            if has_unknown:
-                matched = list(self.by_name.values())
-            else:
-                names: set[str] = set()
-                for tag in tech_stack:
-                    names.update(self.by_tag.get(tag, []))
-                matched = [self.by_name[n] for n in names]
+        has_ts = bool(tech_stack)
+        has_lang = bool(language)
 
-        matched.sort(key=lambda r: r.name)
+        if not has_ts and not has_lang:
+            candidates = list(self.by_name.values())
+            candidates.sort(key=lambda r: r.name)
+            return {
+                "skills": [
+                    {
+                        "name": r.name,
+                        "description": r.description,
+                        "tech_stack": r.tech_stack,
+                        **({"language": r.language} if r.language else {}),
+                    }
+                    for r in candidates
+                ]
+            }
+
+        candidates = list(self.by_name.values())
+
+        if has_ts:
+            ts_set = set(tech_stack)  # type: ignore[arg-type]
+            candidates = [
+                r for r in candidates
+                if ts_set.intersection(r.tech_stack)
+            ]
+
+        if has_lang:
+            lang_set = set(language)  # type: ignore[arg-type]
+            candidates = [
+                r for r in candidates
+                if r.language and lang_set.intersection(r.language)
+            ]
+
+        candidates.sort(key=lambda r: r.name)
         return {
             "skills": [
                 {
                     "name": r.name,
                     "description": r.description,
                     "tech_stack": r.tech_stack,
+                    **({"language": r.language} if r.language else {}),
                 }
-                for r in matched
+                for r in candidates
             ]
         }
 

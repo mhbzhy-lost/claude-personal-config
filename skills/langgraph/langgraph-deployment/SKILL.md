@@ -2,6 +2,7 @@
 name: langgraph-deployment
 description: "LangGraph Server 部署、客户端 SDK（Python/JS）、langgraph.json 配置、前端流式对接"
 tech_stack: [langgraph]
+language: [python, typescript]
 ---
 
 # Deployment（部署与客户端对接）

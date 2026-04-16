@@ -2,6 +2,7 @@
 name: compose-state
 description: "Compose 状态管理：remember/rememberSaveable/derivedStateOf/snapshotFlow/ViewModel StateFlow/状态提升。"
 tech_stack: [compose]
+language: [kotlin]
 ---
 
 # Jetpack Compose 状态管理

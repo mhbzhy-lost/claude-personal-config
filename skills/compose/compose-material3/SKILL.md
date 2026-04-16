@@ -2,6 +2,7 @@
 name: compose-material3
 description: "Compose Material 3：TopAppBar/BottomSheet/NavigationBar/Scaffold/SearchBar/DatePicker/TimePicker/动态取色/主题定制。"
 tech_stack: [compose]
+language: [kotlin]
 ---
 
 # Jetpack Compose Material Design 3

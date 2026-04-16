@@ -2,6 +2,7 @@
 name: harmony-stage-model
 description: "HarmonyOS Stage 模型：UIAbility/ExtensionAbility 生命周期、Context、Want、module.json5 配置。"
 tech_stack: [harmonyos]
+language: [arkts]
 ---
 
 # Stage 模型

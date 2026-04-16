@@ -2,6 +2,7 @@
 name: fastapi-websocket
 description: "WebSocket 端点定义、连接生命周期管理、多客户端广播、ConnectionManager 模式、WebSocket 认证与依赖注入"
 tech_stack: [fastapi]
+language: [python]
 ---
 
 # FastAPI WebSocket -- 实时双向通信

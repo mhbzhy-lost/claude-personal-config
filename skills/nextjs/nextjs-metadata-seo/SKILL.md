@@ -2,6 +2,7 @@
 name: nextjs-metadata-seo
 description: "Next.js 15 元数据与 SEO：Metadata API、generateMetadata、文件约定（sitemap/robots/opengraph-image）、JSON-LD 结构化数据。"
 tech_stack: [nextjs]
+language: [typescript]
 ---
 
 # Next.js 元数据与 SEO

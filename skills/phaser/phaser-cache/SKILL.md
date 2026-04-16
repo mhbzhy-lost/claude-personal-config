@@ -2,6 +2,7 @@
 name: phaser-cache
 description: "Phaser 3.90 游戏开发：Cache（资源缓存管理）。 Phaser 在 preload() 阶段自动将加载的资源存入 CacheManager，开发者通常不需要直接操作缓存，但了解缓存系统有助于："
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：Cache（资源缓存管理）

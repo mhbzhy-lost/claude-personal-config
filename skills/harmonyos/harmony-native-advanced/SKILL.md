@@ -1,7 +1,8 @@
 ---
 name: harmony-native-advanced
 description: "HarmonyOS 高级原生开发：XComponent 渲染、rawfile 访问、第三方库交叉编译、Sanitizers。"
-tech_stack: [harmonyos, cpp]
+tech_stack: [harmonyos]
+language: [cpp]
 ---
 
 # HarmonyOS 高级原生开发

@@ -18,7 +18,14 @@ from skill_catalog.scanner import SkillCatalog, _rewrite_relative_links
 # ---------------------------------------------------------------------------
 
 
-def write_skill(directory: Path, name: str, description: str, tech_stack, body: str = "") -> Path:
+def write_skill(
+    directory: Path,
+    name: str,
+    description: str,
+    tech_stack,
+    body: str = "",
+    language=None,
+) -> Path:
     """Write a synthetic SKILL.md under *directory/name*/SKILL.md."""
     skill_dir = directory / name
     skill_dir.mkdir(parents=True, exist_ok=True)
@@ -29,8 +36,16 @@ def write_skill(directory: Path, name: str, description: str, tech_stack, body: 
     else:
         tag_yaml = str(tech_stack)
 
+    lang_line = ""
+    if language is not None:
+        if isinstance(language, list):
+            lang_yaml = "[" + ", ".join(language) + "]"
+        else:
+            lang_yaml = str(language)
+        lang_line = f"language: {lang_yaml}\n"
+
     skill_file.write_text(
-        f"---\nname: {name}\ndescription: \"{description}\"\ntech_stack: {tag_yaml}\n---\n{body}\n",
+        f"---\nname: {name}\ndescription: \"{description}\"\ntech_stack: {tag_yaml}\n{lang_line}---\n{body}\n",
         encoding="utf-8",
     )
     return skill_file
@@ -75,19 +90,20 @@ def test_single_skill_indexed(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 4. list_skills([]) returns all skills that have tech_stack field
+# 4. Both tech_stack and language empty → returns full catalog
 # ---------------------------------------------------------------------------
 
 
-def test_list_skills_empty_query_returns_all(tmp_path: Path) -> None:
-    write_skill(tmp_path, "skill-a", "desc a", ["react"])
+def test_list_skills_both_empty_returns_all(tmp_path: Path) -> None:
+    write_skill(tmp_path, "skill-a", "desc a", ["react"], language=["typescript"])
     write_skill(tmp_path, "skill-b", "desc b", ["vue"])
     catalog = SkillCatalog(tmp_path)
 
-    result = catalog.list_skills([])
-    names = [s["name"] for s in result["skills"]]
-    assert "skill-a" in names
-    assert "skill-b" in names
+    for args in [([],), (None, None), ([], [])]:
+        result = catalog.list_skills(*args)
+        names = [s["name"] for s in result["skills"]]
+        assert "skill-a" in names
+        assert "skill-b" in names
 
 
 # ---------------------------------------------------------------------------
@@ -107,19 +123,17 @@ def test_list_skills_known_tag_filters_correctly(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 6. list_skills with unknown tag falls back to full catalog
+# 6. list_skills with unknown tag returns nothing (no match)
 # ---------------------------------------------------------------------------
 
 
-def test_list_skills_unknown_tag_returns_full_catalog(tmp_path: Path) -> None:
+def test_list_skills_unknown_tag_returns_empty(tmp_path: Path) -> None:
     write_skill(tmp_path, "skill-a", "desc", ["react"])
     write_skill(tmp_path, "skill-b", "desc", ["vue"])
     catalog = SkillCatalog(tmp_path)
 
     result = catalog.list_skills(["nonexistent-framework"])
-    names = [s["name"] for s in result["skills"]]
-    assert "skill-a" in names
-    assert "skill-b" in names
+    assert result["skills"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -244,3 +258,158 @@ def test_tech_stack_string_scalar_normalised(tmp_path: Path) -> None:
     record = catalog.by_name["scalar-skill"]
     assert record.tech_stack == ["react"]
     assert "scalar-skill" in catalog.by_tag["react"]
+
+
+# ---------------------------------------------------------------------------
+# 14. language field is parsed into SkillRecord
+# ---------------------------------------------------------------------------
+
+
+def test_language_field_parsed(tmp_path: Path) -> None:
+    write_skill(tmp_path, "py-skill", "desc", ["django"], language=["python"])
+    catalog = SkillCatalog(tmp_path)
+    assert catalog.by_name["py-skill"].language == ["python"]
+
+
+def test_no_language_field_defaults_to_empty(tmp_path: Path) -> None:
+    write_skill(tmp_path, "agnostic-skill", "desc", ["docker"])
+    catalog = SkillCatalog(tmp_path)
+    assert catalog.by_name["agnostic-skill"].language == []
+
+
+def test_language_string_scalar_normalised(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "scalar-lang"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: scalar-lang\ndescription: desc\ntech_stack: [react]\nlanguage: typescript\n---\nbody\n",
+        encoding="utf-8",
+    )
+    catalog = SkillCatalog(tmp_path)
+    assert catalog.by_name["scalar-lang"].language == ["typescript"]
+
+
+# ---------------------------------------------------------------------------
+# 15. list_skills with language filter excludes agnostic skills
+# ---------------------------------------------------------------------------
+
+
+def test_list_skills_language_filter_excludes_agnostic(tmp_path: Path) -> None:
+    write_skill(tmp_path, "harmony-arkts", "desc", ["harmonyos"], language=["arkts"])
+    write_skill(tmp_path, "harmony-cpp", "desc", ["harmonyos"], language=["cpp"])
+    write_skill(tmp_path, "harmony-doc", "desc", ["harmonyos"])  # agnostic
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["harmonyos"], language=["arkts"])
+    names = [s["name"] for s in result["skills"]]
+    assert "harmony-arkts" in names
+    assert "harmony-doc" not in names  # agnostic excluded when language is set
+    assert "harmony-cpp" not in names  # language mismatch
+
+
+# ---------------------------------------------------------------------------
+# 16. list_skills without language returns all tech_stack matches
+# ---------------------------------------------------------------------------
+
+
+def test_list_skills_no_language_returns_all(tmp_path: Path) -> None:
+    write_skill(tmp_path, "harmony-arkts", "desc", ["harmonyos"], language=["arkts"])
+    write_skill(tmp_path, "harmony-cpp", "desc", ["harmonyos"], language=["cpp"])
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["harmonyos"])
+    names = [s["name"] for s in result["skills"]]
+    assert "harmony-arkts" in names
+    assert "harmony-cpp" in names
+
+
+# ---------------------------------------------------------------------------
+# 17. list_skills language filter with multi-language skill
+# ---------------------------------------------------------------------------
+
+
+def test_list_skills_language_filter_multi_language_skill(tmp_path: Path) -> None:
+    write_skill(tmp_path, "jni-skill", "desc", ["android"], language=["java", "cpp"])
+    write_skill(tmp_path, "ndk-skill", "desc", ["android"], language=["cpp"])
+    catalog = SkillCatalog(tmp_path)
+
+    # Query with java → jni matches (has java), ndk does not
+    result = catalog.list_skills(["android"], language=["java"])
+    names = [s["name"] for s in result["skills"]]
+    assert "jni-skill" in names
+    assert "ndk-skill" not in names
+
+    # Query with cpp → both match
+    result = catalog.list_skills(["android"], language=["cpp"])
+    names = [s["name"] for s in result["skills"]]
+    assert "jni-skill" in names
+    assert "ndk-skill" in names
+
+
+# ---------------------------------------------------------------------------
+# 18. language field appears in list_skills output only when non-empty
+# ---------------------------------------------------------------------------
+
+
+def test_list_skills_output_includes_language_when_present(tmp_path: Path) -> None:
+    write_skill(tmp_path, "typed-skill", "desc", ["react"], language=["typescript"])
+    write_skill(tmp_path, "plain-skill", "desc", ["react"])
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["react"])
+    by_name = {s["name"]: s for s in result["skills"]}
+    assert by_name["typed-skill"]["language"] == ["typescript"]
+    assert "language" not in by_name["plain-skill"]
+
+
+# ---------------------------------------------------------------------------
+# 19. Cross-stack isolation: harmonyos+cpp must NOT return android JNI
+# ---------------------------------------------------------------------------
+
+
+def test_cross_stack_language_isolation(tmp_path: Path) -> None:
+    write_skill(tmp_path, "harmony-native", "desc", ["harmonyos"], language=["cpp"])
+    write_skill(tmp_path, "android-jni", "desc", ["android"], language=["java", "cpp"])
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["harmonyos"], language=["cpp"])
+    names = [s["name"] for s in result["skills"]]
+    assert "harmony-native" in names
+    assert "android-jni" not in names  # wrong tech_stack
+
+
+# ---------------------------------------------------------------------------
+# 20. Only language provided → returns all skills matching that language
+# ---------------------------------------------------------------------------
+
+
+def test_list_skills_only_language(tmp_path: Path) -> None:
+    write_skill(tmp_path, "django-core", "desc", ["django"], language=["python"])
+    write_skill(tmp_path, "fastapi-core", "desc", ["fastapi"], language=["python"])
+    write_skill(tmp_path, "nextjs-core", "desc", ["nextjs"], language=["typescript"])
+    write_skill(tmp_path, "docker-core", "desc", ["docker"])  # agnostic
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(language=["python"])
+    names = [s["name"] for s in result["skills"]]
+    assert "django-core" in names
+    assert "fastapi-core" in names
+    assert "nextjs-core" not in names   # wrong language
+    assert "docker-core" not in names   # agnostic excluded
+
+
+# ---------------------------------------------------------------------------
+# 21. Only tech_stack provided → returns all skills including agnostic
+# ---------------------------------------------------------------------------
+
+
+def test_list_skills_only_tech_stack_includes_agnostic(tmp_path: Path) -> None:
+    write_skill(tmp_path, "harmony-arkts", "desc", ["harmonyos"], language=["arkts"])
+    write_skill(tmp_path, "harmony-cpp", "desc", ["harmonyos"], language=["cpp"])
+    write_skill(tmp_path, "harmony-doc", "desc", ["harmonyos"])  # agnostic
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["harmonyos"])
+    names = [s["name"] for s in result["skills"]]
+    assert "harmony-arkts" in names
+    assert "harmony-cpp" in names
+    assert "harmony-doc" in names  # agnostic included when no language constraint

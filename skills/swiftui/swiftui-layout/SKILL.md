@@ -2,6 +2,7 @@
 name: swiftui-layout
 description: "SwiftUI 布局系统：Stack/Grid/ViewThatFits/Layout 协议、GeometryReader、安全区、ScrollView。"
 tech_stack: [swiftui]
+language: [swift]
 ---
 
 # SwiftUI 布局系统

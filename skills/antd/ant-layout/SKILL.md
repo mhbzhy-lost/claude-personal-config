@@ -2,6 +2,7 @@
 name: ant-layout
 description: "Ant Design Layout 组件文档与用法。协助进行页面级整体布局。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # Layout（布局）

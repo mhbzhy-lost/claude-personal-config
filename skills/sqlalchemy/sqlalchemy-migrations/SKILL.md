@@ -2,6 +2,7 @@
 name: sqlalchemy-migrations
 description: "Alembic 数据库迁移：初始化、自动生成、多头合并与异步引擎配合"
 tech_stack: [sqlalchemy]
+language: [python]
 ---
 
 # SQLAlchemy Migrations（Alembic）

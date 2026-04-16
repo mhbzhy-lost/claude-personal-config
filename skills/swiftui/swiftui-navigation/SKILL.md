@@ -2,6 +2,7 @@
 name: swiftui-navigation
 description: "SwiftUI 导航：NavigationStack/NavigationSplitView/NavigationPath/TabView/toolbar 体系。"
 tech_stack: [swiftui]
+language: [swift]
 ---
 
 # SwiftUI 导航体系

@@ -2,6 +2,7 @@
 name: compose-animation
 description: "Compose 动画：animateAsState/AnimatedVisibility/AnimatedContent/SharedTransition/updateTransition/Animatable。"
 tech_stack: [compose]
+language: [kotlin]
 ---
 
 # Jetpack Compose 动画

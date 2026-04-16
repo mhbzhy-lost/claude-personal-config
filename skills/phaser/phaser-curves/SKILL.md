@@ -2,6 +2,7 @@
 name: phaser-curves
 description: "Phaser 3.90 游戏开发：曲线与路径系统。 Phaser.Curves 提供多种曲线类型，核心用途："
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：曲线与路径系统

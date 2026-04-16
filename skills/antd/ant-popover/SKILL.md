@@ -2,6 +2,7 @@
 name: ant-popover
 description: "Ant Design Popover 组件文档与用法。点击/鼠标移入元素，弹出气泡式的卡片浮层。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # Popover（气泡卡片）

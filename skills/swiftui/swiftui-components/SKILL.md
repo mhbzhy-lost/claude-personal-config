@@ -2,6 +2,7 @@
 name: swiftui-components
 description: "SwiftUI 常用组件：List/Form/Sheet/Alert/ScrollView/ContentUnavailableView/searchable 最新 API。"
 tech_stack: [swiftui]
+language: [swift]
 ---
 
 # SwiftUI 常用组件（iOS 17-18 重点）

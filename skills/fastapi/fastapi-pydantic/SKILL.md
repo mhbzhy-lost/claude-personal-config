@@ -2,6 +2,7 @@
 name: fastapi-pydantic
 description: "Pydantic v2 模型定义、Field 约束、嵌套模型、field_validator/model_validator 自定义校验、序列化控制"
 tech_stack: [fastapi]
+language: [python]
 ---
 
 # FastAPI Pydantic -- 数据模型与验证

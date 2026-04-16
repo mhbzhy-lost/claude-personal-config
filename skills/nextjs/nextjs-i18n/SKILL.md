@@ -2,6 +2,7 @@
 name: nextjs-i18n
 description: "Next.js 15 国际化：子路径路由、中间件 locale 检测、next-intl 集成、翻译文件组织、SEO hreflang。"
 tech_stack: [nextjs]
+language: [typescript]
 ---
 
 # Next.js 国际化（i18n）

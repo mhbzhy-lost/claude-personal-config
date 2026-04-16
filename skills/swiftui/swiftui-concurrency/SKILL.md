@@ -2,6 +2,7 @@
 name: swiftui-concurrency
 description: "SwiftUI 并发：.task modifier、@MainActor、Sendable、AsyncSequence、TaskGroup、Swift 6 严格并发。"
 tech_stack: [swiftui]
+language: [swift]
 ---
 
 # SwiftUI 中的 Swift Concurrency

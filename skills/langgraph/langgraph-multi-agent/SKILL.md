@@ -2,6 +2,7 @@
 name: langgraph-multi-agent
 description: "LangGraph 多 Agent 架构：Supervisor 中心调度、Swarm 去中心化交接、Send 并行扇出"
 tech_stack: [langgraph]
+language: [python]
 ---
 
 # Multi-Agent（多 Agent 架构）

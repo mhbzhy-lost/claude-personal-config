@@ -1,7 +1,8 @@
 ---
 name: harmony-native-project
 description: "HarmonyOS 原生 C++ 工程：目录结构、CMake 配置、ohpm 协同、多 ABI 构建、系统库链接。"
-tech_stack: [harmonyos, cpp]
+tech_stack: [harmonyos]
+language: [cpp]
 ---
 
 # HarmonyOS 原生 C++ 工程配置

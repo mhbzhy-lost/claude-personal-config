@@ -2,6 +2,7 @@
 name: phaser-physics
 description: "Phaser 3.90 游戏开发：物理系统。 建议：默认选 Arcade，只有需要不规则多边形碰撞时才用 Matter.js。"
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：物理系统

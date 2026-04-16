@@ -2,6 +2,7 @@
 name: phaser-runtime-common
 description: "Phaser 3.90 游戏开发：Phaser Runtime Skills：共享基建与总览。 runtime skills 是 agent 编码时的\"眼睛和手\"。正确用法是边写边调用："
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser Runtime Skills：共享基建与总览

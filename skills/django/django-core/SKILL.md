@@ -2,6 +2,7 @@
 name: django-core
 description: "Django 项目创建、settings 配置、manage.py 命令与 WSGI/ASGI 部署"
 tech_stack: [django]
+language: [python]
 ---
 
 # Django Core（项目基础与配置）

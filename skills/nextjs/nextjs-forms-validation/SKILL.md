@@ -2,6 +2,7 @@
 name: nextjs-forms-validation
 description: "Next.js 15 表单处理：Server Actions 表单集成、useActionState/useFormStatus、Zod 校验、渐进增强、文件上传。"
 tech_stack: [nextjs]
+language: [typescript]
 ---
 
 # Next.js 15 表单处理与校验

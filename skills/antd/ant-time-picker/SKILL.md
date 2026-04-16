@@ -2,6 +2,7 @@
 name: ant-time-picker
 description: "Ant Design TimePicker 组件文档与用法。输入或选择时间的控件。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # TimePicker（时间选择框）

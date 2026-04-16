@@ -2,6 +2,7 @@
 name: ant-tooltip
 description: "Ant Design Tooltip 组件文档与用法。简单的文字提示气泡框。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # Tooltip（文字提示）

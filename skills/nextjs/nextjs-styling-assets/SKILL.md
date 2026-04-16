@@ -2,6 +2,7 @@
 name: nextjs-styling-assets
 description: "Next.js 15 样式与资源：CSS Modules、Tailwind v4、next/image、next/font、public 静态资源。"
 tech_stack: [nextjs]
+language: [typescript]
 ---
 
 # 样式、图片与字体（Next.js 15）

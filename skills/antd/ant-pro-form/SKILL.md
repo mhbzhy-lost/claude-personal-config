@@ -2,6 +2,7 @@
 name: ant-pro-form
 description: "ProForm 高级表单，内置字段类型、布局、ModalForm/DrawerForm/StepsForm。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # ProForm（高级表单）

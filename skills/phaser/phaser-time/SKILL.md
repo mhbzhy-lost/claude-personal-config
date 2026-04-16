@@ -2,6 +2,7 @@
 name: phaser-time
 description: "Phaser 3.90 游戏开发：时间与定时器系统。 Timeline 用于编排一系列按时序触发的事件，比多个 delayedCall 更结构化。"
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：时间与定时器系统

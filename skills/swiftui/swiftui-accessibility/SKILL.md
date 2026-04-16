@@ -2,6 +2,7 @@
 name: swiftui-accessibility
 description: "SwiftUI 无障碍：accessibilityLabel/Representation、Dynamic Type、VoiceOver、减少动效。"
 tech_stack: [swiftui]
+language: [swift]
 ---
 
 # SwiftUI 无障碍

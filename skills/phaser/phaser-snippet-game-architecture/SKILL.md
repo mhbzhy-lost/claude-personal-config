@@ -2,6 +2,7 @@
 name: phaser-snippet-game-architecture
 description: "Phaser 3.90 游戏开发：多场景游戏架构（Boot → Preloader → MainMenu → Game）。 这是生产级游戏的标准四场景骨架。每个场景职责单一，通过 Registry 共享全局状态。"
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：多场景游戏架构（Boot → Preloader → MainMenu → Game）

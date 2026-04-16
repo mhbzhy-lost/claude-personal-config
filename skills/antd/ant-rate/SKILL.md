@@ -2,6 +2,7 @@
 name: ant-rate
 description: "Ant Design Rate 组件文档与用法。用于对事物进行评分操作。"
 tech_stack: [antd]
+language: [typescript]
 ---
 
 # Rate（评分）

@@ -2,6 +2,7 @@
 name: phaser-tilemaps
 description: "Phaser 3.90 游戏开发：Tilemap 地图系统。 在 Tiled 中用 Object Layer 放置敌人/道具生成点，在 Phaser 中读取："
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser：Tilemap 地图系统

@@ -2,6 +2,7 @@
 name: phaser-runtime-load-check
 description: "Phaser 3.90 游戏开发：Phaser Runtime：资源预检。 给定一份资源清单（JSON 数组），构造一个只有 preload() 的空 Scene，实际跑一次加载，报告每个资源是成功还是失败，并对成功的资源返回元信息（texture 尺寸、atlas frame 数、audio 时长、json 内容概要）。"
 tech_stack: [phaser]
+language: [javascript, typescript]
 ---
 
 # Phaser Runtime：资源预检

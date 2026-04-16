@@ -1,7 +1,8 @@
 ---
 name: android-ndk-cmake
 description: "Android NDK + CMake 工程配置：build.gradle.kts 集成、CMakeLists.txt、ABI 管理、prefab。"
-tech_stack: [android, cpp]
+tech_stack: [android]
+language: [cpp]
 ---
 
 # Android NDK + CMake 工程配置

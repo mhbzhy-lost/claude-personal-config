@@ -2,6 +2,7 @@
 name: django-urls
 description: "Django URLconf 配置、path/re_path、命名路由、namespace 与 URL 参数转换器"
 tech_stack: [django]
+language: [python]
 ---
 
 # Django URLs（URL 路由配置）
