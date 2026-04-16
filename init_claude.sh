@@ -7,6 +7,9 @@
 #   - 保守：目标已是真实文件/目录时告警，不覆盖，不删除
 #   - 单源：claude-config/ 是唯一事实源，~/.claude/ 只做 runtime 加载入口
 #
+# MCP server 通过 `claude mcp add -s user` 注册到 ~/.claude.json（user scope），
+# 而非写入 settings.json（Claude Code 不从 settings.json 读取 MCP 配置）。
+#
 # skills/ 故意不走软链接 —— MCP 架构下 skill 由 skill-catalog server 服务，
 # ~/.claude/skills/ 不应存在；若仍存在本脚本会告警，由用户自查后手动清理。
 #
@@ -56,7 +59,7 @@ if [ -e "$DST/skills" ] || [ -L "$DST/skills" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 合并 settings.json：注入 hooks.SubagentStart 和 mcpServers.skill-catalog
+# 合并 settings.json：注入 hooks.SubagentStart（仅 hooks，不含 MCP）
 # 幂等：已有配置且与预期一致则 no-op；不一致则告警不覆盖
 # ---------------------------------------------------------------------------
 SETTINGS_JSON="$DST/settings.json"
@@ -81,7 +84,6 @@ from pathlib import Path
 src_root = sys.argv[1]
 settings_path = Path(sys.argv[2])
 
-# 目标配置（以 claude-config 中的绝对路径为准）
 desired_hook = {
     "matcher": "stack-detector",
     "hooks": [
@@ -90,16 +92,6 @@ desired_hook = {
             "command": f"{src_root}/hooks/stack-list-inject.sh",
         }
     ],
-}
-desired_mcp = {
-    "skill-catalog": {
-        "type": "stdio",
-        "command": f"{src_root}/mcp/skill-catalog/.venv/bin/python",
-        "args": ["-m", "skill_catalog.server"],
-        "env": {
-            "SKILL_LIBRARY_PATH": f"{src_root}/skills",
-        },
-    }
 }
 
 # 读现有 settings（不存在则从空对象起手）
@@ -117,7 +109,6 @@ changed = False
 # 合并 hooks.SubagentStart
 hooks = data.setdefault("hooks", {})
 sub_start = hooks.setdefault("SubagentStart", [])
-# 匹配策略：找 matcher == "stack-detector" 的条目；若存在则覆盖，否则追加
 found_idx = None
 for i, entry in enumerate(sub_start):
     if isinstance(entry, dict) and entry.get("matcher") == "stack-detector":
@@ -132,13 +123,18 @@ elif sub_start[found_idx] != desired_hook:
     changed = True
     print(f"[settings] 更新 hooks.SubagentStart[matcher=stack-detector]")
 
-# 合并 mcpServers.skill-catalog
-mcp_servers = data.setdefault("mcpServers", {})
-current = mcp_servers.get("skill-catalog")
-if current != desired_mcp["skill-catalog"]:
-    mcp_servers["skill-catalog"] = desired_mcp["skill-catalog"]
+# 清理残留：移除 settings.json 中的 mcpServers（已迁移到 claude mcp add）
+if "mcpServers" in data:
+    del data["mcpServers"]
     changed = True
-    print(f"[settings] {'更新' if current else '新增'} mcpServers.skill-catalog")
+    print(f"[settings] 移除残留 mcpServers（已迁移到 ~/.claude.json）")
+
+# 清理残留：移除 SubagentStop hook（stack-detector-print 已废弃）
+sub_stop = hooks.get("SubagentStop")
+if sub_stop is not None:
+    del hooks["SubagentStop"]
+    changed = True
+    print(f"[settings] 移除 hooks.SubagentStop（stack-detector-print 已废弃）")
 
 if changed:
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
@@ -150,6 +146,32 @@ PYEOF
   # $PY 不加引号以允许 "uv run python" 分词
   # shellcheck disable=SC2086
   $PY -c "$MERGE_SCRIPT" "$SRC" "$SETTINGS_JSON"
+fi
+
+# ---------------------------------------------------------------------------
+# 注册 MCP server：通过 claude CLI 注册到 user scope (~/.claude.json)
+# Claude Code 不从 settings.json 读取 MCP 配置，必须用 CLI 注册
+# ---------------------------------------------------------------------------
+if command -v claude >/dev/null 2>&1; then
+  MCP_CMD="$SRC/mcp/skill-catalog/.venv/bin/python"
+  EXPECTED_ENV="SKILL_LIBRARY_PATH=$SRC/skills"
+
+  # 检查是否已注册且配置一致
+  CURRENT=$(claude mcp get skill-catalog 2>&1 || true)
+  if echo "$CURRENT" | grep -q "Connected" \
+      && echo "$CURRENT" | grep -q "$MCP_CMD" \
+      && echo "$CURRENT" | grep -q "$EXPECTED_ENV"; then
+    echo "[mcp] skill-catalog 已注册且配置一致"
+  else
+    # 先移除旧注册（如有），再重新注册
+    claude mcp remove skill-catalog -s user 2>/dev/null || true
+    claude mcp add -s user \
+      -e "SKILL_LIBRARY_PATH=$SRC/skills" \
+      -- skill-catalog "$MCP_CMD" -m skill_catalog.server
+    echo "[mcp] skill-catalog 已注册到 user scope"
+  fi
+else
+  echo "[warn] claude CLI 不可用，跳过 MCP server 注册。请手动执行：claude mcp add -s user -e SKILL_LIBRARY_PATH=$SRC/skills -- skill-catalog $SRC/mcp/skill-catalog/.venv/bin/python -m skill_catalog.server"
 fi
 
 # ---------------------------------------------------------------------------
