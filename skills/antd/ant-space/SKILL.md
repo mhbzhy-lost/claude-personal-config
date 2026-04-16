@@ -1,6 +1,6 @@
 ---
 name: ant-space
-description: "Ant Design Space 组件文档与用法。设置组件之间的间距。Use when building React + antd web apps and need to implement Space."
+description: "Ant Design Space 组件文档与用法。设置组件之间的间距。"
 tech_stack: [antd]
 ---
 

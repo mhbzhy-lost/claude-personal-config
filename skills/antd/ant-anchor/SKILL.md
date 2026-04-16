@@ -1,6 +1,6 @@
 ---
 name: ant-anchor
-description: "Ant Design Anchor 组件文档与用法。用于跳转到页面指定位置。Use when building React + antd web apps and need to implement Anchor."
+description: "Ant Design Anchor 组件文档与用法。用于跳转到页面指定位置。"
 tech_stack: [antd]
 ---
 

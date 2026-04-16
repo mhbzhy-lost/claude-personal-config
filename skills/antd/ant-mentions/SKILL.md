@@ -1,6 +1,6 @@
 ---
 name: ant-mentions
-description: "Ant Design Mentions 组件文档与用法。用于在输入中提及某人或某事。Use when building React + antd web apps and need to implement Mentions."
+description: "Ant Design Mentions 组件文档与用法。用于在输入中提及某人或某事。"
 tech_stack: [antd]
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: ant-descriptions
-description: "Ant Design Descriptions 组件文档与用法。展示多个只读字段的组合。Use when building React + antd web apps and need to implement Descriptions."
+description: "Ant Design Descriptions 组件文档与用法。展示多个只读字段的组合。"
 tech_stack: [antd]
 ---
 

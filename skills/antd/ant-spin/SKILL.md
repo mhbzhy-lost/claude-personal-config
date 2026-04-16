@@ -1,6 +1,6 @@
 ---
 name: ant-spin
-description: "Ant Design Spin 组件文档与用法。用于页面和区块的加载中状态。Use when building React + antd web apps and need to implement Spin."
+description: "Ant Design Spin 组件文档与用法。用于页面和区块的加载中状态。"
 tech_stack: [antd]
 ---
 

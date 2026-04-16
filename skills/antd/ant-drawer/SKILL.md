@@ -1,6 +1,6 @@
 ---
 name: ant-drawer
-description: "Ant Design Drawer 组件文档与用法。屏幕边缘滑出的浮层面板。Use when building React + antd web apps and need to implement Drawer."
+description: "Ant Design Drawer 组件文档与用法。屏幕边缘滑出的浮层面板。"
 tech_stack: [antd]
 ---
 

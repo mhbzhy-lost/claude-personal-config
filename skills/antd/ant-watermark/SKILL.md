@@ -1,6 +1,6 @@
 ---
 name: ant-watermark
-description: "Ant Design Watermark 组件文档与用法。给页面的某个区域加上水印。Use when building React + antd web apps and need to implement Watermark."
+description: "Ant Design Watermark 组件文档与用法。给页面的某个区域加上水印。"
 tech_stack: [antd]
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: ant-splitter
-description: "Ant Design Splitter 组件文档与用法。- 可以水平或垂直地分隔区域。 - 当需要自由拖拽调整各区域大小。 - 当需要指定区域的最大最小宽高时。Use when building React + antd web apps and need to implement Splitter."
+description: "Ant Design Splitter 组件文档与用法。- 可以水平或垂直地分隔区域。 - 当需要自由拖拽调整各区域大小。 - 当需要指定区域的最大最小宽高时。"
 tech_stack: [antd]
 ---
 

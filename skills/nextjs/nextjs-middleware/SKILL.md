@@ -1,6 +1,6 @@
 ---
 name: nextjs-middleware
-description: "Next.js 15 middleware.ts：matcher、NextResponse、Edge 运行时限制、鉴权网关、重写、A/B。Use when writing middleware.ts for auth gating, rewrites, i18n detection or experiments."
+description: "Next.js 15 middleware.ts：matcher、NextResponse、Edge 运行时限制、鉴权网关、重写、A/B。"
 tech_stack: [nextjs]
 ---
 

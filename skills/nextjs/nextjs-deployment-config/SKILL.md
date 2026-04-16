@@ -1,6 +1,6 @@
 ---
 name: nextjs-deployment-config
-description: "Next.js 15 部署与配置：next.config.ts、环境变量、standalone 输出、Vercel 与自托管、图像优化。Use when configuring env vars, output modes, deploying to Vercel or self-hosting with Docker."
+description: "Next.js 15 部署与配置：next.config.ts、环境变量、standalone 输出、Vercel 与自托管、图像优化。"
 tech_stack: [nextjs]
 ---
 

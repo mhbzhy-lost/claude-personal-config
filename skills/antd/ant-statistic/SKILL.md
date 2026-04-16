@@ -1,6 +1,6 @@
 ---
 name: ant-statistic
-description: "Ant Design Statistic 组件文档与用法。- 当需要突出某个或某组数字时。 - 当需要展示带描述的统计类数据时使用。Use when building React + antd web apps and need to implement Statistic."
+description: "Ant Design Statistic 组件文档与用法。- 当需要突出某个或某组数字时。 - 当需要展示带描述的统计类数据时使用。"
 tech_stack: [antd]
 ---
 

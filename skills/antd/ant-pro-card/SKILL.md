@@ -1,6 +1,6 @@
 ---
 name: ant-pro-card
-description: "ProCard 高级卡片和 StatisticCard 统计卡片，支持分割布局、标签页、数据看板。Use when building React admin dashboards with @ant-design/pro-components and need split-layout cards or KPI statistic cards."
+description: "ProCard 高级卡片和 StatisticCard 统计卡片，支持分割布局、标签页、数据看板。"
 tech_stack: [antd]
 ---
 

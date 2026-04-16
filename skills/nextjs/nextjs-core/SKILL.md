@@ -1,6 +1,6 @@
 ---
 name: nextjs-core
-description: "Next.js 15 项目结构、文件系统约定、App Router vs Pages Router、next.config、TypeScript、运行时模型总览。Use when bootstrapping or navigating a Next.js 15 project."
+description: "Next.js 15 项目结构、文件系统约定、App Router vs Pages Router、next.config、TypeScript、运行时模型总览。"
 tech_stack: [nextjs]
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: ant-steps
-description: "Ant Design Steps 组件文档与用法。引导用户按照流程完成任务的导航条。Use when building React + antd web apps and need to implement Steps."
+description: "Ant Design Steps 组件文档与用法。引导用户按照流程完成任务的导航条。"
 tech_stack: [antd]
 ---
 

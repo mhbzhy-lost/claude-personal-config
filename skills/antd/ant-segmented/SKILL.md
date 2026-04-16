@@ -1,6 +1,6 @@
 ---
 name: ant-segmented
-description: "Ant Design Segmented 组件文档与用法。用于展示多个选项并允许用户选择其中单个选项。Use when building React + antd web apps and need to implement Segmented."
+description: "Ant Design Segmented 组件文档与用法。用于展示多个选项并允许用户选择其中单个选项。"
 tech_stack: [antd]
 ---
 

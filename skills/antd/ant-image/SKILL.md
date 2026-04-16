@@ -1,6 +1,6 @@
 ---
 name: ant-image
-description: "Ant Design Image 组件文档与用法。- 需要展示图片时使用。 - 加载显示大图或加载失败时容错处理。Use when building React + antd web apps and need to implement Image."
+description: "Ant Design Image 组件文档与用法。- 需要展示图片时使用。 - 加载显示大图或加载失败时容错处理。"
 tech_stack: [antd]
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: ant-input
-description: "Ant Design Input 组件文档与用法。通过鼠标或键盘输入内容，是最基础的表单域的包装。Use when building React + antd web apps and need to implement Input."
+description: "Ant Design Input 组件文档与用法。通过鼠标或键盘输入内容，是最基础的表单域的包装。"
 tech_stack: [antd]
 ---
 

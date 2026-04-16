@@ -1,6 +1,6 @@
 ---
 name: ant-checkbox
-description: "Ant Design Checkbox 组件文档与用法。收集用户的多项选择。Use when building React + antd web apps and need to implement Checkbox."
+description: "Ant Design Checkbox 组件文档与用法。收集用户的多项选择。"
 tech_stack: [antd]
 ---
 

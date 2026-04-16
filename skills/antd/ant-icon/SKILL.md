@@ -1,6 +1,6 @@
 ---
 name: ant-icon
-description: "Ant Design Icon 组件文档与用法。Icon 组件使用指南。Use when building React + antd web apps and need to implement Icon."
+description: "Ant Design Icon 组件文档与用法。Icon 组件使用指南。"
 tech_stack: [antd]
 ---
 

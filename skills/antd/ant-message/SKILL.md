@@ -1,6 +1,6 @@
 ---
 name: ant-message
-description: "Ant Design Message 组件文档与用法。全局展示操作反馈信息。Use when building React + antd web apps and need to implement Message."
+description: "Ant Design Message 组件文档与用法。全局展示操作反馈信息。"
 tech_stack: [antd]
 ---
 

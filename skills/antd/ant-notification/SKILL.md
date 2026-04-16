@@ -1,6 +1,6 @@
 ---
 name: ant-notification
-description: "Ant Design Notification 组件文档与用法。全局展示通知提醒信息。Use when building React + antd web apps and need to implement Notification."
+description: "Ant Design Notification 组件文档与用法。全局展示通知提醒信息。"
 tech_stack: [antd]
 ---
 

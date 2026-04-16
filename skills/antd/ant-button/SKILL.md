@@ -1,6 +1,6 @@
 ---
 name: ant-button
-description: "Ant Design Button 组件文档与用法。按钮用于开始一个即时操作。Use when building React + antd web apps and need to implement Button."
+description: "Ant Design Button 组件文档与用法。按钮用于开始一个即时操作。"
 tech_stack: [antd]
 ---
 

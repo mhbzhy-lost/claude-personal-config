@@ -1,6 +1,6 @@
 ---
 name: ant-grid
-description: "Ant Design Grid 组件文档与用法。Grid 组件使用指南。Use when building React + antd web apps and need to implement Grid."
+description: "Ant Design Grid 组件文档与用法。Grid 组件使用指南。"
 tech_stack: [antd]
 ---
 

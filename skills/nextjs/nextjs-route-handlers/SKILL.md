@@ -1,6 +1,6 @@
 ---
 name: nextjs-route-handlers
-description: "Next.js 15 Route Handlers（app/api/.../route.ts）：HTTP 方法导出、Request/Response、动态 vs 静态、流式响应、runtime 选择。Use when building JSON APIs, webhooks, streams or file endpoints."
+description: "Next.js 15 Route Handlers（app/api/.../route.ts）：HTTP 方法导出、Request/Response、动态 vs 静态、流式响应、runtime 选择。"
 tech_stack: [nextjs]
 ---
 

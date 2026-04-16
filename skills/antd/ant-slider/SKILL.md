@@ -1,6 +1,6 @@
 ---
 name: ant-slider
-description: "Ant Design Slider 组件文档与用法。滑动型输入器，展示当前值和可选范围。Use when building React + antd web apps and need to implement Slider."
+description: "Ant Design Slider 组件文档与用法。滑动型输入器，展示当前值和可选范围。"
 tech_stack: [antd]
 ---
 

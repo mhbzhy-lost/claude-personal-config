@@ -1,6 +1,6 @@
 ---
 name: ant-pro-layout
-description: "ProLayout 中后台整体布局框架，含侧边导航、顶部 Header、PageContainer 页面容器。Use when building React admin apps with @ant-design/pro-components and need a full-page admin layout."
+description: "ProLayout 中后台整体布局框架，含侧边导航、顶部 Header、PageContainer 页面容器。"
 tech_stack: [antd]
 ---
 

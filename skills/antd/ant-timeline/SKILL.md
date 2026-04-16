@@ -1,6 +1,6 @@
 ---
 name: ant-timeline
-description: "Ant Design Timeline 组件文档与用法。垂直展示的时间流信息。Use when building React + antd web apps and need to implement Timeline."
+description: "Ant Design Timeline 组件文档与用法。垂直展示的时间流信息。"
 tech_stack: [antd]
 ---
 

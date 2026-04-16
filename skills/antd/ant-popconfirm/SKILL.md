@@ -1,6 +1,6 @@
 ---
 name: ant-popconfirm
-description: "Ant Design Popconfirm 组件文档与用法。点击元素，弹出气泡式的确认框。Use when building React + antd web apps and need to implement Popconfirm."
+description: "Ant Design Popconfirm 组件文档与用法。点击元素，弹出气泡式的确认框。"
 tech_stack: [antd]
 ---
 

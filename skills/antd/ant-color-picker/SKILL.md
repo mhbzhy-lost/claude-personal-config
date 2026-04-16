@@ -1,6 +1,6 @@
 ---
 name: ant-color-picker
-description: "Ant Design ColorPicker 组件文档与用法。当用户需要自定义颜色选择的时候使用。Use when building React + antd web apps and need to implement ColorPicker."
+description: "Ant Design ColorPicker 组件文档与用法。当用户需要自定义颜色选择的时候使用。"
 tech_stack: [antd]
 ---
 

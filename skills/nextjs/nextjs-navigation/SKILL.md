@@ -1,6 +1,6 @@
 ---
 name: nextjs-navigation
-description: "Next.js 15 导航 API：<Link>、useRouter、usePathname、useSearchParams、redirect/permanentRedirect、notFound。Use when implementing client navigation, programmatic redirects or reading the current URL."
+description: "Next.js 15 导航 API：<Link>、useRouter、usePathname、useSearchParams、redirect/permanentRedirect、notFound。"
 tech_stack: [nextjs]
 ---
 

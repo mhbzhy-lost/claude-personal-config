@@ -1,6 +1,6 @@
 ---
 name: ant-tabs
-description: "Ant Design Tabs 组件文档与用法。提供平级的区域将大块内容进行收纳和展现，保持界面整洁。 Ant Design 依次提供了三级选项卡，分别用于不同的场景。 - 卡片式的页签，提供可关闭的样式，常用于容器顶部。 - 既可用于容器顶部，也可用于容器内部，是最通用的 Tabs。 - Radio.Button 可作为更次级的页签来使用。Use when building React + antd web apps and need to implement Tabs."
+description: "Ant Design Tabs 组件文档与用法。提供平级的区域将大块内容进行收纳和展现，保持界面整洁。 Ant Design 依次提供了三级选项卡，分别用于不同的场景。 - 卡片式的页签，提供可关闭的样式，常用于容器顶部。 - 既可用于容器顶部，也可用于容器内部，是最通用的 Tabs。 - Radio.Button 可作为更次级的页签来使用。"
 tech_stack: [antd]
 ---
 

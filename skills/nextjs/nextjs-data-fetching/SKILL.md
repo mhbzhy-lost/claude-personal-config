@@ -1,6 +1,6 @@
 ---
 name: nextjs-data-fetching
-description: "Next.js 15 数据获取：fetch 缓存语义、revalidate、tags、unstable_cache、Suspense 流式、revalidatePath/revalidateTag。Use when fetching data in RSC, configuring caching or invalidation."
+description: "Next.js 15 数据获取：fetch 缓存语义、revalidate、tags、unstable_cache、Suspense 流式、revalidatePath/revalidateTag。"
 tech_stack: [nextjs]
 ---
 

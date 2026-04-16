@@ -1,6 +1,6 @@
 ---
 name: ant-tooltip
-description: "Ant Design Tooltip 组件文档与用法。简单的文字提示气泡框。Use when building React + antd web apps and need to implement Tooltip."
+description: "Ant Design Tooltip 组件文档与用法。简单的文字提示气泡框。"
 tech_stack: [antd]
 ---
 

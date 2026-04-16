@@ -1,6 +1,6 @@
 ---
 name: ant-pro-table
-description: "ProTable 高级表格，内置搜索表单、工具栏、CRUD 操作、分页。Use when building React admin apps with @ant-design/pro-components and need a data table with search, filters, and CRUD."
+description: "ProTable 高级表格，内置搜索表单、工具栏、CRUD 操作、分页。"
 tech_stack: [antd]
 ---
 
