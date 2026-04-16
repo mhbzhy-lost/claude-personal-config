@@ -1,11 +1,6 @@
 ---
 name: ant-time-picker
 description: "Ant Design TimePicker 组件文档与用法。输入或选择时间的控件。Use when building React + antd web apps and need to implement TimePicker."
-component: TimePicker
-group: 数据录入
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

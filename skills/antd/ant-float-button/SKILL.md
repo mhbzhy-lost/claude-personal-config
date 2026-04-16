@@ -1,11 +1,6 @@
 ---
 name: ant-float-button
 description: "Ant Design FloatButton 组件文档与用法。悬浮于页面上方的按钮。Use when building React + antd web apps and need to implement FloatButton."
-component: FloatButton
-group: 通用
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

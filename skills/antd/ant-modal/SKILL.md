@@ -1,11 +1,6 @@
 ---
 name: ant-modal
 description: "Ant Design Modal 组件文档与用法。展示一个对话框，提供标题、内容区、操作区。Use when building React + antd web apps and need to implement Modal."
-component: Modal
-group: 反馈
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

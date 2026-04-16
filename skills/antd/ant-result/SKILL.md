@@ -1,11 +1,6 @@
 ---
 name: ant-result
 description: "Ant Design Result 组件文档与用法。用于反馈一系列操作任务的处理结果。Use when building React + antd web apps and need to implement Result."
-component: Result
-group: 反馈
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

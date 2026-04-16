@@ -1,10 +1,6 @@
 ---
 name: playwright-antd
 description: "Playwright + Ant Design 5.x 组件交互模式。涵盖 Modal、Form、Table、Select、Popconfirm、Collapse、Message、Tag、Result、Empty、Skeleton、Splitter 等组件的 DOM 结构与 Playwright selector 映射。Use when writing Playwright E2E tests for apps using Ant Design 5.x."
-applies_to:
-  markers_any:
-    - "dependency: antd"
-priority: 8
 tech_stack: [playwright, antd]
 ---
 

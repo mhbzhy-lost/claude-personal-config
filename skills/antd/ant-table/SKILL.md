@@ -1,11 +1,6 @@
 ---
 name: ant-table
 description: "Ant Design Table 组件文档与用法。- 当有大量结构化的数据需要展现时； - 当需要对数据进行排序、搜索、分页、自定义操作等复杂行为时。Use when building React + antd web apps and need to implement Table."
-component: Table
-group: 数据展示
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

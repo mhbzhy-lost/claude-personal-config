@@ -1,11 +1,6 @@
 ---
 name: ant-tour
 description: "Ant Design Tour 组件文档与用法。用于分步引导用户了解产品功能的气泡组件。Use when building React + antd web apps and need to implement Tour."
-component: Tour
-group: 数据展示
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

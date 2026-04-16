@@ -1,11 +1,6 @@
 ---
 name: ant-avatar
 description: "Ant Design Avatar 组件文档与用法。用来代表用户或事物，支持图片、图标或字符展示。Use when building React + antd web apps and need to implement Avatar."
-component: Avatar
-group: 数据展示
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

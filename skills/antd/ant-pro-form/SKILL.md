@@ -1,14 +1,6 @@
 ---
 name: ant-pro-form
 description: "ProForm 高级表单，内置字段类型、布局、ModalForm/DrawerForm/StepsForm。Use when building React admin apps with @ant-design/pro-components and need forms with auto-layout, modal forms, or multi-step wizards."
-component: ProForm
-package: "@ant-design/pro-components"
-group: 高阶组件-数据录入
-applies_to:
-  markers_any:
-    - "dependency: @ant-design/pro-components"
-    - "dependency: antd"
-priority: 10
 tech_stack: [antd]
 ---
 

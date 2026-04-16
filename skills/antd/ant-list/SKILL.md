@@ -1,11 +1,6 @@
 ---
 name: ant-list
 description: "Ant Design List 组件文档与用法。最基础的列表展示，可承载文字、列表、图片、段落。Use when building React + antd web apps and need to implement List."
-component: List
-group: 数据展示
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

@@ -1,11 +1,6 @@
 ---
 name: ant-qr-code
 description: "Ant Design QRCode 组件文档与用法。能够将文本转换生成二维码的组件，支持自定义配色和 Logo 配置。Use when building React + antd web apps and need to implement QRCode."
-component: QRCode
-group: 数据展示
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

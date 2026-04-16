@@ -1,11 +1,6 @@
 ---
 name: ant-date-picker
 description: "Ant Design DatePicker 组件文档与用法。输入或选择日期的控件。Use when building React + antd web apps and need to implement DatePicker."
-component: DatePicker
-group: 数据录入
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

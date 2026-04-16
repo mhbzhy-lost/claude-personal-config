@@ -1,11 +1,6 @@
 ---
 name: ant-menu
 description: "Ant Design Menu 组件文档与用法。为页面和功能提供导航的菜单列表。Use when building React + antd web apps and need to implement Menu."
-component: Menu
-group: 导航
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

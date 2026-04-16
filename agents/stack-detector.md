@@ -1,6 +1,6 @@
 ---
 name: stack-detector
-description: 根据 workspace 文件指纹和用户原始意图，输出当前任务涉及的技术栈 tag 列表。每次会话首次技术任务前由主 agent 调用一次，为后续 list_skills 查询提供技术栈参数。
+description: 根据 workspace 文件指纹和用户意图，输出当前任务涉及的技术栈 tag 列表。
 model: haiku
 tools: Glob, Read, Bash
 ---

@@ -1,11 +1,6 @@
 ---
 name: ant-calendar
 description: "Ant Design Calendar 组件文档与用法。按照日历形式展示数据的容器。Use when building React + antd web apps and need to implement Calendar."
-component: Calendar
-group: 数据展示
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

@@ -1,11 +1,6 @@
 ---
 name: ant-breadcrumb
 description: "Ant Design Breadcrumb 组件文档与用法。显示当前页面在系统层级结构中的位置，并能向上返回。Use when building React + antd web apps and need to implement Breadcrumb."
-component: Breadcrumb
-group: 导航
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

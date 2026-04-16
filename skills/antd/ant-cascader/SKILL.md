@@ -1,11 +1,6 @@
 ---
 name: ant-cascader
 description: "Ant Design Cascader 组件文档与用法。- 需要从一组相关联的数据集合进行选择，例如省市区，公司层级，事物分类等。 - 从一个较大的数据集合中进行选择时，用多级分类进行分隔，方便选择。 - 比起 Select 组件，可以在同一个浮层中完成选择，有较好的体验。Use when building React + antd web apps and need to implement Cascader."
-component: Cascader
-group: 数据录入
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

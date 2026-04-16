@@ -1,11 +1,6 @@
 ---
 name: ant-divider
 description: "Ant Design Divider 组件文档与用法。- 对不同章节的文本段落进行分割。 - 对行内文字/链接进行分割，例如表格的操作列。Use when building React + antd web apps and need to implement Divider."
-component: Divider
-group: 布局
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

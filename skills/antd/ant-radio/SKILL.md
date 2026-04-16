@@ -1,11 +1,6 @@
 ---
 name: ant-radio
 description: "Ant Design Radio 组件文档与用法。用于在多个备选项中选中单个状态。Use when building React + antd web apps and need to implement Radio."
-component: Radio
-group: 数据录入
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

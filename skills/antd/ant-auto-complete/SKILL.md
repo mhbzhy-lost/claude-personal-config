@@ -1,11 +1,6 @@
 ---
 name: ant-auto-complete
 description: "Ant Design AutoComplete 组件文档与用法。输入框自动完成功能。Use when building React + antd web apps and need to implement AutoComplete."
-component: AutoComplete
-group: 数据录入
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

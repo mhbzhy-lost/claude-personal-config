@@ -1,11 +1,6 @@
 ---
 name: ant-empty
 description: "Ant Design Empty 组件文档与用法。空状态时的展示占位图。Use when building React + antd web apps and need to implement Empty."
-component: Empty
-group: 数据展示
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

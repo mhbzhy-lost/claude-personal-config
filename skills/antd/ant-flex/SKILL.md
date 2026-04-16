@@ -1,11 +1,6 @@
 ---
 name: ant-flex
 description: "Ant Design Flex 组件文档与用法。用于对齐的弹性布局容器。Use when building React + antd web apps and need to implement Flex."
-component: Flex
-group: 布局
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

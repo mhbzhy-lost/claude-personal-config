@@ -1,11 +1,6 @@
 ---
 name: ant-typography
 description: "Ant Design Typography 组件文档与用法。- 当需要展示标题、段落、列表内容时使用，如文章/博客/日志的文本样式。 - 当需要一列基于文本的基础操作时，如拷贝/省略/可编辑。Use when building React + antd web apps and need to implement Typography."
-component: Typography
-group: 通用
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

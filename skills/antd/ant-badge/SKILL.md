@@ -1,11 +1,6 @@
 ---
 name: ant-badge
 description: "Ant Design Badge 组件文档与用法。图标右上角的圆形徽标数字。Use when building React + antd web apps and need to implement Badge."
-component: Badge
-group: 数据展示
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

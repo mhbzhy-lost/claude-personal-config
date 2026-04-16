@@ -1,11 +1,6 @@
 ---
 name: ant-config-provider
 description: "Ant Design ConfigProvider 组件文档与用法。为组件提供统一的全局化配置。Use when building React + antd web apps and need to implement ConfigProvider."
-component: ConfigProvider
-group: 其他
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

@@ -1,13 +1,6 @@
 ---
 name: ant-pro-descriptions
 description: "ProDescriptions 高级描述列表，支持可编辑模式、请求加载、自定义渲染。Use when building React admin apps with @ant-design/pro-components and need a detail page or inline-editable description panel."
-component: ProDescriptions
-package: "@ant-design/pro-components"
-group: 高阶组件-数据展示
-applies_to:
-  markers_any:
-    - "dependency: @ant-design/pro-components"
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

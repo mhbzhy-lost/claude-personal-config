@@ -1,11 +1,6 @@
 ---
 name: ant-collapse
 description: "Ant Design Collapse 组件文档与用法。可以折叠/展开的内容区域。Use when building React + antd web apps and need to implement Collapse."
-component: Collapse
-group: 数据展示
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

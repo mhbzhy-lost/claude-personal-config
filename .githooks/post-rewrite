@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-# 覆盖 `git pull --rebase` 场景：rebase 完成后不会触发 post-merge，
-# 而是触发 post-rewrite（$1 == "rebase"）。只在 rebase 时同步，
-# 避免 `git commit --amend`（$1 == "amend"）也触发全量同步。
-set -e
-if [ "${1:-}" = "rebase" ]; then
-  REPO_ROOT="$(git rev-parse --show-toplevel)"
-  exec "$REPO_ROOT/sync.sh"
-fi

@@ -11,6 +11,12 @@
 
 set -euo pipefail
 
+LOG_FILE="${STACK_LIST_INJECT_LOG:-$HOME/.claude/logs/stack-list-inject.log}"
+mkdir -p "$(dirname "$LOG_FILE")"
+printf '[%s] hook fired pid=%s ppid=%s lib=%s\n' \
+  "$(date '+%Y-%m-%d %H:%M:%S')" "$$" "$PPID" \
+  "${SKILL_LIBRARY_PATH:-<unset>}" >> "$LOG_FILE"
+
 LIB="${SKILL_LIBRARY_PATH:-/Users/mhbzhy/claude-config/skills}"
 
 # Pick a python interpreter without relying on shell aliases (hooks run non-interactively).

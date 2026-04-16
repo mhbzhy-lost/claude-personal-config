@@ -1,11 +1,6 @@
 ---
 name: ant-upload
 description: "Ant Design Upload 组件文档与用法。文件选择上传和拖拽上传控件。Use when building React + antd web apps and need to implement Upload."
-component: Upload
-group: 数据录入
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

@@ -2,11 +2,6 @@
 name: webui-components-common
 description: "Web UI 套件总览（React + antd）。同时满足以下条件时启用本套件： Use when building web apps with React and Ant Design — consult this overview before picking specific ant-* component skills."
 tech_stack: [antd]
-applies_to: [architect, developer]
-match:
-  project_type_in: [web-app]
-  tech_stack_any: [react, antd]
-priority: 10
 ---
 
 # Web UI 组件套件（Ant Design）

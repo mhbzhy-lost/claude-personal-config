@@ -1,11 +1,6 @@
 ---
 name: ant-message
 description: "Ant Design Message 组件文档与用法。全局展示操作反馈信息。Use when building React + antd web apps and need to implement Message."
-component: Message
-group: 反馈
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

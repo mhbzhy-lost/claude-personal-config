@@ -1,11 +1,6 @@
 ---
 name: ant-progress
 description: "Ant Design Progress 组件文档与用法。展示操作的当前进度。Use when building React + antd web apps and need to implement Progress."
-component: Progress
-group: 反馈
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 

@@ -1,11 +1,6 @@
 ---
 name: ant-affix
 description: "Ant Design Affix 组件文档与用法。将页面元素钉在可视范围。Use when building React + antd web apps and need to implement Affix."
-component: Affix
-group: 其他
-applies_to:
-  markers_any:
-    - "dependency: antd"
 tech_stack: [antd]
 ---
 
