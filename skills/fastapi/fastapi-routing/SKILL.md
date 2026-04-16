@@ -1,7 +1,7 @@
 ---
 name: fastapi-routing
 description: "路由定义、路径参数、查询参数、请求体、响应模型、状态码、Tags、APIRouter 模块化"
-tech_stack: [fastapi]
+tech_stack: [fastapi, backend]
 language: [python]
 ---
 

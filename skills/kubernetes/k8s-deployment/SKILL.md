@@ -1,7 +1,7 @@
 ---
 name: k8s-deployment
 description: "Kubernetes 部署策略：滚动更新、回滚、蓝绿部署、金丝雀部署与 PodDisruptionBudget"
-tech_stack: [kubernetes]
+tech_stack: [kubernetes, backend]
 ---
 
 # Kubernetes 部署策略

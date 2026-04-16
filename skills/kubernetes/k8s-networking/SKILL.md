@@ -1,7 +1,7 @@
 ---
 name: k8s-networking
 description: "Kubernetes 网络：Ingress、TLS 终结、NetworkPolicy 与 Service Mesh 概览"
-tech_stack: [kubernetes]
+tech_stack: [kubernetes, backend]
 ---
 
 # Kubernetes 网络

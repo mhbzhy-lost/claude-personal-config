@@ -1,7 +1,7 @@
 ---
 name: ant-pro-card
 description: "ProCard 高级卡片和 StatisticCard 统计卡片，支持分割布局、标签页、数据看板。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

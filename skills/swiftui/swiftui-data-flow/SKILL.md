@@ -1,7 +1,7 @@
 ---
 name: swiftui-data-flow
 description: "SwiftUI 数据流：@Observable/Observation 框架、@State/@Binding/@Environment、SwiftData 集成。"
-tech_stack: [swiftui]
+tech_stack: [swiftui, ios, mobile-native]
 language: [swift]
 ---
 

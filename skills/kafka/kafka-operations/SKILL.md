@@ -1,7 +1,7 @@
 ---
 name: kafka-operations
 description: "Kafka 集群部署配置、分区副本规划、消费 Lag 监控、性能调优与容量规划"
-tech_stack: [kafka]
+tech_stack: [kafka, backend]
 ---
 
 # Kafka 运维与调优

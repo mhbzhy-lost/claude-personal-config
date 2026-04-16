@@ -1,7 +1,7 @@
 ---
 name: sqlalchemy-advanced
 description: "SQLAlchemy 2.0 高级特性：混合属性、事件监听、批量操作、查询优化与表继承"
-tech_stack: [sqlalchemy]
+tech_stack: [sqlalchemy, backend]
 language: [python]
 ---
 

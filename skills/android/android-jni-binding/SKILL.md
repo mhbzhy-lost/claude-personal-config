@@ -1,7 +1,7 @@
 ---
 name: android-jni-binding
 description: "Android JNI 绑定：函数签名、类型映射、字符串/数组/ByteBuffer、引用管理、线程、异常处理。"
-tech_stack: [android]
+tech_stack: [android, mobile-native]
 language: [java, cpp]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: ant-app
 description: "Ant Design App 组件文档与用法。提供重置样式和提供消费上下文的默认环境。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

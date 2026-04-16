@@ -1,7 +1,7 @@
 ---
 name: sqlalchemy-core
 description: "SQLAlchemy 2.0 引擎创建、连接池、Session 管理与事务控制"
-tech_stack: [sqlalchemy]
+tech_stack: [sqlalchemy, backend]
 language: [python]
 ---
 

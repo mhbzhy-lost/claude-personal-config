@@ -1,7 +1,7 @@
 ---
 name: django-orm-advanced
 description: "Django ORM 高级查询：select_related/prefetch_related、F/Q 表达式、Subquery、聚合与数据库函数"
-tech_stack: [django]
+tech_stack: [django, backend]
 language: [python]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: ant-mentions
 description: "Ant Design Mentions 组件文档与用法。用于在输入中提及某人或某事。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

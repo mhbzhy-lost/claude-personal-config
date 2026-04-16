@@ -1,7 +1,7 @@
 ---
 name: playwright-core
 description: "Playwright Test (JS/TS) 通用 E2E 测试模式。涵盖配置、locator 策略、断言、等待机制、网络拦截、fixtures、认证、最佳实践。"
-tech_stack: [playwright]
+tech_stack: [playwright, frontend]
 language: [typescript]
 ---
 

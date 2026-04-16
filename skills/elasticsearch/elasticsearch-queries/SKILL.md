@@ -1,7 +1,7 @@
 ---
 name: elasticsearch-queries
 description: "Elasticsearch Query DSL 完整指南：全文搜索、精确查询、布尔组合、高亮、排序与分页"
-tech_stack: [elasticsearch]
+tech_stack: [elasticsearch, backend]
 ---
 
 # Elasticsearch Query DSL

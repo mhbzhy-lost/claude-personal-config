@@ -1,7 +1,7 @@
 ---
 name: django-auth
 description: "Django 认证系统：登录登出、权限模型、自定义 User 模型与密码验证"
-tech_stack: [django]
+tech_stack: [django, backend]
 language: [python]
 ---
 

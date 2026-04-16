@@ -1,7 +1,7 @@
 ---
 name: compose-animation
 description: "Compose 动画：animateAsState/AnimatedVisibility/AnimatedContent/SharedTransition/updateTransition/Animatable。"
-tech_stack: [compose]
+tech_stack: [compose, android, mobile-native]
 language: [kotlin]
 ---
 

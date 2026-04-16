@@ -1,7 +1,7 @@
 ---
 name: langgraph-state
 description: "LangGraph 状态设计：TypedDict/Pydantic 定义、Annotated reducer 机制、add_messages、MessagesState、多 Schema 模式。"
-tech_stack: [langgraph]
+tech_stack: [langgraph, backend]
 language: [python]
 ---
 

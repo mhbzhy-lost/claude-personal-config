@@ -1,7 +1,7 @@
 ---
 name: phaser-audio
 description: "Phaser 3.90 游戏开发：音频系统。 浏览器安全策略：AudioContext 必须在用户手势（点击/触摸）后才能解锁播放。"
-tech_stack: [phaser]
+tech_stack: [phaser, frontend]
 language: [javascript, typescript]
 ---
 

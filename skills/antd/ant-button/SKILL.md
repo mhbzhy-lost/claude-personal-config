@@ -1,7 +1,7 @@
 ---
 name: ant-button
 description: "Ant Design Button 组件文档与用法。按钮用于开始一个即时操作。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

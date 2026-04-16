@@ -1,7 +1,7 @@
 ---
 name: ant-space
 description: "Ant Design Space 组件文档与用法。设置组件之间的间距。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

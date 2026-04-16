@@ -1,7 +1,7 @@
 ---
 name: ant-popconfirm
 description: "Ant Design Popconfirm 组件文档与用法。点击元素，弹出气泡式的确认框。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

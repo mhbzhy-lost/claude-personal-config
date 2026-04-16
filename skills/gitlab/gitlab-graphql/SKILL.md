@@ -1,7 +1,7 @@
 ---
 name: gitlab-graphql
 description: "GitLab GraphQL API：端点、查询、Mutation、游标分页与复杂度控制"
-tech_stack: [gitlab]
+tech_stack: [gitlab, backend]
 ---
 
 # GitLab GraphQL API

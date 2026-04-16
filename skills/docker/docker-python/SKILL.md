@@ -1,7 +1,7 @@
 ---
 name: docker-python
 description: "Python 应用容器化最佳实践：基础镜像选择、依赖安装优化、uv 集成与多阶段构建"
-tech_stack: [docker]
+tech_stack: [docker, backend]
 language: [python]
 ---
 

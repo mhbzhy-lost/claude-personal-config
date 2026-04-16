@@ -1,7 +1,7 @@
 ---
 name: django-testing
 description: "Django 测试：TestCase 体系、Client/RequestFactory、断言、fixture、mock 与 coverage"
-tech_stack: [django]
+tech_stack: [django, backend]
 language: [python]
 ---
 

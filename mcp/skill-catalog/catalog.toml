@@ -1,0 +1,7 @@
+[filter]
+# 维度内部多标签匹配模式：
+#   "intersection" — 必须包含查询的所有 tag（交集/AND）
+#   "union"        — 包含查询的任一 tag 即命中（并集/OR）
+
+tech_stack_match_mode = "intersection"
+language_match_mode = "union"

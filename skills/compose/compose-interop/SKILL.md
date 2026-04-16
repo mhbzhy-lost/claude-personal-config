@@ -1,7 +1,7 @@
 ---
 name: compose-interop
 description: "Compose↔View 互操作：AndroidView/ComposeView/Fragment 集成/ViewCompositionStrategy/主题桥接。"
-tech_stack: [compose]
+tech_stack: [compose, android, mobile-native]
 language: [kotlin]
 ---
 

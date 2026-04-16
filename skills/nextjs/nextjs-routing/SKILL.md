@@ -1,7 +1,7 @@
 ---
 name: nextjs-routing
 description: "Next.js 15 App Router 路由体系：layouts、pages、路由组、动态段、并行/拦截路由、loading/error/not-found/template 特殊文件。"
-tech_stack: [nextjs]
+tech_stack: [nextjs, react, frontend]
 language: [typescript]
 ---
 

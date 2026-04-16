@@ -1,7 +1,7 @@
 ---
 name: nextjs-core
 description: "Next.js 15 项目结构、文件系统约定、App Router vs Pages Router、next.config、TypeScript、运行时模型总览。"
-tech_stack: [nextjs]
+tech_stack: [nextjs, react, frontend]
 language: [typescript]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: langgraph-streaming
 description: "LangGraph 7 种流式模式（values/updates/messages/custom/checkpoints/tasks/debug）、v2 格式、自定义流、子图流式。"
-tech_stack: [langgraph]
+tech_stack: [langgraph, backend]
 language: [python]
 ---
 

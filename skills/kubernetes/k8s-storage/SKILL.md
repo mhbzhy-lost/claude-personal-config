@@ -1,7 +1,7 @@
 ---
 name: k8s-storage
 description: "Kubernetes 存储：PV/PVC、StorageClass、动态供给与 StatefulSet 有状态存储"
-tech_stack: [kubernetes]
+tech_stack: [kubernetes, backend]
 ---
 
 # Kubernetes 存储

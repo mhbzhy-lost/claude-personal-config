@@ -1,7 +1,7 @@
 ---
 name: gitlab-ci
 description: "GitLab CI/CD API：Pipelines、Jobs、Variables、Triggers、Schedules 与 Components"
-tech_stack: [gitlab]
+tech_stack: [gitlab, backend]
 ---
 
 # GitLab CI/CD API

@@ -1,7 +1,7 @@
 ---
 name: ant-watermark
 description: "Ant Design Watermark 组件文档与用法。给页面的某个区域加上水印。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

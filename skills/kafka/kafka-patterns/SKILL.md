@@ -1,7 +1,7 @@
 ---
 name: kafka-patterns
 description: "Kafka 生产者/消费者模式、投递语义、再平衡策略、事务性消息与死信队列"
-tech_stack: [kafka]
+tech_stack: [kafka, backend]
 ---
 
 # Kafka 消息模式

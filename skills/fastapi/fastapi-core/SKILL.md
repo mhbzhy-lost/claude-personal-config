@@ -1,7 +1,7 @@
 ---
 name: fastapi-core
 description: "FastAPI 应用实例创建、项目结构组织、Uvicorn/FastAPI CLI 启动、lifespan 生命周期事件、配置管理（BaseSettings）"
-tech_stack: [fastapi]
+tech_stack: [fastapi, backend]
 language: [python]
 ---
 

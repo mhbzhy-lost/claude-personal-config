@@ -1,7 +1,7 @@
 ---
 name: redis-pubsub
 description: "Redis Pub/Sub 发布订阅、Streams 消费者组与消息队列选型对比"
-tech_stack: [redis]
+tech_stack: [redis, backend]
 ---
 
 # Redis 消息模型：Pub/Sub 与 Streams

@@ -1,7 +1,7 @@
 ---
 name: ant-icon
 description: "Ant Design Icon 组件文档与用法。Icon 组件使用指南。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

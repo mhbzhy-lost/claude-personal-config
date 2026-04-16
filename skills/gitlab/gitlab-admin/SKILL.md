@@ -1,7 +1,7 @@
 ---
 name: gitlab-admin
 description: "GitLab 管理 API：Users、Groups、Members、Webhooks、Audit Events 与应用设置"
-tech_stack: [gitlab]
+tech_stack: [gitlab, backend]
 ---
 
 # GitLab 管理 API

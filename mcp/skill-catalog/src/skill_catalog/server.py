@@ -4,11 +4,26 @@ from __future__ import annotations
 
 import os
 import sys
+import tomllib
+from pathlib import Path
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
 from .scanner import SkillCatalog
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_DEFAULT_CONFIG = _PROJECT_ROOT / "catalog.toml"
+
+
+def _load_config() -> dict:
+    """Load catalog.toml from env var or default project-root location."""
+    config_path = os.environ.get("SKILL_CATALOG_CONFIG", str(_DEFAULT_CONFIG))
+    path = Path(config_path)
+    if path.is_file():
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+    return {}
 
 
 def _load_catalog() -> SkillCatalog:
@@ -19,10 +34,22 @@ def _load_catalog() -> SkillCatalog:
             file=sys.stderr,
         )
         sys.exit(2)
-    catalog = SkillCatalog(library_path)
+
+    config = _load_config()
+    filter_cfg = config.get("filter", {})
+    ts_mode = filter_cfg.get("tech_stack_match_mode", "intersection")
+    lang_mode = filter_cfg.get("language_match_mode", "union")
+
+    catalog = SkillCatalog(
+        library_path,
+        tech_stack_match_mode=ts_mode,
+        language_match_mode=lang_mode,
+    )
     print(
         f"[skill-catalog] indexed {len(catalog.by_name)} skills across "
-        f"{len(catalog.by_tag)} tags from {library_path}",
+        f"{len(catalog.by_tag)} tags from {library_path} "
+        f"(tech_stack={catalog.tech_stack_match_mode}, "
+        f"language={catalog.language_match_mode})",
         file=sys.stderr,
     )
     return catalog

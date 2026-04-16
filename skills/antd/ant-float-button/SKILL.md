@@ -1,7 +1,7 @@
 ---
 name: ant-float-button
 description: "Ant Design FloatButton 组件文档与用法。悬浮于页面上方的按钮。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

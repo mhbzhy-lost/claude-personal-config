@@ -1,7 +1,7 @@
 ---
 name: phaser-runtime-watch
 description: "Phaser 3.90 游戏开发：Phaser Runtime：时序采样。 跑 N 毫秒，每隔一段时间采集一组表达式的值，返回时间序列。"
-tech_stack: [phaser]
+tech_stack: [phaser, frontend]
 language: [javascript, typescript]
 ---
 

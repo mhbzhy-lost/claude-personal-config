@@ -1,7 +1,7 @@
 ---
 name: gitlab-api-core
 description: "GitLab REST API v4 认证、分页、速率限制与 python-gitlab 基础用法"
-tech_stack: [gitlab]
+tech_stack: [gitlab, backend]
 ---
 
 # GitLab REST API v4 核心基础

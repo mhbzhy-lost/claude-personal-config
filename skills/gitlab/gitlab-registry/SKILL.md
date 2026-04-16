@@ -1,7 +1,7 @@
 ---
 name: gitlab-registry
 description: "GitLab Container Registry、Package Registry 与 Dependency Proxy API"
-tech_stack: [gitlab]
+tech_stack: [gitlab, backend]
 ---
 
 # GitLab Registry API

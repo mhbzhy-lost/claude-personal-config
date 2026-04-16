@@ -1,7 +1,7 @@
 ---
 name: elasticsearch-python
 description: "elasticsearch-py 与 elasticsearch-dsl-py 官方 Python 客户端：连接、CRUD、Bulk、分页、DSL 查询构建与异步客户端"
-tech_stack: [elasticsearch]
+tech_stack: [elasticsearch, backend]
 language: [python]
 ---
 

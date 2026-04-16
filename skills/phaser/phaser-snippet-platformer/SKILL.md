@@ -1,7 +1,7 @@
 ---
 name: phaser-snippet-platformer
 description: "Phaser 3.90 游戏开发：平台游戏（Arcade 物理 + Tilemap）。 两个独立可运行的 snippet：基础平台跳跃 + Tilemap 地图行走。"
-tech_stack: [phaser]
+tech_stack: [phaser, frontend]
 language: [javascript, typescript]
 ---
 

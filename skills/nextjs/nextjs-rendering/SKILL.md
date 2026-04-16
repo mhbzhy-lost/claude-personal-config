@@ -1,7 +1,7 @@
 ---
 name: nextjs-rendering
 description: "Next.js 15 渲染模式：SSG/SSR/ISR/PPR、段级 dynamic/revalidate/runtime 配置、generateStaticParams、generateMetadata。"
-tech_stack: [nextjs]
+tech_stack: [nextjs, react, frontend]
 language: [typescript]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: harmony-state-management
 description: "ArkUI 状态管理：@State/@Prop/@Link/@Provide/@Consume/@Observed/@ObjectLink 装饰器与数据流模式。"
-tech_stack: [harmonyos]
+tech_stack: [harmonyos, mobile-native]
 language: [arkts]
 ---
 

@@ -413,3 +413,120 @@ def test_list_skills_only_tech_stack_includes_agnostic(tmp_path: Path) -> None:
     assert "harmony-arkts" in names
     assert "harmony-cpp" in names
     assert "harmony-doc" in names  # agnostic included when no language constraint
+
+
+# ---------------------------------------------------------------------------
+# 22. tech_stack intersection (default): multi-tag query requires ALL tags
+# ---------------------------------------------------------------------------
+
+
+def test_ts_intersection_multi_tag_requires_all(tmp_path: Path) -> None:
+    write_skill(tmp_path, "compose-anim", "desc", ["compose", "android", "mobile-native"])
+    write_skill(tmp_path, "android-jni", "desc", ["android", "mobile-native"])
+    write_skill(tmp_path, "pure-compose", "desc", ["compose"])
+    catalog = SkillCatalog(tmp_path, tech_stack_match_mode="intersection")
+
+    result = catalog.list_skills(["compose", "android"])
+    names = [s["name"] for s in result["skills"]]
+    assert "compose-anim" in names      # has both compose & android
+    assert "android-jni" not in names   # missing compose
+    assert "pure-compose" not in names  # missing android
+
+
+def test_ts_intersection_single_tag_same_as_union(tmp_path: Path) -> None:
+    write_skill(tmp_path, "skill-react", "desc", ["react", "frontend"])
+    write_skill(tmp_path, "skill-vue", "desc", ["vue", "frontend"])
+    catalog = SkillCatalog(tmp_path, tech_stack_match_mode="intersection")
+
+    result = catalog.list_skills(["react"])
+    names = [s["name"] for s in result["skills"]]
+    assert "skill-react" in names
+    assert "skill-vue" not in names
+
+
+# ---------------------------------------------------------------------------
+# 23. tech_stack union: multi-tag query matches ANY tag
+# ---------------------------------------------------------------------------
+
+
+def test_ts_union_multi_tag_matches_any(tmp_path: Path) -> None:
+    write_skill(tmp_path, "compose-anim", "desc", ["compose", "android", "mobile-native"])
+    write_skill(tmp_path, "android-jni", "desc", ["android", "mobile-native"])
+    write_skill(tmp_path, "pure-compose", "desc", ["compose"])
+    write_skill(tmp_path, "react-btn", "desc", ["react", "frontend"])
+    catalog = SkillCatalog(tmp_path, tech_stack_match_mode="union")
+
+    result = catalog.list_skills(["compose", "android"])
+    names = [s["name"] for s in result["skills"]]
+    assert "compose-anim" in names     # has compose & android
+    assert "android-jni" in names      # has android
+    assert "pure-compose" in names     # has compose
+    assert "react-btn" not in names    # neither compose nor android
+
+
+# ---------------------------------------------------------------------------
+# 24. language union (default): multi-tag query matches ANY language
+# ---------------------------------------------------------------------------
+
+
+def test_lang_union_multi_tag_matches_any(tmp_path: Path) -> None:
+    write_skill(tmp_path, "jni-skill", "desc", ["android"], language=["java", "cpp"])
+    write_skill(tmp_path, "kotlin-skill", "desc", ["android"], language=["kotlin"])
+    # default: language_match_mode="union"
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["android"], language=["java", "kotlin"])
+    names = [s["name"] for s in result["skills"]]
+    assert "jni-skill" in names        # has java
+    assert "kotlin-skill" in names     # has kotlin
+
+
+# ---------------------------------------------------------------------------
+# 25. language intersection: multi-tag query requires ALL languages
+# ---------------------------------------------------------------------------
+
+
+def test_lang_intersection_multi_tag_requires_all(tmp_path: Path) -> None:
+    write_skill(tmp_path, "jni-skill", "desc", ["android"], language=["java", "cpp"])
+    write_skill(tmp_path, "kotlin-skill", "desc", ["android"], language=["kotlin"])
+    catalog = SkillCatalog(tmp_path, language_match_mode="intersection")
+
+    result = catalog.list_skills(["android"], language=["java", "cpp"])
+    names = [s["name"] for s in result["skills"]]
+    assert "jni-skill" in names        # has both java & cpp
+    assert "kotlin-skill" not in names # missing java & cpp
+
+
+# ---------------------------------------------------------------------------
+# 26. Independent control: ts=intersection + lang=union (default combo)
+# ---------------------------------------------------------------------------
+
+
+def test_independent_modes_default_combo(tmp_path: Path) -> None:
+    write_skill(tmp_path, "compose-anim", "desc", ["compose", "android"], language=["kotlin"])
+    write_skill(tmp_path, "android-jni", "desc", ["android"], language=["java", "cpp"])
+    write_skill(tmp_path, "compose-test", "desc", ["compose", "android"], language=["java"])
+    # default: tech_stack=intersection, language=union
+    catalog = SkillCatalog(tmp_path)
+
+    # tech_stack requires BOTH compose+android; language matches ANY of java/kotlin
+    result = catalog.list_skills(["compose", "android"], language=["java", "kotlin"])
+    names = [s["name"] for s in result["skills"]]
+    assert "compose-anim" in names     # ts: both ✓, lang: kotlin ✓
+    assert "compose-test" in names     # ts: both ✓, lang: java ✓
+    assert "android-jni" not in names  # ts: missing compose ✗
+
+
+# ---------------------------------------------------------------------------
+# 27. Invalid match_mode raises ValueError
+# ---------------------------------------------------------------------------
+
+
+def test_invalid_ts_match_mode_raises(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="tech_stack_match_mode"):
+        SkillCatalog(tmp_path, tech_stack_match_mode="invalid")
+
+
+def test_invalid_lang_match_mode_raises(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="language_match_mode"):
+        SkillCatalog(tmp_path, language_match_mode="invalid")

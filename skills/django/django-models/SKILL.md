@@ -1,7 +1,7 @@
 ---
 name: django-models
 description: "Django 模型定义、字段类型、Meta 选项、Manager、信号与数据库迁移"
-tech_stack: [django]
+tech_stack: [django, backend]
 language: [python]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: django-views
 description: "Django FBV 与 CBV、通用视图、Mixin 组合与视图装饰器"
-tech_stack: [django]
+tech_stack: [django, backend]
 language: [python]
 ---
 

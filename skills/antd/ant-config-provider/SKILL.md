@@ -1,7 +1,7 @@
 ---
 name: ant-config-provider
 description: "Ant Design ConfigProvider 组件文档与用法。为组件提供统一的全局化配置。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

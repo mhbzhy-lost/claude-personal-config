@@ -1,7 +1,7 @@
 ---
 name: android-native-advanced
 description: "Android 高级原生开发：第三方库交叉编译、NDK 预置库、ASan/HWASan、Prefab AAR 发布。"
-tech_stack: [android]
+tech_stack: [android, mobile-native]
 language: [cpp]
 ---
 

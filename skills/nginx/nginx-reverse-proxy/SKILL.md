@@ -1,7 +1,7 @@
 ---
 name: nginx-reverse-proxy
 description: "Nginx 反向代理与负载均衡：proxy_pass、upstream、负载算法、WebSocket 代理与缓冲超时配置"
-tech_stack: [nginx]
+tech_stack: [nginx, backend]
 ---
 
 # Nginx 反向代理与负载均衡

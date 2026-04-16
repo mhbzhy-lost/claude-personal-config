@@ -1,7 +1,7 @@
 ---
 name: ant-pagination
 description: "Ant Design Pagination 组件文档与用法。分页器用于分隔长列表，每次只加载一个页面。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

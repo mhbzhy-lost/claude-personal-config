@@ -1,7 +1,7 @@
 ---
 name: celery-scheduling
 description: "Celery Beat 定时调度：crontab/solar 表达式、django-celery-beat 数据库调度、动态增删定时任务。"
-tech_stack: [celery]
+tech_stack: [celery, backend]
 language: [python]
 ---
 

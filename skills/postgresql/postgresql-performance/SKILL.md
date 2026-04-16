@@ -1,7 +1,7 @@
 ---
 name: postgresql-performance
 description: "PostgreSQL 性能调优：EXPLAIN ANALYZE 解读、索引策略、连接池、VACUUM/ANALYZE、内存参数、慢查询排查。"
-tech_stack: [postgresql]
+tech_stack: [postgresql, backend]
 ---
 
 # PostgreSQL Performance（性能调优）

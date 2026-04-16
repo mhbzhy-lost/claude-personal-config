@@ -1,7 +1,7 @@
 ---
 name: ant-drawer
 description: "Ant Design Drawer 组件文档与用法。屏幕边缘滑出的浮层面板。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

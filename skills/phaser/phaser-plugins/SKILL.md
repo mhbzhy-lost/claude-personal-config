@@ -1,7 +1,7 @@
 ---
 name: phaser-plugins
 description: "Phaser 3.90 游戏开发：插件系统。 全局插件对所有 Scene 可用，适合跨场景共享功能（音频管理器、存档系统等）。"
-tech_stack: [phaser]
+tech_stack: [phaser, frontend]
 language: [javascript, typescript]
 ---
 

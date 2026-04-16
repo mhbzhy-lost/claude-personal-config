@@ -1,7 +1,7 @@
 ---
 name: k8s-core
 description: "Kubernetes 核心资源：Pod、Deployment、Service、Namespace、Label 与 kubectl 命令速查"
-tech_stack: [kubernetes]
+tech_stack: [kubernetes, backend]
 ---
 
 # Kubernetes 核心资源

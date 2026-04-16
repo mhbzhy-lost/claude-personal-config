@@ -1,7 +1,7 @@
 ---
 name: ant-checkbox
 description: "Ant Design Checkbox 组件文档与用法。收集用户的多项选择。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

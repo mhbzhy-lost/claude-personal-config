@@ -1,7 +1,7 @@
 ---
 name: phaser-animations
 description: "Phaser 3.90 游戏开发：动画系统（帧动画 + Tween）。 注意：优先用 duration（ms）而非 frameRate，因为 frameRate 受游戏帧率影响。"
-tech_stack: [phaser]
+tech_stack: [phaser, frontend]
 language: [javascript, typescript]
 ---
 

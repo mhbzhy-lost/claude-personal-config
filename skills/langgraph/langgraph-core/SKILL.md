@@ -1,7 +1,7 @@
 ---
 name: langgraph-core
 description: "LangGraph 核心图 API：StateGraph 构建、节点/边/条件边、编译与执行（invoke/stream）、Pregel 超步模型。"
-tech_stack: [langgraph]
+tech_stack: [langgraph, backend]
 language: [python]
 ---
 

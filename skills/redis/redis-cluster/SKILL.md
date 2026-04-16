@@ -1,7 +1,7 @@
 ---
 name: redis-cluster
 description: "Redis Cluster 架构、Sentinel 哨兵、主从复制、持久化策略与内存管理"
-tech_stack: [redis]
+tech_stack: [redis, backend]
 ---
 
 # Redis 高可用与运维

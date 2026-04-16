@@ -1,7 +1,7 @@
 ---
 name: docker-volumes
 description: "Docker 卷类型、数据持久化策略、备份恢复与 volume driver"
-tech_stack: [docker]
+tech_stack: [docker, backend]
 ---
 
 # Docker Volumes（数据持久化）

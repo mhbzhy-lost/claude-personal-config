@@ -1,7 +1,7 @@
 ---
 name: k8s-scaling
 description: "Kubernetes 弹性伸缩：HPA、VPA、资源管理、QoS 等级与配额控制"
-tech_stack: [kubernetes]
+tech_stack: [kubernetes, backend]
 ---
 
 # Kubernetes 弹性伸缩与资源管理

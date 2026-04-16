@@ -1,7 +1,7 @@
 ---
 name: compose-state
 description: "Compose 状态管理：remember/rememberSaveable/derivedStateOf/snapshotFlow/ViewModel StateFlow/状态提升。"
-tech_stack: [compose]
+tech_stack: [compose, android, mobile-native]
 language: [kotlin]
 ---
 

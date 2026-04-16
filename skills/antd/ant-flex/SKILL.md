@@ -1,7 +1,7 @@
 ---
 name: ant-flex
 description: "Ant Design Flex 组件文档与用法。用于对齐的弹性布局容器。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

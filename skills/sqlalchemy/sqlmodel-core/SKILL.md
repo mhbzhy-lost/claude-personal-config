@@ -1,7 +1,7 @@
 ---
 name: sqlmodel-core
 description: "SQLModel 模型定义、CRUD 操作与 FastAPI 集成"
-tech_stack: [sqlalchemy]
+tech_stack: [sqlalchemy, backend]
 language: [python]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: kafka-connect
 description: "Kafka Connect 架构、Source/Sink Connector、Standalone/Distributed 模式、SMT 与常用 Connector 配置"
-tech_stack: [kafka]
+tech_stack: [kafka, backend]
 ---
 
 # Kafka Connect

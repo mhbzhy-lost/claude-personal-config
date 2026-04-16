@@ -1,7 +1,7 @@
 ---
 name: langgraph-subgraph
 description: "LangGraph 子图：嵌套图组合、共享/独立状态模式、状态转换、checkpointer 继承、子图流式传输与状态访问。"
-tech_stack: [langgraph]
+tech_stack: [langgraph, backend]
 language: [python]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: ant-input-number
 description: "Ant Design InputNumber 组件文档与用法。通过鼠标或键盘，输入范围内的数值。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

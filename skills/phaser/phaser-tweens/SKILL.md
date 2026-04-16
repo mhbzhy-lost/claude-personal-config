@@ -1,7 +1,7 @@
 ---
 name: phaser-tweens
 description: "Phaser 3.90 游戏开发：Tweens（补间动画系统）。 不作用于游戏对象，单纯对数值做补间，适合颜色插值等场景。"
-tech_stack: [phaser]
+tech_stack: [phaser, frontend]
 language: [javascript, typescript]
 ---
 

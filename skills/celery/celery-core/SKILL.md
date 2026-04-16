@@ -1,7 +1,7 @@
 ---
 name: celery-core
 description: "Celery 应用创建、任务定义、Broker/Backend 配置、Worker 启动参数、任务序列化全流程。"
-tech_stack: [celery]
+tech_stack: [celery, backend]
 language: [python]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: k8s-helm
 description: "Helm 3 包管理：Chart 结构、模板语法、依赖管理、Hooks 与发布管理"
-tech_stack: [kubernetes]
+tech_stack: [kubernetes, backend]
 ---
 
 # Helm 3 包管理

@@ -1,7 +1,7 @@
 ---
 name: phaser-snippet-object-pool
 description: "Phaser 3.90 游戏开发：对象池（Object Pool）+ 子弹系统。 对象池避免频繁 new / 销毁对象带来的 GC 卡顿，是射击游戏的核心优化手段。"
-tech_stack: [phaser]
+tech_stack: [phaser, frontend]
 language: [javascript, typescript]
 ---
 

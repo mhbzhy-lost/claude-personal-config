@@ -1,7 +1,7 @@
 ---
 name: django-forms
 description: "Django Form/ModelForm、字段验证、Widget 定制、Formset 与文件上传"
-tech_stack: [django]
+tech_stack: [django, backend]
 language: [python]
 ---
 

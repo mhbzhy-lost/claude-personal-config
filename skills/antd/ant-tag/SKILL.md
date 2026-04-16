@@ -1,7 +1,7 @@
 ---
 name: ant-tag
 description: "Ant Design Tag 组件文档与用法。进行标记和分类的小标签。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

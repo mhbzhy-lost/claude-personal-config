@@ -1,7 +1,7 @@
 ---
 name: harmony-concurrency
 description: "HarmonyOS 并发模型：TaskPool/Worker 多线程、async/await、Sendable 线程安全、EventHub/Emitter。"
-tech_stack: [harmonyos]
+tech_stack: [harmonyos, mobile-native]
 language: [arkts]
 ---
 

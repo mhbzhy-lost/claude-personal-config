@@ -1,7 +1,7 @@
 ---
 name: nextjs-navigation
 description: "Next.js 15 导航 API：<Link>、useRouter、usePathname、useSearchParams、redirect/permanentRedirect、notFound。"
-tech_stack: [nextjs]
+tech_stack: [nextjs, react, frontend]
 language: [typescript]
 ---
 

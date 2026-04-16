@@ -1,7 +1,7 @@
 ---
 name: ant-switch
 description: "Ant Design Switch 组件文档与用法。使用开关切换两种状态之间。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

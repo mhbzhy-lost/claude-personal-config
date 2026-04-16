@@ -46,8 +46,26 @@ def _rewrite_relative_links(body: str, skill_dir: Path) -> str:
 class SkillCatalog:
     """In-memory index of all SKILL.md under a library root."""
 
-    def __init__(self, library_path: str | Path) -> None:
+    VALID_MATCH_MODES = ("intersection", "union")
+
+    def __init__(
+        self,
+        library_path: str | Path,
+        *,
+        tech_stack_match_mode: str = "intersection",
+        language_match_mode: str = "union",
+    ) -> None:
+        for label, mode in [
+            ("tech_stack_match_mode", tech_stack_match_mode),
+            ("language_match_mode", language_match_mode),
+        ]:
+            if mode not in self.VALID_MATCH_MODES:
+                raise ValueError(
+                    f"{label} must be one of {self.VALID_MATCH_MODES}, got {mode!r}"
+                )
         self.library = Path(library_path).resolve()
+        self.tech_stack_match_mode = tech_stack_match_mode
+        self.language_match_mode = language_match_mode
         self.by_name: dict[str, SkillRecord] = {}
         self.by_tag: dict[str, list[str]] = {}
         self._scan()
@@ -143,17 +161,29 @@ class SkillCatalog:
 
         if has_ts:
             ts_set = set(tech_stack)  # type: ignore[arg-type]
-            candidates = [
-                r for r in candidates
-                if ts_set.intersection(r.tech_stack)
-            ]
+            if self.tech_stack_match_mode == "intersection":
+                candidates = [
+                    r for r in candidates
+                    if ts_set.issubset(r.tech_stack)
+                ]
+            else:
+                candidates = [
+                    r for r in candidates
+                    if ts_set.intersection(r.tech_stack)
+                ]
 
         if has_lang:
             lang_set = set(language)  # type: ignore[arg-type]
-            candidates = [
-                r for r in candidates
-                if r.language and lang_set.intersection(r.language)
-            ]
+            if self.language_match_mode == "intersection":
+                candidates = [
+                    r for r in candidates
+                    if r.language and lang_set.issubset(r.language)
+                ]
+            else:
+                candidates = [
+                    r for r in candidates
+                    if r.language and lang_set.intersection(r.language)
+                ]
 
         candidates.sort(key=lambda r: r.name)
         return {

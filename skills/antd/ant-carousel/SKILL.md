@@ -1,7 +1,7 @@
 ---
 name: ant-carousel
 description: "Ant Design Carousel 组件文档与用法。- 当有一组平级的内容。 - 当内容空间不足时，可以用走马灯的形式进行收纳，进行轮播展现。 - 常用于一组图片或卡片轮播。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

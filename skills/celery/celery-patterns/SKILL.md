@@ -1,7 +1,7 @@
 ---
 name: celery-patterns
 description: "Celery Canvas 工作流原语：chain、group、chord、chunks、starmap、任务签名与不可变签名。"
-tech_stack: [celery]
+tech_stack: [celery, backend]
 language: [python]
 ---
 

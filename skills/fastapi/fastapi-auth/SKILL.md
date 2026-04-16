@@ -1,7 +1,7 @@
 ---
 name: fastapi-auth
 description: "OAuth2 密码流与 JWT Bearer token、密码哈希、API Key 认证、安全方案组合、当前用户依赖链"
-tech_stack: [fastapi]
+tech_stack: [fastapi, backend]
 language: [python]
 ---
 

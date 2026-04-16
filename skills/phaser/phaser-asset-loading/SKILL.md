@@ -1,7 +1,7 @@
 ---
 name: phaser-asset-loading
 description: "Phaser 3.90 游戏开发：资源加载系统。 Phaser Loader 是基于队列的异步加载系统："
-tech_stack: [phaser]
+tech_stack: [phaser, frontend]
 language: [javascript, typescript]
 ---
 

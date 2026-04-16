@@ -1,7 +1,7 @@
 ---
 name: phaser-core-scene
 description: "Phaser 3.90 游戏开发：游戏初始化与 Scene 系统。 生命周期顺序： init → preload → create → update（循环）"
-tech_stack: [phaser]
+tech_stack: [phaser, frontend]
 language: [javascript, typescript]
 ---
 

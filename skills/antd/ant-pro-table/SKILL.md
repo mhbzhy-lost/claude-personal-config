@@ -1,7 +1,7 @@
 ---
 name: ant-pro-table
 description: "ProTable 高级表格，内置搜索表单、工具栏、CRUD 操作、分页。"
-tech_stack: [antd]
+tech_stack: [antd, react, frontend]
 language: [typescript]
 ---
 

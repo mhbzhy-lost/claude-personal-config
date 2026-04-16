@@ -1,7 +1,7 @@
 ---
 name: harmony-arkui-layout
 description: "ArkUI 布局容器：Column/Row/Stack/Flex/Grid/List/WaterFlow/RelativeContainer、约束与安全区。"
-tech_stack: [harmonyos]
+tech_stack: [harmonyos, mobile-native]
 language: [arkts]
 ---
 

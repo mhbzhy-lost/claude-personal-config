@@ -1,7 +1,7 @@
 ---
 name: swiftui-uikit-interop
 description: "SwiftUI<>UIKit 互操作：UIViewRepresentable/UIViewControllerRepresentable/Coordinator/UIHostingController。"
-tech_stack: [swiftui]
+tech_stack: [swiftui, ios, mobile-native]
 language: [swift]
 ---
 

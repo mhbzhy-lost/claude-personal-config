@@ -1,7 +1,7 @@
 ---
 name: nginx-core
 description: "Nginx 核心配置：文件结构、指令继承、虚拟主机、静态文件服务、日志与命令行操作"
-tech_stack: [nginx]
+tech_stack: [nginx, backend]
 ---
 
 # Nginx 核心配置

@@ -1,7 +1,7 @@
 ---
 name: phaser-runtime-setup
 description: "Phaser 3.90 游戏开发：Phaser Runtime：环境检查与初始化。 check.py 按顺序跑 5 项检查，每项独立报告 ok/fail + 修复建议："
-tech_stack: [phaser]
+tech_stack: [phaser, frontend]
 language: [javascript, typescript]
 ---
 
