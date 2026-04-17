@@ -1,7 +1,7 @@
 ---
 name: stack-detector
 description: 根据 workspace 文件指纹和用户意图，输出当前任务涉及的技术栈 tag 列表。
-model: haiku
+model: sonnet
 tools: Glob, Read, Bash
 ---
 
