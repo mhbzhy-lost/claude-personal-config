@@ -1,7 +1,7 @@
 ---
 name: skill-fetcher
 description: 轻量级资源采集 agent，负责搜索并下载互联网技术文档/源码到本地临时目录，供 expert 蒸馏使用。
-model: haiku
+model: sonnet
 tools: Read, Glob, Grep, Bash, WebSearch, WebFetch
 ---
 

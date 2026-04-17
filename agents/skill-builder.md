@@ -2,7 +2,7 @@
 name: skill-builder
 description: Skill 蒸馏专家，将 skill-fetcher 采集的原始素材提炼为结构化 SKILL.md 知识包。
 model: opus
-thinking: low
+effort: low
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 

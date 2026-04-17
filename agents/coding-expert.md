@@ -2,7 +2,7 @@
 name: coding-expert
 description: Opus 驱动的开发专家，负责执行开发计划。并行分发编码子任务时必须使用本 agent。
 model: opus
-thinking: medium
+effort: medium
 tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch
 ---
 
