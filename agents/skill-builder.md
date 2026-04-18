@@ -12,17 +12,24 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 ## 执行流程
 
-### 第一步：确认素材
+### 第一步：确认预处理产物
 
-检查调用方指定的素材目录（通常为 `/tmp/skill-src/<lib-name>/`），确认素材已就绪。如目录不存在或为空，向调用方报告并终止。
+调用方会指定一个 `target_skill_name` 与 `material_dir`（通常为 `/tmp/skill-src/<lib>/<skill_name>/`）。**你只读 `material_dir/_processed/` 下的产物**，不读 material_dir 根目录的原始素材：
 
-### 第二步：分析原始内容
+- `_processed/SOURCE.md`：skill-preprocessor 产出的结构化精简素材，是你蒸馏的唯一输入
+- `_processed/_meta.json`：版本号、采集日期、语言提示等元数据
 
-读取采集文件，识别：
+如果 `_processed/` 缺失或 `SOURCE.md` 不存在，向调用方报告 `missing-preprocessor-output` 并终止。**不要回退去读原始素材**——这违反工作流契约，也会让蒸馏成本飙升。
+
+### 第二步：分析精简素材
+
+读取 `SOURCE.md` 与 `_meta.json`，识别：
 - 核心概念与设计哲学
 - 最高频的 API / 组件（80/20 原则）
 - 官方示例中的最佳实践
 - 已知陷阱、版本差异、破坏性变更
+
+版本号、collected_at、language 直接从 `_meta.json` 读取，无需自行解析。
 
 ### 第三步：生成 SKILL.md
 
@@ -111,18 +118,18 @@ collected_at: <YYYY-MM-DD>      # 必填，素材采集日期
 任何 SKILL.md 的 frontmatter 都必须包含 `version` 与 `collected_at` 两个字段，以便未来检索到此 skill 的 agent 能判断知识是否过期。**这两个字段缺一不可**。
 
 **version 字段取值**（按先后取第一个能确定的来源）：
-1. 素材目录 `_manifest.md` 中显式写明的版本号
-2. 采集到的 `package.json` / `pyproject.toml` / `Cargo.toml` / `go.mod` 等清单文件
-3. 下载的 GitHub release tag 或 `CHANGELOG.md` 最顶部条目
-4. 官方文档页面上的版本标识（如 "Claude Code v2.1.111"、"MCP 2025-06-18"）
-5. 以上都无法确定时，写 `"<产品名> unversioned"` 并在"未覆盖"汇报段说明
+1. `_processed/_meta.json` 中 `version` 字段（preprocessor 已从 manifest/html-meta/body 提取）
+2. `SOURCE.md` 正文中显式的版本标识（如 "Claude Code v2.1.111"、"MCP 2025-06-18"）
+3. 仍无法确定时，写 `"<产品名> unversioned"` 并在"未覆盖"汇报段说明
+
+**禁止**回退读取 `material_dir` 根目录的原始素材来找版本号——如果 preprocessor 没提取到，大概率原文也没有，宁可标 unversioned。
 
 **跨组件 skill**：若覆盖多个组件（如 SDK + 内置 CLI、Web SDK + Native SDK），用 `;` 分隔并列列出全部关键版本，例如：
 ```yaml
 version: "claude-agent-sdk 0.1.61; claude-code-cli 2.1.112"
 ```
 
-**collected_at 字段取值**：素材的实际采集日期（以 `skill-fetcher` 下载那一刻为准），格式 `YYYY-MM-DD`。
+**collected_at 字段取值**：直接取 `_meta.json` 的 `collected_at`，格式 `YYYY-MM-DD`。
 
 **禁止**：
 - 省略 `version` 或 `collected_at` 字段

@@ -71,13 +71,22 @@
 
 # Skill 蒸馏工作流
 
-蒸馏新 skill 时，按以下三阶段执行：
+蒸馏新 skill 时，按以下五阶段**严格顺序**执行：
 
-1. **采集**：调用 `skill-fetcher` agent 执行下载。**注意：skill-fetcher 推理能力有限，主模型必须在 prompt 中明确列出需要采集的资源清单**（官方文档 URL、GitHub repo 地址、需要关注的子页面/模块等），skill-fetcher 仅负责按清单执行搜索和下载，不应依赖其自主判断采集范围
-2. **蒸馏**：采集完成后，调用 `skill-builder` agent，传入素材目录路径，由其分析素材并生成结构化 SKILL.md。**skill-builder 不产出 `capability` 字段**，该字段由下一阶段 marker 追加
-3. **打标**：蒸馏完成后，调用 `skill-marker` agent，传入新生成的 skill 目录路径，由其对照 `~/.claude/guidelines/capability-taxonomy.md` 闭集为每个 SKILL.md 的 frontmatter 追加 `capability: [...]`。taxonomy 内容由 SubagentStart hook 自动注入 skill-marker 的上下文
+1. **规划**：调用 `source-planner` agent，输入 `tech_stack + scope + constraints`。该 agent 会查现有 skill 库去重、WebSearch 官方权威源、输出结构化 `sources[] + skip[] + notes`。**主 agent 不得跳过本阶段**——即使已知 URL 清单也要走 planner 做去重与权威性核对
+2. **采集**：把 planner 的 JSON 输出直接传给 `skill-fetcher` agent，按清单下载到 `/tmp/skill-src/<tech_stack>/<skill_name>/`，每个目录附带 `_manifest.md`。skill-fetcher **不再接受**自由格式的"目标技术 + 重点方向"输入
+3. **预处理**：对每个产出了素材的 skill 目录，调用 `skill-preprocessor` agent。**保守模式**——只去噪（删 HTML 残留 / 导航 / 重复段落）、按固定模板归档合并，**不改写原文表述**。输出到 `<skill_dir>/_processed/SOURCE.md + _meta.json`
+4. **蒸馏**：调用 `skill-builder` agent，传入 `target_skill_name + material_dir`。builder **只读** `_processed/` 下的产物，禁止回退读原始素材。frontmatter 不产出 `capability`
+5. **打标**：调用 `skill-marker` agent，为 SKILL.md 追加 `capability: [...]`。taxonomy 由 SubagentStart hook 自动注入
 
-批量蒸馏多个 skill 时，可并行启动多组 skill-fetcher；所有采集完成后，再并行启动对应的 skill-builder；builder 全部完成后统一调用一次 skill-marker（批量模式）完成打标。
+**批量蒸馏**：
+- 同一 planner 调用可产出多个 skill 的 sources
+- fetcher 支持单次处理多 skill（按 target_skill_name 分组落盘）
+- preprocessor 按 skill 粒度独立跑，可并行
+- builder 按 skill 粒度独立跑，可并行
+- marker 最后一次性批量模式收尾
+
+**增量采集**：planner 的 `scope.mode=incremental` 配合 `skip_collected_within` 可自动跳过新鲜度未过期的 skill，避免重复蒸馏。
 
 ---
 
