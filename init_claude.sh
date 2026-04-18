@@ -84,15 +84,39 @@ from pathlib import Path
 src_root = sys.argv[1]
 settings_path = Path(sys.argv[2])
 
-desired_hook = {
-    "matcher": "stack-detector",
-    "hooks": [
-        {
-            "type": "command",
-            "command": f"{src_root}/hooks/stack-list-inject.sh",
-        }
-    ],
-}
+# SubagentStart 需要的全部 hook：
+#   stack-detector → 注入 stack-list，供 source-planner 等 agent 参考
+#   skill-marker   → 注入 capability-taxonomy 闭集，供打标使用
+#   skill-matcher  → 同上，供候选筛选使用
+desired_sub_start_hooks = [
+    {
+        "matcher": "stack-detector",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/hooks/stack-list-inject.sh",
+            }
+        ],
+    },
+    {
+        "matcher": "skill-marker",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/hooks/capability-taxonomy-inject.sh",
+            }
+        ],
+    },
+    {
+        "matcher": "skill-matcher",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/hooks/capability-taxonomy-inject.sh",
+            }
+        ],
+    },
+]
 
 # 读现有 settings（不存在则从空对象起手）
 if settings_path.exists():
@@ -106,22 +130,24 @@ else:
 
 changed = False
 
-# 合并 hooks.SubagentStart
+# 合并 hooks.SubagentStart：按 matcher upsert，不动其他 matcher 的条目
 hooks = data.setdefault("hooks", {})
 sub_start = hooks.setdefault("SubagentStart", [])
-found_idx = None
-for i, entry in enumerate(sub_start):
-    if isinstance(entry, dict) and entry.get("matcher") == "stack-detector":
-        found_idx = i
-        break
-if found_idx is None:
-    sub_start.append(desired_hook)
-    changed = True
-    print(f"[settings] 新增 hooks.SubagentStart[matcher=stack-detector]")
-elif sub_start[found_idx] != desired_hook:
-    sub_start[found_idx] = desired_hook
-    changed = True
-    print(f"[settings] 更新 hooks.SubagentStart[matcher=stack-detector]")
+for desired in desired_sub_start_hooks:
+    matcher = desired["matcher"]
+    found_idx = None
+    for i, entry in enumerate(sub_start):
+        if isinstance(entry, dict) and entry.get("matcher") == matcher:
+            found_idx = i
+            break
+    if found_idx is None:
+        sub_start.append(desired)
+        changed = True
+        print(f"[settings] 新增 hooks.SubagentStart[matcher={matcher}]")
+    elif sub_start[found_idx] != desired:
+        sub_start[found_idx] = desired
+        changed = True
+        print(f"[settings] 更新 hooks.SubagentStart[matcher={matcher}]")
 
 # 清理残留：移除 settings.json 中的 mcpServers（已迁移到 claude mcp add）
 if "mcpServers" in data:
