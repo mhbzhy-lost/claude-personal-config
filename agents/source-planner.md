@@ -69,20 +69,61 @@ language: ["typescript"]           # 可选：语言约束
 
 按 `components` 列表精准规划，每项对应一个 skill。若列表中的某项在 MCP 已存在且 `collected_at` 在 `skip_collected_within` 天内，计入 `skip`。
 
-### 4. 每个 source 生成结构化条目
+### 4. Source 聚合（必须尝试）
 
-对计划采集的每个 source，输出：
+**每个 target_skill_name 应主动聚合 2–4 个互补 source**，而不是一对一映射 URL。目的是给 skill-preprocessor 提供多源去重素材，让后续 builder 的输入被真正压缩。
+
+**默认聚合候选**（无需 WebFetch 评估重叠，按模式匹配）：
+
+| 主 source 类型 | 候选补充 source |
+|---------------|----------------|
+| 组件/API 主文档页 | 同主题的 CHANGELOG 相关章节（WebFetch 整页，由下游 preprocessor 过滤），同主题的官方 blog 公告，github 上的 type/schema 定义文件 |
+| 概念/指南类文档 | CHANGELOG 中该概念引入或变更的条目，官方 migration guide 相关段落 |
+| 源码 repo | 主 README，加上同一 repo 下的 type 定义（如 `index.d.ts`）、`examples/` 中的最小示例 |
+
+**禁止聚合**的情况（直接保持单 source）：
+
+- 主 source 自身 `estimated_tokens > 30000` → 已足够大，继续聚合会超 builder 单次预算
+- 主 source 属"小闭合主题"（如 preflight、dark-mode 这种自成一页的短文档）且官方无配套 blog/changelog 条目
+- 找不到任何满足语义相关的候选 → 就一个 URL，老老实实标 1-source
+- 候选 source 与主 source 内容重叠率预计 < 30%（如完全不同视角的 community 教程）→ 该候选应作为独立 skill 或直接丢弃
+
+**聚合上限**：
+
+- 每个 target_skill_name 最多 **4** 个 source
+- 超过 4 个的候选按 priority 排序，末位计入 `notes` 字段作为"suggested_extensions"，不进 sources 数组
+- 聚合时必须保证所有 source 的 `estimated_tokens` 总和 ≤ 40000（避免 preprocessor 单次输入爆炸）
+
+**重叠度判定**（仅在候选来源语义不确定时启用）：
+
+- 用 `WebFetch` 预取候选 source 的前 1–2K 字符
+- 与主 source 的首段做主题词对比
+- 共现核心术语（如组件名、API 名、关键概念）≥ 3 个 → 可聚合
+- 否则不聚合，候选作为独立 skill 或丢弃
+
+**Fetcher 行为**：同一 target_skill_name 下的多个 source 会被 fetcher 按序保存为 `source-01.md`、`source-02.md`…，preprocessor 会在归档阶段做跨源去重。
+
+### 5. 每个 source 条目的结构化输出
+
+每条 source 独立一条记录（即便多条共享 target_skill_name），字段如下：
 
 ```json
 {
   "type": "docs | repo | changelog | issue",
   "url": "https://...",
   "target_skill_name": "ant-select",
-  "reason": "官方组件文档主页",
+  "reason": "官方组件文档主页 / CHANGELOG 5.12 关于 Select 的条目 / github 类型定义",
   "priority": "high | medium | low",
-  "estimated_tokens": 3000
+  "estimated_tokens": 3000,
+  "role": "primary | complement"
 }
 ```
+
+`role` 字段（新增，强制）：
+- `primary`：本 skill 的主文档，每个 target_skill_name **有且仅有一条** `primary`
+- `complement`：补充 source，与 primary 共享同一 target_skill_name
+
+如果某 skill 只有 1 个 source，它的 `role` 必须是 `primary`。
 
 **target_skill_name 命名规则**：
 - 延续该 tech_stack 已有 skill 的命名风格（例如 antd 用 `ant-xxx`、django 用 `django-xxx`、fastapi 用 `fastapi-xxx`）
@@ -99,7 +140,7 @@ language: ["typescript"]           # 可选：语言约束
 - 小于 2K → 500–2000；中等 → 2000–8000；大型 → 8000–20000
 - 无法判断时写 `"unknown"`
 
-### 5. 构造 skip 清单
+### 6. 构造 skip 清单
 
 对第 1 步中已有且满足以下任一条件的 skill，计入 `skip`：
 
@@ -113,7 +154,7 @@ language: ["typescript"]           # 可选：语言约束
 {"skill_name": "ant-button", "reason": "collected_at=2026-03-12, 距今 37 天, 小于阈值 90"}
 ```
 
-### 6. 严格输出 JSON
+### 7. 严格输出 JSON
 
 不加 markdown 代码块，直接输出裸 JSON：
 
@@ -126,15 +167,25 @@ language: ["typescript"]           # 可选：语言约束
       "type": "docs",
       "url": "https://ant.design/components/select-cn",
       "target_skill_name": "ant-select",
-      "reason": "官方组件文档",
+      "reason": "官方组件文档主页",
       "priority": "high",
-      "estimated_tokens": 3500
+      "estimated_tokens": 3500,
+      "role": "primary"
+    },
+    {
+      "type": "changelog",
+      "url": "https://github.com/ant-design/ant-design/blob/master/CHANGELOG.en-US.md",
+      "target_skill_name": "ant-select",
+      "reason": "CHANGELOG 中 Select 组件 5.10–5.12 的变更条目",
+      "priority": "medium",
+      "estimated_tokens": 2000,
+      "role": "complement"
     }
   ],
   "skip": [
     {"skill_name": "ant-button", "reason": "新鲜度在阈值内"}
   ],
-  "notes": "CHANGELOG 显示 5.12 新增 Masonry 组件，已加入 sources。DatePicker 5.11 有 breaking change，priority 上调至 high。"
+  "notes": "CHANGELOG 显示 5.12 新增 Masonry 组件，已加入 sources。DatePicker 5.11 有 breaking change，priority 上调至 high。suggested_extensions: Select 的 antd-pro 用例文档（https://...），暂未纳入以控制 source 数量。"
 }
 ```
 
@@ -148,6 +199,9 @@ language: ["typescript"]           # 可选：语言约束
 4. **不允许输出 markdown / 自然语言说明**：只输出 JSON 对象
 5. **passthrough 模式禁用**：主 agent 直接给 URL 清单也必须走本流程核对（避免绕过去重）
 6. **WebSearch 查询必须包含 "official docs" / "官方文档" 关键词**：降低命中社区文章的概率
+7. **每个 target_skill_name 必须有且仅有一条 `role=primary`**：多 primary 或无 primary 都视为 schema 错误
+8. **禁止为聚合而聚合**：若补充 source 重叠率不足或主题不匹配，保持单 source，不要为了"凑数"强拉 complement
+9. **单 skill 的 sources 总 estimated_tokens ≤ 40000**：超出则拒绝聚合，候选拆成独立 skill 或丢弃
 
 ---
 
@@ -175,33 +229,44 @@ constraints:
   skip_collected_within: 60
 ```
 
-**本 agent 输出**：
+**本 agent 输出**（注意 lifespan skill 聚合了 3 个互补 source）：
 ```json
 {
   "tech_stack": "fastapi",
   "mode": "incremental",
   "sources": [
     {
-      "type": "changelog",
-      "url": "https://github.com/tiangolo/fastapi/blob/master/docs/en/docs/release-notes.md",
-      "target_skill_name": "fastapi-release-0.110",
-      "reason": "0.110 版本发布说明，含 lifespan 改造",
-      "priority": "high",
-      "estimated_tokens": 6000
-    },
-    {
       "type": "docs",
       "url": "https://fastapi.tiangolo.com/advanced/events/",
       "target_skill_name": "fastapi-lifespan",
-      "reason": "lifespan 事件官方用法，0.110 breaking change 相关",
+      "reason": "lifespan 事件官方用法主文档",
       "priority": "high",
-      "estimated_tokens": 2500
+      "estimated_tokens": 2500,
+      "role": "primary"
+    },
+    {
+      "type": "changelog",
+      "url": "https://github.com/tiangolo/fastapi/blob/master/docs/en/docs/release-notes.md",
+      "target_skill_name": "fastapi-lifespan",
+      "reason": "0.110 CHANGELOG 中关于 lifespan 的 breaking change 条目（preprocessor 将做跨源去重）",
+      "priority": "high",
+      "estimated_tokens": 6000,
+      "role": "complement"
+    },
+    {
+      "type": "docs",
+      "url": "https://fastapi.tiangolo.com/advanced/events/migration/",
+      "target_skill_name": "fastapi-lifespan",
+      "reason": "0.110 startup/shutdown 事件迁移指南",
+      "priority": "medium",
+      "estimated_tokens": 1500,
+      "role": "complement"
     }
   ],
   "skip": [
     {"skill_name": "fastapi-auth", "reason": "collected_at=2026-03-20, 距今 29 天, 且 CHANGELOG 0.110 无 auth 相关变更"},
     {"skill_name": "fastapi-routing", "reason": "collected_at=2026-03-15, 距今 34 天, 小于阈值 60"}
   ],
-  "notes": "0.110 主要变更集中于 lifespan 与 websockets；既有 fastapi-websockets skill 未覆盖新 API，已加入 sources。"
+  "notes": "0.110 主要变更集中于 lifespan 与 websockets；lifespan 聚合了 primary docs + CHANGELOG 相关条目 + migration 段落共 3 source 以最大化 preprocessor 去重空间。suggested_extensions: websockets 新 API 文档（https://...），独立为 fastapi-websockets-v0110 skill 而非聚合到 lifespan（主题不同）。"
 }
 ```
