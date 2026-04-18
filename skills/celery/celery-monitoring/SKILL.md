@@ -3,6 +3,7 @@ name: celery-monitoring
 description: "Celery 监控与可靠性：Flower 面板、事件信号、自动重试/退避、任务超时、死信队列、inspect/control 命令。"
 tech_stack: [celery, backend]
 language: [python]
+capability: [task-scheduler, observability]
 ---
 
 # Celery Monitoring（监控与可靠性）

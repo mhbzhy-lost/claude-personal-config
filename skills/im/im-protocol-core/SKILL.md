@@ -2,6 +2,7 @@
 name: im-protocol-core
 description: "即时通讯（IM）系统公共协议层：C/S 架构模型、消息/会话类型定义、Socket 事件协议、数据库 Schema、消息可靠性策略、安全模式、群聊分发策略。语言无关，供前后端实现层引用。"
 tech_stack: [im]
+capability: [realtime-messaging, websocket]
 ---
 
 # IM 公共协议层（语言无关）

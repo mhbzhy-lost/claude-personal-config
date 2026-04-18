@@ -2,6 +2,7 @@
 name: elasticsearch-operations
 description: "Elasticsearch 运维管理：集群监控、分片策略、索引生命周期、模板管理、性能调优与备份恢复"
 tech_stack: [elasticsearch, backend]
+capability: [search-engine, observability]
 ---
 
 # Elasticsearch 运维与管理

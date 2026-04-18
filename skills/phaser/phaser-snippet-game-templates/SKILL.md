@@ -3,6 +3,7 @@ name: phaser-snippet-game-templates
 description: "Phaser 3.90 游戏开发：完整小游戏模板。 两个经典游戏的完整实现，每个代表一类通用游戏模式，可直接作为脚手架。"
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-rendering, game-physics, game-input]
 ---
 
 # Phaser：完整小游戏模板

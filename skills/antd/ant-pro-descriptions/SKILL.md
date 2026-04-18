@@ -3,6 +3,7 @@ name: ant-pro-descriptions
 description: "ProDescriptions 高级描述列表，支持可编辑模式、请求加载、自定义渲染。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-display, ui-form]
 ---
 
 # ProDescriptions（高级描述列表）

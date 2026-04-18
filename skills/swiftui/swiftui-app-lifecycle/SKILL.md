@@ -3,6 +3,7 @@ name: swiftui-app-lifecycle
 description: "SwiftUI App 生命周期：@main/Scene/scenePhase/AppDelegate 适配/深度链接/Widget/推送通知。"
 tech_stack: [swiftui, ios, mobile-native]
 language: [swift]
+capability: [native-lifecycle, push-notification, routing]
 ---
 
 # SwiftUI App 生命周期与系统集成

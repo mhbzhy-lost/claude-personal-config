@@ -3,6 +3,7 @@ name: ant-pro-form
 description: "ProForm 高级表单，内置字段类型、布局、ModalForm/DrawerForm/StepsForm。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-form, form-validation, ui-overlay]
 ---
 
 # ProForm（高级表单）

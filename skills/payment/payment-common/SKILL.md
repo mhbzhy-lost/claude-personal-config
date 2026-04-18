@@ -2,6 +2,7 @@
 name: payment-common
 description: "支付领域技能套件总览：支付网关架构、支付宝/微信支付/银联集成、iOS/Android/鸿蒙客户端、IAP 应用内购买。"
 tech_stack: [payment, backend]
+capability: [payment-gateway]
 ---
 
 # 支付领域技能套件总览

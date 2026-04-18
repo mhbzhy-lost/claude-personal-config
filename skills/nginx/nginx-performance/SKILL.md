@@ -2,6 +2,7 @@
 name: nginx-performance
 description: "Nginx 性能优化：Gzip/Brotli 压缩、proxy_cache 缓存、worker 调优、keepalive 与限流配置"
 tech_stack: [nginx, backend]
+capability: [reverse-proxy]
 ---
 
 # Nginx 性能优化

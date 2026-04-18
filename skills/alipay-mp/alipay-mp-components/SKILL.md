@@ -3,6 +3,7 @@ name: alipay-mp-components
 description: "支付宝小程序内置组件：视图容器、基础内容、表单、导航、媒体、地图、画布、开放组件。"
 tech_stack: [alipay-miniprogram]
 language: [javascript]
+capability: [ui-display, ui-input, ui-form, ui-overlay, native-device]
 ---
 
 # 支付宝小程序内置组件

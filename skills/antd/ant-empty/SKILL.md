@@ -3,6 +3,7 @@ name: ant-empty
 description: "Ant Design Empty 组件文档与用法。空状态时的展示占位图。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-feedback]
 ---
 
 # Empty（空状态）

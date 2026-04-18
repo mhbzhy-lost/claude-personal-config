@@ -3,6 +3,7 @@ name: kafka-python
 description: "confluent-kafka-python 客户端：Producer/Consumer/AdminClient/序列化与 Schema Registry"
 tech_stack: [kafka, backend]
 language: [python]
+capability: [message-queue]
 ---
 
 # Kafka Python 客户端

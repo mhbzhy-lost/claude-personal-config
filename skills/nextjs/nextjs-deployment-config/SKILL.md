@@ -3,6 +3,7 @@ name: nextjs-deployment-config
 description: "Next.js 15 部署与配置：next.config.ts、环境变量、standalone 输出、Vercel 与自托管、图像优化。"
 tech_stack: [nextjs, react, frontend]
 language: [typescript]
+capability: [web-framework, container]
 ---
 
 # 部署与配置（Next.js 15）

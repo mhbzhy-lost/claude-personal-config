@@ -3,6 +3,7 @@ name: alipay-notifications
 description: "支付宝异步通知：支付/退款回调验签、通知参数解析、幂等处理、HTTP 端点实现（Spring Boot/FastAPI）。"
 tech_stack: [payment, alipay, backend]
 language: [java, python]
+capability: [payment-gateway]
 ---
 
 # 支付宝异步通知处理

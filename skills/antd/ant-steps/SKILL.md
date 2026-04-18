@@ -3,6 +3,7 @@ name: ant-steps
 description: "Ant Design Steps 组件文档与用法。引导用户按照流程完成任务的导航条。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-navigation]
 ---
 
 # Steps（步骤条）

@@ -3,6 +3,7 @@ name: ant-typography
 description: "Ant Design Typography 组件文档与用法。- 当需要展示标题、段落、列表内容时使用，如文章/博客/日志的文本样式。 - 当需要一列基于文本的基础操作时，如拷贝/省略/可编辑。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-display]
 ---
 
 # Typography（排版）

@@ -3,6 +3,7 @@ name: react-player
 description: "React 多源视频/音频播放器组件，支持 YouTube/Vimeo/Mux/HLS/DASH/本地文件等，v3 为当前主版本。"
 tech_stack: [react, frontend]
 language: [typescript, javascript]
+capability: [media-processing]
 ---
 
 # ReactPlayer（多源媒体播放器）

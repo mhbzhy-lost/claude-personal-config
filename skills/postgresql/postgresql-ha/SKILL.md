@@ -2,6 +2,7 @@
 name: postgresql-ha
 description: "PostgreSQL 高可用：流复制、逻辑复制、pg_basebackup 备份、PITR 时间点恢复、Patroni/repmgr 方案。"
 tech_stack: [postgresql, backend]
+capability: [relational-db, orchestration]
 ---
 
 # PostgreSQL HA（高可用与灾备）

@@ -3,6 +3,7 @@ name: nextjs-caching
 description: "Next.js 15 缓存架构：四层缓存机制（请求记忆化/数据缓存/全路由缓存/路由器缓存）、缓存配置与失效策略、use cache 指令、调试与关闭方法。"
 tech_stack: [nextjs, react, frontend]
 language: [typescript]
+capability: [data-fetching]
 ---
 
 # Next.js 缓存架构

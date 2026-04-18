@@ -3,6 +3,7 @@ name: nextjs-auth-patterns
 description: "Next.js 15 鉴权集成模式：Auth.js v5 (NextAuth) 配置、session 在 RSC 中读取、受保护路由、中间件网关。"
 tech_stack: [nextjs, react, frontend]
 language: [typescript]
+capability: [auth, routing]
 ---
 
 # Next.js 鉴权模式

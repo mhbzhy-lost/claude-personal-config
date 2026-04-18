@@ -3,6 +3,7 @@ name: python-im-server
 description: "IM 系统 Python 后端实现层：FastAPI REST API + python-socketio 实时通信 + SQLAlchemy ORM + Redis Pub/Sub。协议定义见 im-protocol-core。"
 tech_stack: [fastapi, python-socketio, im, backend, redis, postgresql]
 language: [python]
+capability: [realtime-messaging, websocket, api-design, orm]
 ---
 
 # IM Python 后端实现层

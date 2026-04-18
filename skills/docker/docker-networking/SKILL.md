@@ -2,6 +2,7 @@
 name: docker-networking
 description: "Docker 网络模式、自定义网络、DNS 服务发现与容器间通信"
 tech_stack: [docker, backend]
+capability: [container, orchestration]
 ---
 
 # Docker Networking（容器网络）

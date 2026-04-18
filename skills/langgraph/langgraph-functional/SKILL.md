@@ -3,6 +3,7 @@ name: langgraph-functional
 description: "LangGraph 函数式 API：@entrypoint、@task 装饰器与 entrypoint.final 用法"
 tech_stack: [langgraph, backend]
 language: [python]
+capability: [agent-orchestration]
 ---
 
 # Functional API（函数式 API）

@@ -3,6 +3,7 @@ name: alipay-apis
 description: "支付宝支付 API：统一收单（APP/当面付/手机网站/电脑网站）、订单查询、关闭、退款与退款查询。"
 tech_stack: [payment, alipay, backend]
 language: [java, python]
+capability: [payment-gateway]
 ---
 
 # 支付宝统一收单 API

@@ -3,6 +3,7 @@ name: phaser-input
 description: "Phaser 3.90 游戏开发：输入系统。 Phaser 将鼠标和触控统一抽象为 Pointer，代码无需区分平台。"
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-input]
 ---
 
 # Phaser：输入系统

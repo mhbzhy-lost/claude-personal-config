@@ -3,6 +3,7 @@ name: ant-masonry
 description: "Ant Design Masonry 组件文档与用法。- 展示不规则高度的图片或卡片时 - 需要按照列数均匀分布内容时 - 需要响应式调整列数时。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-layout, ui-display]
 ---
 
 # Masonry（瀑布流）

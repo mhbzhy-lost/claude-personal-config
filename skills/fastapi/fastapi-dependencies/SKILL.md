@@ -3,6 +3,7 @@ name: fastapi-dependencies
 description: "依赖注入系统、Depends 函数/类依赖、yield 依赖（数据库会话等）、子依赖链、作用域控制、全局依赖"
 tech_stack: [fastapi, backend]
 language: [python]
+capability: [web-framework]
 ---
 
 # FastAPI Dependencies -- 依赖注入系统

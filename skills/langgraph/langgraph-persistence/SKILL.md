@@ -3,6 +3,7 @@ name: langgraph-persistence
 description: "LangGraph 持久化：Checkpointer 体系（InMemory/Sqlite/Postgres）、线程配置、状态快照与时间旅行、Store 长期记忆。"
 tech_stack: [langgraph, backend]
 language: [python]
+capability: [agent-orchestration, state-management]
 ---
 
 # LangGraph 持久化

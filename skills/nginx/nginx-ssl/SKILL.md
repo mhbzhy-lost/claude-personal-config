@@ -2,6 +2,7 @@
 name: nginx-ssl
 description: "Nginx SSL/TLS 配置：证书部署、Let's Encrypt 集成、HTTPS 重定向、HSTS、OCSP Stapling 与 HTTP/2"
 tech_stack: [nginx, backend]
+capability: [reverse-proxy, encryption]
 ---
 
 # Nginx SSL/TLS 配置

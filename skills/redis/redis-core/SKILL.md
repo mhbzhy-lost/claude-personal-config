@@ -2,6 +2,7 @@
 name: redis-core
 description: "Redis 五种基本数据结构、命令速查、过期策略、键空间通知与关键配置"
 tech_stack: [redis, backend]
+capability: [key-value-store]
 ---
 
 # Redis 核心数据结构与基础操作

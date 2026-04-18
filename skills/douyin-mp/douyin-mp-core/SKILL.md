@@ -3,6 +3,7 @@ name: douyin-mp-core
 description: "抖音小程序框架核心：项目结构、TTML/TTSS、生命周期、自定义组件、路由、与微信差异。"
 tech_stack: [douyin-miniprogram]
 language: [javascript]
+capability: [native-lifecycle, routing, native-navigation]
 ---
 
 # 抖音小程序 Core（框架骨架与约定）

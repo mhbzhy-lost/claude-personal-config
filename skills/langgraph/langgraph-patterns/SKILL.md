@@ -3,6 +3,7 @@ name: langgraph-patterns
 description: "LangGraph 常用模式：RetryPolicy、CachePolicy、错误处理、配置、调试与递归限制。"
 tech_stack: [langgraph, backend]
 language: [python]
+capability: [agent-orchestration]
 ---
 
 # LangGraph Patterns（常用模式与最佳实践）

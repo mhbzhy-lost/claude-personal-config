@@ -3,6 +3,7 @@ name: phaser-fx
 description: "Phaser 3.90 游戏开发：FX 视觉特效系统。 Phaser FX 系统为任意 GameObject 添加 Post-Processing 视觉效果，无需修改贴图。"
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-rendering]
 ---
 
 # Phaser：FX 视觉特效系统

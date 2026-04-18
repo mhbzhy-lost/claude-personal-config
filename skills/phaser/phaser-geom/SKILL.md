@@ -3,6 +3,7 @@ name: phaser-geom
 description: "Phaser 3.90 游戏开发：几何图形与碰撞检测。 最常用，碰撞盒、视口、区域判断首选。"
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-rendering, game-physics]
 ---
 
 # Phaser：几何图形与碰撞检测

@@ -3,6 +3,7 @@ name: wechat-pay-onboarding
 description: "微信支付 V3 接入：商户配置四要素、APIv3 签名机制、平台证书管理、SDK 初始化（Java/Python）。"
 tech_stack: [payment, wechat-pay, backend]
 language: [java, python]
+capability: [payment-gateway]
 ---
 
 # 微信支付 APIv3 接入指南

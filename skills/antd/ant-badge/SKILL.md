@@ -3,6 +3,7 @@ name: ant-badge
 description: "Ant Design Badge 组件文档与用法。图标右上角的圆形徽标数字。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-display]
 ---
 
 # Badge（徽标数）

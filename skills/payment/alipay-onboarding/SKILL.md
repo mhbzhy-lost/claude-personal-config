@@ -3,6 +3,7 @@ name: alipay-onboarding
 description: "支付宝开放平台接入：应用创建、密钥配置（公钥证书模式）、SDK 初始化（Java/Python）、沙箱环境。"
 tech_stack: [payment, alipay, backend]
 language: [java, python]
+capability: [payment-gateway]
 ---
 
 # 支付宝开放平台接入

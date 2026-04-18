@@ -3,6 +3,7 @@ name: payment-ios-sdk
 description: "iOS 支付 SDK 接入：支付宝/微信支付/银联三方 SDK 集成与调起、Apple Pay PassKit 集成。"
 tech_stack: [payment, ios, mobile-native]
 language: [swift]
+capability: [payment-gateway, native-device]
 ---
 
 # iOS 三方支付 SDK 接入

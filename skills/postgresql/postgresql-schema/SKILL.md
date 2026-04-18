@@ -2,6 +2,7 @@
 name: postgresql-schema
 description: "PostgreSQL 表设计、约束体系、索引类型（B-tree/GIN/GiST/BRIN）、声明式分区表、表空间管理。"
 tech_stack: [postgresql, backend]
+capability: [relational-db]
 ---
 
 # PostgreSQL Schema（表设计与索引）

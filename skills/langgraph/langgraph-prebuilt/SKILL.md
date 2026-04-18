@@ -3,6 +3,7 @@ name: langgraph-prebuilt
 description: "LangGraph 预置组件：create_react_agent、ToolNode、tools_condition 及 create_agent 迁移"
 tech_stack: [langgraph, backend]
 language: [python]
+capability: [agent-orchestration, tool-calling]
 ---
 
 # Prebuilt（预置组件）

@@ -3,6 +3,7 @@ name: harmony-data-persistence
 description: "HarmonyOS 数据持久化：Preferences(KV)、RelationalStore(关系型)、文件管理、DataShare。"
 tech_stack: [harmonyos, mobile-native]
 language: [arkts]
+capability: [local-storage, key-value-store, relational-db]
 ---
 
 # HarmonyOS 数据持久化

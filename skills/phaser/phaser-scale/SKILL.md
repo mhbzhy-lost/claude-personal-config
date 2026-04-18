@@ -3,6 +3,7 @@ name: phaser-scale
 description: "Phaser 3.90 游戏开发：ScaleManager（屏幕缩放适配）。"
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-rendering]
 ---
 
 # Phaser：ScaleManager（屏幕缩放适配）

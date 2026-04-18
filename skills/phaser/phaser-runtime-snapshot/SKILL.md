@@ -3,6 +3,7 @@ name: phaser-runtime-snapshot
 description: "Phaser 3.90 游戏开发：Phaser Runtime：Scene 截图。 跑一段 Scene 代码，截一帧 PNG，返回图片路径 + 场景元信息。"
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-rendering]
 ---
 
 # Phaser Runtime：Scene 截图

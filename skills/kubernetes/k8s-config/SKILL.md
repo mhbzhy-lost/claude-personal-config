@@ -2,6 +2,7 @@
 name: k8s-config
 description: "Kubernetes 配置管理：ConfigMap、Secret、环境变量注入与 Volume 挂载"
 tech_stack: [kubernetes, backend]
+capability: [orchestration]
 ---
 
 # Kubernetes 配置管理

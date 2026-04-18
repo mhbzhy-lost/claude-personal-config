@@ -3,6 +3,7 @@ name: wechat-pay-apis
 description: "微信支付下单 API：JSAPI/APP/Native/H5/小程序支付，统一下单、调起支付、查询、关闭与退款。"
 tech_stack: [payment, wechat-pay, backend]
 language: [java, python]
+capability: [payment-gateway]
 ---
 
 # 微信支付下单 API（V3）

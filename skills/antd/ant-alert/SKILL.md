@@ -3,6 +3,7 @@ name: ant-alert
 description: "Ant Design Alert 组件文档与用法。警告提示，展现需要关注的信息。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-feedback]
 ---
 
 # Alert（警告提示）

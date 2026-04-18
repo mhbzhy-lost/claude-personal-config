@@ -3,6 +3,7 @@ name: payment-ios-iap
 description: "iOS 应用内购买：StoreKit 2 商品查询/购买/交易管理、订阅生命周期、App Store Server API v2 验签与通知。"
 tech_stack: [payment, ios, mobile-native]
 language: [swift]
+capability: [payment-gateway, native-device]
 ---
 
 # iOS 应用内购买（StoreKit 2 + App Store Server API v2）

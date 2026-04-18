@@ -3,6 +3,7 @@ name: nextjs-server-actions
 description: "Next.js 15 Server Actions：定义、表单集成、useActionState/useFormStatus、校验、重定向、权限。"
 tech_stack: [nextjs, react, frontend]
 language: [typescript]
+capability: [web-framework, form-validation]
 ---
 
 # Server Actions（Next.js 15）

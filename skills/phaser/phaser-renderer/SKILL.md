@@ -3,6 +3,7 @@ name: phaser-renderer
 description: "Phaser 3.90 游戏开发：渲染器（Renderer）。 Phaser 支持两种渲染器，通过 type 配置选择："
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-rendering]
 ---
 
 # Phaser：渲染器（Renderer）

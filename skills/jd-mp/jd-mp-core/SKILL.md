@@ -3,6 +3,7 @@ name: jd-mp-core
 description: "京东小程序框架核心：项目结构、JXML/JXSS/JDS、生命周期、自定义组件、路由、与微信差异。"
 tech_stack: [jd-miniprogram]
 language: [javascript]
+capability: [native-lifecycle, routing, native-navigation]
 ---
 
 # 京东小程序 Core（项目骨架与核心约定）

@@ -2,6 +2,7 @@
 name: gitlab-ci
 description: "GitLab CI/CD API：Pipelines、Jobs、Variables、Triggers、Schedules 与 Components"
 tech_stack: [gitlab, backend]
+capability: [ci-cd, task-scheduler]
 ---
 
 # GitLab CI/CD API

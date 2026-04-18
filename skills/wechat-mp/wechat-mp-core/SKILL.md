@@ -3,6 +3,7 @@ name: wechat-mp-core
 description: "微信小程序框架核心：项目结构、配置、WXML/WXSS/WXS、事件系统、生命周期、自定义组件、路由。"
 tech_stack: [wechat-miniprogram]
 language: [javascript]
+capability: [native-lifecycle, native-navigation, ui-layout, ui-action]
 ---
 
 # 微信小程序框架核心（Core）

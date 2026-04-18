@@ -3,6 +3,7 @@ name: ant-affix
 description: "Ant Design Affix 组件文档与用法。将页面元素钉在可视范围。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-layout]
 ---
 
 # Affix（固钉）

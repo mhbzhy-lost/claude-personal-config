@@ -3,6 +3,7 @@ name: ant-pro-layout
 description: "ProLayout 中后台整体布局框架，含侧边导航、顶部 Header、PageContainer 页面容器。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-layout, ui-navigation]
 ---
 
 # ProLayout（中后台布局框架）

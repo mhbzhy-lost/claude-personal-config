@@ -3,6 +3,7 @@ name: ant-pro-table
 description: "ProTable 高级表格，内置搜索表单、工具栏、CRUD 操作、分页。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-display, ui-form, ui-feedback]
 ---
 
 # ProTable（高级数据表格）

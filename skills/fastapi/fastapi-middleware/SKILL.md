@@ -3,6 +3,7 @@ name: fastapi-middleware
 description: "中间件机制、CORS 配置、GZip/TrustedHost/HTTPS 中间件、自定义中间件、异常处理器"
 tech_stack: [fastapi, backend]
 language: [python]
+capability: [web-framework, observability]
 ---
 
 # FastAPI Middleware -- 中间件与异常处理

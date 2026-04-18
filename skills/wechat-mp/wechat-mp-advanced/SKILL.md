@@ -3,6 +3,7 @@ name: wechat-mp-advanced
 description: "微信小程序高级特性：分包加载、Skyline 渲染引擎、性能优化、插件、Worker、自定义 tabBar。"
 tech_stack: [wechat-miniprogram]
 language: [javascript]
+capability: [native-lifecycle, native-navigation, media-processing]
 ---
 
 # 微信小程序高级特性（Subpackage / Skyline / Worker / 性能）

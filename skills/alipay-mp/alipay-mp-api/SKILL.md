@@ -3,6 +3,7 @@ name: alipay-mp-api
 description: "支付宝小程序平台 API：网络、缓存、界面、路由、媒体、位置、设备、开放能力（支付/芝麻/花呗）。"
 tech_stack: [alipay-miniprogram]
 language: [javascript]
+capability: [http-client, local-storage, routing, native-device, payment-gateway]
 ---
 
 # 支付宝小程序 API（my.* 平台能力）

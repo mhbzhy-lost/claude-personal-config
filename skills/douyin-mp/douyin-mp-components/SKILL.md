@@ -3,6 +3,7 @@ name: douyin-mp-components
 description: "抖音小程序内置组件：视图容器、基础内容、表单、媒体、地图、画布、开放能力（含抖音特有）。"
 tech_stack: [douyin-miniprogram]
 language: [javascript]
+capability: [ui-display, ui-input, ui-form, ui-overlay, native-device]
 ---
 
 # 抖音小程序内置组件（Components）

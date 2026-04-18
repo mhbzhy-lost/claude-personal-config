@@ -3,6 +3,7 @@ name: redis-python
 description: "redis-py 客户端连接管理、Pipeline、事务、异步客户端与序列化策略"
 tech_stack: [redis, backend]
 language: [python]
+capability: [key-value-store]
 ---
 
 # Redis Python 客户端（redis-py）

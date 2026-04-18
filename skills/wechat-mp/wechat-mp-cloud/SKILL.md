@@ -3,6 +3,7 @@ name: wechat-mp-cloud
 description: "微信小程序云开发：云函数、云数据库（CRUD/聚合/实时推送/安全规则）、云存储、云托管。"
 tech_stack: [wechat-miniprogram, wechat-cloud]
 language: [javascript]
+capability: [web-framework, object-storage, task-scheduler, realtime-messaging]
 ---
 
 # 微信小程序云开发（全栈）

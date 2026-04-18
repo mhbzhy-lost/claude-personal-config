@@ -3,6 +3,7 @@ name: ant-form
 description: "Ant Design Form 组件文档与用法。高性能表单控件，自带数据域管理。包含数据录入、校验以及对应样式。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-form, form-validation]
 ---
 
 # Form（表单）

@@ -2,6 +2,7 @@
 name: docker-compose
 description: "Docker Compose V2 服务编排：compose.yaml 语法、多环境配置与常用命令"
 tech_stack: [docker, backend]
+capability: [container, orchestration]
 ---
 
 # Docker Compose（服务编排）

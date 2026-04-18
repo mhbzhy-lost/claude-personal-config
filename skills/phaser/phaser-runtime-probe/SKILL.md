@@ -3,6 +3,7 @@ name: phaser-runtime-probe
 description: "Phaser 3.90 游戏开发：Phaser Runtime：表达式求值。 在一个已激活的 Scene 上求值一个或多个 JS 表达式，把静态代码里看不见的运行时真相拿出来。"
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-rendering]
 ---
 
 # Phaser Runtime：表达式求值

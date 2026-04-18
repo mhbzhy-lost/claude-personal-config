@@ -3,6 +3,7 @@ name: wechat-mp-components
 description: "微信小程序内置组件：视图容器、基础内容、表单、导航、媒体、地图、画布、开放能力组件。"
 tech_stack: [wechat-miniprogram]
 language: [javascript]
+capability: [ui-layout, ui-form, ui-input, ui-navigation, media-processing]
 ---
 
 # 微信小程序内置组件（30 个）

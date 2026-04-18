@@ -3,6 +3,7 @@ name: nextjs-optimization
 description: "Next.js 15 性能优化：脚本加载策略、动态导入与懒加载、Bundle 分析、Instrumentation、Web Vitals 监控、Turbopack。"
 tech_stack: [nextjs, react, frontend]
 language: [typescript]
+capability: [observability]
 ---
 
 # Next.js 性能优化

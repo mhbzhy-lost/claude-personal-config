@@ -3,6 +3,7 @@ name: uni-app-core
 description: "uni-app 跨平台框架：Vue3 语法、条件编译、pages.json、组件、API、跨平台适配。"
 tech_stack: [uni-app, wechat-miniprogram, alipay-miniprogram, douyin-miniprogram, jd-miniprogram]
 language: [javascript, typescript]
+capability: [routing, native-lifecycle, native-navigation]
 ---
 
 # uni-app Core（跨平台应用骨架与心智模型）

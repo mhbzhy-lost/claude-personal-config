@@ -3,6 +3,7 @@ name: payment-harmony-sdk
 description: "鸿蒙支付接入：华为 IAP Kit/Payment Kit、支付宝/微信鸿蒙适配、ArkWeb H5 降级方案。"
 tech_stack: [payment, harmonyos, mobile-native]
 language: [arkts]
+capability: [payment-gateway, native-device]
 ---
 
 # 鸿蒙支付接入指南

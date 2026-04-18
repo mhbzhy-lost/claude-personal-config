@@ -3,6 +3,7 @@ name: compose-animation
 description: "Compose 动画：animateAsState/AnimatedVisibility/AnimatedContent/SharedTransition/updateTransition/Animatable。"
 tech_stack: [compose, android, mobile-native]
 language: [kotlin]
+capability: [ui-display]
 ---
 
 # Jetpack Compose 动画

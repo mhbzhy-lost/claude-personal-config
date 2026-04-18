@@ -3,6 +3,7 @@ name: ant-tour
 description: "Ant Design Tour 组件文档与用法。用于分步引导用户了解产品功能的气泡组件。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-overlay, ui-feedback]
 ---
 
 # Tour（漫游式引导）

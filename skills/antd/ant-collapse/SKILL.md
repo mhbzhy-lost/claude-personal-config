@@ -3,6 +3,7 @@ name: ant-collapse
 description: "Ant Design Collapse 组件文档与用法。可以折叠/展开的内容区域。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-display, ui-layout]
 ---
 
 # Collapse（折叠面板）

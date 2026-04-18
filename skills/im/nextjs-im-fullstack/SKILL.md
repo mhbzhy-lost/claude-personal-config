@@ -3,6 +3,7 @@ name: nextjs-im-fullstack
 description: "IM 系统 Next.js 全栈实现：Custom Server 集成 Socket.IO、Route Handlers REST API、Prisma ORM、RSC/Client Component 分层、前后端类型共享。协议定义见 im-protocol-core。"
 tech_stack: [nextjs, react, socketio, im, prisma]
 language: [typescript]
+capability: [realtime-messaging, websocket, api-design, orm]
 ---
 
 # Next.js 全栈 IM 系统实现

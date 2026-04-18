@@ -3,6 +3,7 @@ name: ant-progress
 description: "Ant Design Progress 组件文档与用法。展示操作的当前进度。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-feedback]
 ---
 
 # Progress（进度条）

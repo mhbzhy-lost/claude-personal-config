@@ -2,6 +2,7 @@
 name: postgresql-core
 description: "PostgreSQL 安装配置、核心数据类型、psql 命令行工具、认证与连接配置、关键服务器参数。"
 tech_stack: [postgresql, backend]
+capability: [relational-db]
 ---
 
 # PostgreSQL Core（安装配置与数据类型）

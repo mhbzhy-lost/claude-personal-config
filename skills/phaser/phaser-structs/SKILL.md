@@ -3,6 +3,7 @@ name: phaser-structs
 description: "Phaser 3.90 游戏开发：数据结构（Structs）。 Phaser.Structs 提供游戏开发中常用的内部数据结构，通常不需要直接使用，但理解它们有助于扩展 Phaser 或编写插件。"
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-rendering]
 ---
 
 # Phaser：数据结构（Structs）

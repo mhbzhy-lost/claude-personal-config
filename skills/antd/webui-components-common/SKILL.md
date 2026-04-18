@@ -3,6 +3,7 @@ name: webui-components-common
 description: "Web UI 套件总览（React + antd）。同时满足以下条件时启用本套件："
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-layout, ui-display]
 ---
 
 # Web UI 组件套件（Ant Design）

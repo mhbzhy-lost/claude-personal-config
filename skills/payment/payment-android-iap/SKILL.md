@@ -3,6 +3,7 @@ name: payment-android-iap
 description: "Android 应用内购买：Google Play Billing Library 商品查询/购买/确认、订阅管理、服务端验证与 RTDN。"
 tech_stack: [payment, android, mobile-native]
 language: [kotlin]
+capability: [payment-gateway, native-device]
 ---
 
 # Android 应用内购买（Google Play Billing Library）

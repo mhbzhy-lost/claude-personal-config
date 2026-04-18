@@ -2,6 +2,7 @@
 name: elasticsearch-core
 description: "Elasticsearch 核心概念：集群架构、索引管理、文档 CRUD、映射定义、字段类型与分析器"
 tech_stack: [elasticsearch, backend]
+capability: [search-engine]
 ---
 
 # Elasticsearch 核心概念

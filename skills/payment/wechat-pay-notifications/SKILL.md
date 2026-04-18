@@ -3,6 +3,7 @@ name: wechat-pay-notifications
 description: "微信支付回调通知：签名验证、AES-256-GCM 资源解密、支付/退款通知处理、HTTP 端点实现。"
 tech_stack: [payment, wechat-pay, backend]
 language: [java, python]
+capability: [payment-gateway, encryption]
 ---
 
 # 微信支付回调通知处理（V3）

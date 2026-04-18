@@ -3,6 +3,7 @@ name: django-drf
 description: "Django REST Framework：Serializer、ViewSet、Router、权限、分页、过滤与限流"
 tech_stack: [django, backend]
 language: [python]
+capability: [api-design, web-framework]
 ---
 
 # Django DRF（REST Framework）

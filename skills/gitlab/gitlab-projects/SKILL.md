@@ -2,6 +2,7 @@
 name: gitlab-projects
 description: "GitLab Projects API：项目管理、仓库文件、分支/Tag、Commits 与 Merge Requests 完整指南"
 tech_stack: [gitlab, backend]
+capability: [ci-cd, api-design]
 ---
 
 # GitLab Projects API

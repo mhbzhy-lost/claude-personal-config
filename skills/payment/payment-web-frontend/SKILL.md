@@ -3,6 +3,7 @@ name: payment-web-frontend
 description: "Web 前端支付接入：支付宝/微信支付/银联的 PC 网页、H5、JSAPI 支付集成与结果处理。"
 tech_stack: [payment, frontend]
 language: [javascript, typescript]
+capability: [payment-gateway, ui-action]
 ---
 
 # Web 前端支付接入

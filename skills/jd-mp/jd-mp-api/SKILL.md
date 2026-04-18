@@ -3,6 +3,7 @@ name: jd-mp-api
 description: "京东小程序平台 API：网络、缓存、界面、路由、媒体、位置、设备、开放能力（京东登录/支付/电商）。"
 tech_stack: [jd-miniprogram]
 language: [javascript]
+capability: [http-client, local-storage, routing, native-device, payment-gateway]
 ---
 
 # 京东小程序 API（jd.* 运行时能力）

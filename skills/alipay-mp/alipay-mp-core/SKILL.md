@@ -3,6 +3,7 @@ name: alipay-mp-core
 description: "支付宝小程序框架核心：项目结构、AXML/ACSS/SJS、生命周期、自定义组件、路由、与微信差异。"
 tech_stack: [alipay-miniprogram]
 language: [javascript]
+capability: [native-lifecycle, routing, native-navigation]
 ---
 
 # 支付宝小程序核心框架

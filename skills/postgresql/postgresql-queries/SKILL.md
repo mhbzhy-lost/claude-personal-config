@@ -2,6 +2,7 @@
 name: postgresql-queries
 description: "PostgreSQL 高级查询：CTE/递归CTE、窗口函数、LATERAL JOIN、UPSERT、批量操作。"
 tech_stack: [postgresql, backend]
+capability: [relational-db]
 ---
 
 # PostgreSQL Queries（高级查询技巧）

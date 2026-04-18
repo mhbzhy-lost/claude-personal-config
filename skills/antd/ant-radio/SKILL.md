@@ -3,6 +3,7 @@ name: ant-radio
 description: "Ant Design Radio 组件文档与用法。用于在多个备选项中选中单个状态。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-input]
 ---
 
 # Radio（单选框）

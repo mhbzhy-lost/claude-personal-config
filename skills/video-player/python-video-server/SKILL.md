@@ -3,6 +3,7 @@ name: python-video-server
 description: "Python Web 服务端视频处理与分发方案：涵盖 FastAPI/Django 视频流、FFmpeg 转码、分片上传、Celery 异步任务、Nginx 分发、安全防盗链。"
 tech_stack: [fastapi, django, backend]
 language: [python]
+capability: [media-processing, file-upload, task-scheduler]
 ---
 
 # Python 服务端视频处理与分发

@@ -2,6 +2,7 @@
 name: payment-gateway
 description: "支付网关架构：订单状态机、幂等性设计、订单号分配策略、超时处理、统一下单抽象层。"
 tech_stack: [payment, backend]
+capability: [payment-gateway]
 ---
 
 # 支付网关核心架构

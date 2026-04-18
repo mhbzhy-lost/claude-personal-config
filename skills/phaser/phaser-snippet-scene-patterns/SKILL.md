@@ -3,6 +3,7 @@ name: phaser-snippet-scene-patterns
 description: "Phaser 3.90 游戏开发：场景管理模式。 5 种高频场景协作模式，覆盖数据共享、UI 分层、场景切换三大类问题。"
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-rendering, state-management]
 ---
 
 # Phaser：场景管理模式

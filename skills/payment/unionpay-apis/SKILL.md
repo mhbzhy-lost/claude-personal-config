@@ -3,6 +3,7 @@ name: unionpay-apis
 description: "银联支付 API：网关支付、无跳转支付、手机控件支付、二维码支付、交易查询与退货。"
 tech_stack: [payment, unionpay, backend]
 language: [java]
+capability: [payment-gateway]
 ---
 
 # 银联在线支付 API

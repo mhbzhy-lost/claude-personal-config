@@ -2,6 +2,7 @@
 name: payment-resilience
 description: "支付容错：弱网/断网处理、订单补单机制、幂等重试策略、离线缓存、支付结果最终一致性。"
 tech_stack: [payment, backend]
+capability: [payment-gateway]
 ---
 
 # 支付容错与弱网处理

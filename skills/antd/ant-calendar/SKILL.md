@@ -3,6 +3,7 @@ name: ant-calendar
 description: "Ant Design Calendar 组件文档与用法。按照日历形式展示数据的容器。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-display, ui-input]
 ---
 
 # Calendar（日历）

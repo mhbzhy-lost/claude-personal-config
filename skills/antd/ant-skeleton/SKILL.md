@@ -3,6 +3,7 @@ name: ant-skeleton
 description: "Ant Design Skeleton 组件文档与用法。在需要等待加载内容的位置提供一个占位图形组合。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-feedback]
 ---
 
 # Skeleton（骨架屏）

@@ -3,6 +3,7 @@ name: next-video
 description: "next-video v2.x：Next.js 视频优化组件，类 next/image 体验，自动转码、自适应码率、海报图生成，支持 Mux/S3/R2/Vercel Blob 等多后端。"
 tech_stack: [nextjs, react, frontend]
 language: [typescript]
+capability: [media-processing]
 ---
 
 # next-video（Next.js 视频优化组件）

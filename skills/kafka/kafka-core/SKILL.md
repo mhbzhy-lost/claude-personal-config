@@ -2,6 +2,7 @@
 name: kafka-core
 description: "Kafka 核心架构概念、消息模型、日志存储、Consumer Group、KRaft 模式与 CLI 工具"
 tech_stack: [kafka, backend]
+capability: [message-queue, stream-processing]
 ---
 
 # Kafka 核心架构

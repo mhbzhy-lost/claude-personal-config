@@ -3,6 +3,7 @@ name: ant-result
 description: "Ant Design Result 组件文档与用法。用于反馈一系列操作任务的处理结果。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-feedback]
 ---
 
 # Result（结果）

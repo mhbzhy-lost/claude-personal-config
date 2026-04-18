@@ -3,6 +3,7 @@ name: nextjs-route-handlers
 description: "Next.js 15 Route Handlers（app/api/.../route.ts）：HTTP 方法导出、Request/Response、动态 vs 静态、流式响应、runtime 选择。"
 tech_stack: [nextjs, react, frontend]
 language: [typescript]
+capability: [web-framework, api-design]
 ---
 
 # Route Handlers（Next.js 15）

@@ -2,6 +2,7 @@
 name: elasticsearch-aggregations
 description: "Elasticsearch 聚合框架：桶聚合、指标聚合、管道聚合、复合聚合与嵌套组合"
 tech_stack: [elasticsearch, backend]
+capability: [search-engine]
 ---
 
 # Elasticsearch 聚合框架

@@ -3,6 +3,7 @@ name: taro-core
 description: "Taro 跨平台小程序框架：React/Vue 语法、多端适配、条件编译、路由、组件、API、插件、CLI。"
 tech_stack: [taro, wechat-miniprogram, alipay-miniprogram, douyin-miniprogram, jd-miniprogram]
 language: [typescript, javascript]
+capability: [routing, native-lifecycle, native-navigation]
 ---
 
 # Taro 跨平台小程序框架（核心知识）

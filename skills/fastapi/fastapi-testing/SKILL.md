@@ -3,6 +3,7 @@ name: fastapi-testing
 description: "TestClient（httpx）同步测试、pytest fixtures、异步测试（AsyncClient）、dependency_overrides 依赖覆盖、WebSocket 测试"
 tech_stack: [fastapi, backend]
 language: [python]
+capability: [integration-testing, unit-testing]
 ---
 
 # FastAPI Testing -- 测试体系

@@ -2,6 +2,7 @@
 name: redis-patterns
 description: "Redis 常见设计模式：缓存策略、分布式锁、限流、排行榜、计数器与会话存储"
 tech_stack: [redis, backend]
+capability: [key-value-store, task-scheduler]
 ---
 
 # Redis 设计模式

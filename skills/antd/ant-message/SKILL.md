@@ -3,6 +3,7 @@ name: ant-message
 description: "Ant Design Message 组件文档与用法。全局展示操作反馈信息。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-feedback]
 ---
 
 # Message（全局提示）

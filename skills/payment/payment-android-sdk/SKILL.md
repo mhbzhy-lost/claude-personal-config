@@ -3,6 +3,7 @@ name: payment-android-sdk
 description: "Android 支付 SDK 接入：支付宝/微信支付/银联三方 SDK 集成、调起支付与回调处理。"
 tech_stack: [payment, android, mobile-native]
 language: [kotlin, java]
+capability: [payment-gateway, native-device]
 ---
 
 # Android 三方支付 SDK 接入（支付宝/微信支付/银联）

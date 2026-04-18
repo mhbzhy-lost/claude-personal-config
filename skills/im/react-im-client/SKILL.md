@@ -3,6 +3,7 @@ name: react-im-client
 description: "React 前端 IM 实现层：基于 Socket.IO + Zustand + Axios 构建即时通讯客户端的 Hooks、Store、UI 组件。协议定义引用 im-protocol-core。"
 tech_stack: [react, socketio, im, frontend]
 language: [typescript]
+capability: [realtime-messaging, websocket, state-management]
 ---
 
 # React IM 客户端实现指南

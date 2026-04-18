@@ -2,6 +2,7 @@
 name: docker-core
 description: "Dockerfile 指令、多阶段构建、镜像层缓存优化与 BuildKit 特性"
 tech_stack: [docker, backend]
+capability: [container]
 ---
 
 # Dockerfile 核心（镜像构建）

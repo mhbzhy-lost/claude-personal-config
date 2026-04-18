@@ -3,6 +3,7 @@ name: douyin-mp-api
 description: "抖音小程序平台 API：网络、缓存、界面、路由、媒体、位置、设备、开放能力（支付/直播/电商/短视频）。"
 tech_stack: [douyin-miniprogram]
 language: [javascript]
+capability: [http-client, local-storage, routing, native-device, payment-gateway]
 ---
 
 # 抖音小程序平台 API（tt.* 系列）

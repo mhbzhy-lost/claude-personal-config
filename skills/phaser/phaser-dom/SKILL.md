@@ -3,6 +3,7 @@ name: phaser-dom
 description: "Phaser 3.90 游戏开发：DOM 工具与 DOMElement。 DOMElement 允许在游戏 Canvas 上叠加真实 HTML 元素，适合游戏内表单、富文本 UI 等。"
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-rendering]
 ---
 
 # Phaser：DOM 工具与 DOMElement

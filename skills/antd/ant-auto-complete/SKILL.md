@@ -3,6 +3,7 @@ name: ant-auto-complete
 description: "Ant Design AutoComplete 组件文档与用法。输入框自动完成功能。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-input, ui-overlay]
 ---
 
 # AutoComplete（自动完成）

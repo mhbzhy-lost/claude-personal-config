@@ -2,6 +2,7 @@
 name: payment-reconciliation
 description: "支付对账与清算：日终对账流程、账单下载与解析、差异处理、退款流水、资金结算、账务模型。"
 tech_stack: [payment, backend]
+capability: [payment-reconcile]
 ---
 
 # 支付对账与清算

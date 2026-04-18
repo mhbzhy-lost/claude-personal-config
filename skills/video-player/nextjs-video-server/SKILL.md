@@ -3,6 +3,7 @@ name: nextjs-video-server
 description: "Next.js 服务端视频处理全栈方案：Route Handler 视频流、Mux 服务端 API、上传处理、HLS 转码、后台任务队列、部署架构选型。"
 tech_stack: [nextjs, frontend]
 language: [typescript]
+capability: [media-processing, file-upload, task-scheduler]
 ---
 
 # Next.js 服务端视频处理（后端方案）

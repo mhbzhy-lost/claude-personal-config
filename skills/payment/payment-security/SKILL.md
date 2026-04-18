@@ -2,6 +2,7 @@
 name: payment-security
 description: "支付安全：RSA/RSA2 签名验签、证书管理与轮换、API 密钥安全、PCI DSS 基础、防重放攻击。"
 tech_stack: [payment, backend]
+capability: [payment-gateway, encryption]
 ---
 
 # 支付安全与签名机制

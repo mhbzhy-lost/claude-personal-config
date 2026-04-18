@@ -3,6 +3,7 @@ name: nextjs-middleware
 description: "Next.js 15 middleware.ts：matcher、NextResponse、Edge 运行时限制、鉴权网关、重写、A/B。"
 tech_stack: [nextjs, react, frontend]
 language: [typescript]
+capability: [routing, auth]
 ---
 
 # Middleware（Next.js 15）

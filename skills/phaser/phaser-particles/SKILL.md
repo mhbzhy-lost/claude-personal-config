@@ -3,6 +3,7 @@ name: phaser-particles
 description: "Phaser 3.90 游戏开发：粒子系统。 粒子属性支持多种值类型，Phaser 会在粒子生命周期中自动插值。"
 tech_stack: [phaser, frontend]
 language: [javascript, typescript]
+capability: [game-rendering]
 ---
 
 # Phaser：粒子系统

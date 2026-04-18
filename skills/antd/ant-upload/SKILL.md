@@ -3,6 +3,7 @@ name: ant-upload
 description: "Ant Design Upload 组件文档与用法。文件选择上传和拖拽上传控件。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [file-upload, ui-input]
 ---
 
 # Upload（上传）

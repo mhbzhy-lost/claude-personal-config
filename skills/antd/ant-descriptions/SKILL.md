@@ -3,6 +3,7 @@ name: ant-descriptions
 description: "Ant Design Descriptions 组件文档与用法。展示多个只读字段的组合。"
 tech_stack: [antd, react, frontend]
 language: [typescript]
+capability: [ui-display]
 ---
 
 # Descriptions（描述列表）

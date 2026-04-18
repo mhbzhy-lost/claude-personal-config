@@ -3,6 +3,7 @@ name: wechat-mp-api
 description: "微信小程序平台 API：网络、存储、界面、路由、媒体、位置、设备、开放接口。"
 tech_stack: [wechat-miniprogram]
 language: [javascript]
+capability: [http-client, local-storage, native-device, native-navigation, payment-gateway]
 ---
 
 # 微信小程序平台 API

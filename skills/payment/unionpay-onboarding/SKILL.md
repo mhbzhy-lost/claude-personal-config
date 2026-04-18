@@ -3,6 +3,7 @@ name: unionpay-onboarding
 description: "银联在线支付接入：商户入网、三证书体系（签名/加密/验签）、acp_sdk 配置、签名机制、测试环境。"
 tech_stack: [payment, unionpay, backend]
 language: [java]
+capability: [payment-gateway]
 ---
 
 # 银联在线支付接入

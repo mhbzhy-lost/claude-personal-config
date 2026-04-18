@@ -3,6 +3,7 @@ name: nextjs-testing
 description: "Next.js 15 测试策略：Vitest/Jest 做单元/组件测试、RSC 测试的现实限制、Playwright E2E 指南。"
 tech_stack: [nextjs, react, frontend]
 language: [typescript]
+capability: [unit-testing, e2e-testing]
 ---
 
 # Next.js 测试策略

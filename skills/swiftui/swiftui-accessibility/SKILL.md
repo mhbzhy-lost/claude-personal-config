@@ -3,6 +3,7 @@ name: swiftui-accessibility
 description: "SwiftUI 无障碍：accessibilityLabel/Representation、Dynamic Type、VoiceOver、减少动效。"
 tech_stack: [swiftui, ios, mobile-native]
 language: [swift]
+capability: [ui-display, theming]
 ---
 
 # SwiftUI 无障碍

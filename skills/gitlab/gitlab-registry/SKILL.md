@@ -2,6 +2,7 @@
 name: gitlab-registry
 description: "GitLab Container Registry、Package Registry 与 Dependency Proxy API"
 tech_stack: [gitlab, backend]
+capability: [ci-cd, object-storage, http-client]
 ---
 
 # GitLab Registry API

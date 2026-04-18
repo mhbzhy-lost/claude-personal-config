@@ -2,6 +2,7 @@
 name: postgresql-json
 description: "PostgreSQL JSONB 数据类型、操作符、索引策略、JSONPath 查询、聚合函数、关系表 vs JSONB 选型。"
 tech_stack: [postgresql, backend]
+capability: [relational-db]
 ---
 
 # PostgreSQL JSON（JSONB 完全指南）
