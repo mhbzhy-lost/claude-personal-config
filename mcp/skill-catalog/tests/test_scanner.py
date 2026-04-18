@@ -25,6 +25,7 @@ def write_skill(
     tech_stack,
     body: str = "",
     language=None,
+    capability=None,
 ) -> Path:
     """Write a synthetic SKILL.md under *directory/name*/SKILL.md."""
     skill_dir = directory / name
@@ -44,8 +45,16 @@ def write_skill(
             lang_yaml = str(language)
         lang_line = f"language: {lang_yaml}\n"
 
+    cap_line = ""
+    if capability is not None:
+        if isinstance(capability, list):
+            cap_yaml = "[" + ", ".join(capability) + "]"
+        else:
+            cap_yaml = str(capability)
+        cap_line = f"capability: {cap_yaml}\n"
+
     skill_file.write_text(
-        f"---\nname: {name}\ndescription: \"{description}\"\ntech_stack: {tag_yaml}\n{lang_line}---\n{body}\n",
+        f"---\nname: {name}\ndescription: \"{description}\"\ntech_stack: {tag_yaml}\n{lang_line}{cap_line}---\n{body}\n",
         encoding="utf-8",
     )
     return skill_file
@@ -530,3 +539,125 @@ def test_invalid_ts_match_mode_raises(tmp_path: Path) -> None:
 def test_invalid_lang_match_mode_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="language_match_mode"):
         SkillCatalog(tmp_path, language_match_mode="invalid")
+
+
+def test_invalid_capability_match_mode_raises(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="capability_match_mode"):
+        SkillCatalog(tmp_path, capability_match_mode="invalid")
+
+
+# ---------------------------------------------------------------------------
+# 28. Capability filter: union mode (default) — any intersection matches
+# ---------------------------------------------------------------------------
+
+
+def test_capability_union_match(tmp_path: Path) -> None:
+    write_skill(tmp_path, "ant-select", "desc", ["antd"], capability=["ui-input", "ui-overlay"])
+    write_skill(tmp_path, "ant-button", "desc", ["antd"], capability=["ui-action"])
+    write_skill(tmp_path, "ant-modal", "desc", ["antd"], capability=["ui-overlay"])
+    catalog = SkillCatalog(tmp_path)  # capability default = union
+
+    result = catalog.list_skills(["antd"], capability=["ui-overlay"])
+    names = [s["name"] for s in result["skills"]]
+    assert names == ["ant-modal", "ant-select"]  # sorted
+
+
+# ---------------------------------------------------------------------------
+# 29. Capability filter: intersection mode requires all keys present
+# ---------------------------------------------------------------------------
+
+
+def test_capability_intersection_requires_all_keys(tmp_path: Path) -> None:
+    write_skill(tmp_path, "ant-select", "desc", ["antd"], capability=["ui-input", "ui-overlay"])
+    write_skill(tmp_path, "ant-button", "desc", ["antd"], capability=["ui-action"])
+    catalog = SkillCatalog(tmp_path, capability_match_mode="intersection")
+
+    result = catalog.list_skills(["antd"], capability=["ui-input", "ui-overlay"])
+    names = [s["name"] for s in result["skills"]]
+    assert names == ["ant-select"]
+
+    result = catalog.list_skills(["antd"], capability=["ui-input", "ui-action"])
+    assert result["skills"] == []
+
+
+# ---------------------------------------------------------------------------
+# 30. Skills without capability field are excluded when capability is queried
+# ---------------------------------------------------------------------------
+
+
+def test_capability_filter_excludes_unmarked_skills(tmp_path: Path) -> None:
+    write_skill(tmp_path, "ant-select", "desc", ["antd"], capability=["ui-input"])
+    write_skill(tmp_path, "ant-legacy", "desc", ["antd"])  # no capability
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["antd"], capability=["ui-input"])
+    names = [s["name"] for s in result["skills"]]
+    assert names == ["ant-select"]
+
+    # Without capability filter, legacy skill is still returned.
+    result = catalog.list_skills(["antd"])
+    names = [s["name"] for s in result["skills"]]
+    assert "ant-legacy" in names
+
+
+# ---------------------------------------------------------------------------
+# 31. capability field appears in output only when non-empty
+# ---------------------------------------------------------------------------
+
+
+def test_capability_output_field_presence(tmp_path: Path) -> None:
+    write_skill(tmp_path, "ant-select", "desc", ["antd"], capability=["ui-input"])
+    write_skill(tmp_path, "ant-legacy", "desc", ["antd"])
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["antd"])
+    by_name = {s["name"]: s for s in result["skills"]}
+    assert by_name["ant-select"]["capability"] == ["ui-input"]
+    assert "capability" not in by_name["ant-legacy"]
+
+
+# ---------------------------------------------------------------------------
+# 32. Capability + tech_stack + language compose correctly
+# ---------------------------------------------------------------------------
+
+
+def test_capability_composes_with_other_filters(tmp_path: Path) -> None:
+    write_skill(
+        tmp_path, "react-form-ts", "desc", ["react"],
+        language=["typescript"], capability=["ui-form"],
+    )
+    write_skill(
+        tmp_path, "react-form-js", "desc", ["react"],
+        language=["javascript"], capability=["ui-form"],
+    )
+    write_skill(
+        tmp_path, "react-table-ts", "desc", ["react"],
+        language=["typescript"], capability=["ui-display"],
+    )
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(
+        ["react"], language=["typescript"], capability=["ui-form"],
+    )
+    names = [s["name"] for s in result["skills"]]
+    assert names == ["react-form-ts"]
+
+
+# ---------------------------------------------------------------------------
+# 33. Scalar capability frontmatter value is normalised to list
+# ---------------------------------------------------------------------------
+
+
+def test_capability_scalar_value_normalized(tmp_path: Path) -> None:
+    # Write a skill whose frontmatter has capability as a plain string.
+    skill_dir = tmp_path / "single-cap"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: single-cap\ndescription: \"x\"\ntech_stack: [antd]\n"
+        "capability: ui-action\n---\n",
+        encoding="utf-8",
+    )
+    catalog = SkillCatalog(tmp_path)
+    result = catalog.list_skills(["antd"], capability=["ui-action"])
+    names = [s["name"] for s in result["skills"]]
+    assert names == ["single-cap"]

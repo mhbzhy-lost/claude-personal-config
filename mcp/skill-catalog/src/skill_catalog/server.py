@@ -39,17 +39,20 @@ def _load_catalog() -> SkillCatalog:
     filter_cfg = config.get("filter", {})
     ts_mode = filter_cfg.get("tech_stack_match_mode", "intersection")
     lang_mode = filter_cfg.get("language_match_mode", "union")
+    cap_mode = filter_cfg.get("capability_match_mode", "union")
 
     catalog = SkillCatalog(
         library_path,
         tech_stack_match_mode=ts_mode,
         language_match_mode=lang_mode,
+        capability_match_mode=cap_mode,
     )
     print(
         f"[skill-catalog] indexed {len(catalog.by_name)} skills across "
         f"{len(catalog.by_tag)} tags from {library_path} "
         f"(tech_stack={catalog.tech_stack_match_mode}, "
-        f"language={catalog.language_match_mode})",
+        f"language={catalog.language_match_mode}, "
+        f"capability={catalog.capability_match_mode})",
         file=sys.stderr,
     )
     return catalog
@@ -63,26 +66,34 @@ catalog = _load_catalog()
 def list_skills(
     tech_stack: list[str] | None = None,
     language: list[str] | None = None,
+    capability: list[str] | None = None,
 ) -> dict:
-    """List skills filtered by tech stack and/or programming language.
+    """List skills filtered by tech stack, programming language and/or capability.
 
     Args:
         tech_stack: Platform/framework tags (e.g. ["harmonyos"], ["django"]).
-            When provided, only skills whose tech_stack intersects this list
-            are returned.  Pass None or empty list to leave unconstrained.
+            When provided, only skills whose tech_stack matches are returned.
+            Pass None or empty list to leave unconstrained.
         language: Programming language tags (e.g. ["python"], ["cpp"]).
-            When provided, only skills whose language field intersects this
-            list are returned; language-agnostic skills (no language field)
-            are excluded.  Pass None or empty list to leave unconstrained.
+            When provided, only skills whose language field intersects are
+            returned; language-agnostic skills are excluded.
+        capability: Capability enum keys from the project's capability
+            taxonomy (e.g. ["ui-input", "auth"]). When provided, only skills
+            whose capability field intersects are returned; skills without
+            a capability field (legacy/unmarked) are excluded.
 
-    Both empty → returns nothing.
-    Only one provided → the other dimension is unconstrained.
-    Both provided → skills must match on both dimensions.
+    All empty → returns nothing.
+    Multiple provided → must match on all provided dimensions.
 
     Returns:
-        {"skills": [{"name", "description", "tech_stack", "language"?}, ...]}
+        {"skills": [{"name", "description", "tech_stack",
+                     "language"?, "capability"?}, ...]}
     """
-    return catalog.list_skills(tech_stack, language=language)
+    return catalog.list_skills(
+        tech_stack,
+        language=language,
+        capability=capability,
+    )
 
 
 @mcp.tool()

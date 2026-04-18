@@ -19,8 +19,8 @@
    `Agent({ subagent_type: "stack-detector", prompt: <user 原始 prompt> })`
    拿到 `{"tech_stack": [...]}`
 2. **筛选相关 skill**：调用
-   `Agent({ subagent_type: "skill-matcher", prompt: <包含 tech_stack + user 原始 prompt，可选 top_n / language> })`
-   拿到 `{"skills": ["skill-a", "skill-b", ...]}`。该 agent 会在隔离子上下文内自行调用 `list_skills` 并完成语义筛选，主上下文只接收最终 name 列表。
+   `Agent({ subagent_type: "skill-matcher", prompt: <包含 tech_stack + user 原始 prompt，可选 capability / top_n / language> })`
+   拿到 `{"skills": ["skill-a", "skill-b", ...]}`。该 agent 会在隔离子上下文内自行调用 `list_skills` 并完成语义筛选，主上下文只接收最终 name 列表。复合场景（如"登录模块"同时涉及 UI + 校验 + 网络 + 认证）主 agent 可显式传入 `capability` 数组进一步收敛候选。
 3. **按需加载详情**：对 skill-matcher 返回的每个 name，调用 `mcp__skill-catalog__get_skill({ name })` 获取完整内容
 4. **基于检索到的知识开始实际任务**
 
@@ -71,12 +71,13 @@
 
 # Skill 蒸馏工作流
 
-蒸馏新 skill 时，按以下两阶段执行：
+蒸馏新 skill 时，按以下三阶段执行：
 
 1. **采集**：调用 `skill-fetcher` agent 执行下载。**注意：skill-fetcher 推理能力有限，主模型必须在 prompt 中明确列出需要采集的资源清单**（官方文档 URL、GitHub repo 地址、需要关注的子页面/模块等），skill-fetcher 仅负责按清单执行搜索和下载，不应依赖其自主判断采集范围
-2. **蒸馏**：采集完成后，调用 `skill-builder` agent，传入素材目录路径，由其分析素材并生成结构化 SKILL.md
+2. **蒸馏**：采集完成后，调用 `skill-builder` agent，传入素材目录路径，由其分析素材并生成结构化 SKILL.md。**skill-builder 不产出 `capability` 字段**，该字段由下一阶段 marker 追加
+3. **打标**：蒸馏完成后，调用 `skill-marker` agent，传入新生成的 skill 目录路径，由其对照 `~/.claude/guidelines/capability-taxonomy.md` 闭集为每个 SKILL.md 的 frontmatter 追加 `capability: [...]`。taxonomy 内容由 SubagentStart hook 自动注入 skill-marker 的上下文
 
-批量蒸馏多个 skill 时，可并行启动多组 skill-fetcher；所有采集完成后，再并行启动对应的 skill-builder 进行蒸馏。
+批量蒸馏多个 skill 时，可并行启动多组 skill-fetcher；所有采集完成后，再并行启动对应的 skill-builder；builder 全部完成后统一调用一次 skill-marker（批量模式）完成打标。
 
 ---
 

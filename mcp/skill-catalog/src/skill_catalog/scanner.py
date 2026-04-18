@@ -16,6 +16,7 @@ class SkillRecord:
     description: str
     tech_stack: list[str]
     language: list[str]  # empty → language-agnostic
+    capability: list[str]  # empty → unclassified (pre-marker legacy)
     path: Path  # absolute path to the SKILL.md file
     body: str   # markdown body (frontmatter stripped)
 
@@ -54,10 +55,12 @@ class SkillCatalog:
         *,
         tech_stack_match_mode: str = "intersection",
         language_match_mode: str = "union",
+        capability_match_mode: str = "union",
     ) -> None:
         for label, mode in [
             ("tech_stack_match_mode", tech_stack_match_mode),
             ("language_match_mode", language_match_mode),
+            ("capability_match_mode", capability_match_mode),
         ]:
             if mode not in self.VALID_MATCH_MODES:
                 raise ValueError(
@@ -66,6 +69,7 @@ class SkillCatalog:
         self.library = Path(library_path).resolve()
         self.tech_stack_match_mode = tech_stack_match_mode
         self.language_match_mode = language_match_mode
+        self.capability_match_mode = capability_match_mode
         self.by_name: dict[str, SkillRecord] = {}
         self.by_tag: dict[str, list[str]] = {}
         self._scan()
@@ -105,11 +109,20 @@ class SkillCatalog:
             else:
                 language = []
 
+            capability_raw = meta.get("capability", [])
+            if isinstance(capability_raw, str):
+                capability = [capability_raw]
+            elif isinstance(capability_raw, list):
+                capability = [str(c) for c in capability_raw]
+            else:
+                capability = []
+
             record = SkillRecord(
                 name=name,
                 description=description,
                 tech_stack=tech_stack,
                 language=language,
+                capability=capability,
                 path=skill_md.resolve(),
                 body=post.content,
             )
@@ -126,36 +139,31 @@ class SkillCatalog:
         self,
         tech_stack: list[str] | None = None,
         language: list[str] | None = None,
+        capability: list[str] | None = None,
     ) -> dict:
         """Return skill metadata matching the query.
 
         Filtering rules:
-        - Both empty/None → return nothing (empty list).
-        - Only *tech_stack* provided → skills whose ``tech_stack`` intersects
-          the query, regardless of language.
-        - Only *language* provided → skills whose ``language`` intersects the
-          query, regardless of tech_stack.  Language-agnostic skills (no
-          ``language`` field) are **excluded**.
-        - Both provided → skills must match on **both** dimensions.
-          Language-agnostic skills are **excluded** when *language* is set.
+        - All empty/None → return nothing (empty list).
+        - *tech_stack* → skills whose ``tech_stack`` intersects/subsets the
+          query (per ``tech_stack_match_mode``).
+        - *language* → skills whose ``language`` field intersects/subsets the
+          query. Language-agnostic skills (no ``language`` field) are
+          **excluded** when *language* is set.
+        - *capability* → skills whose ``capability`` field intersects/subsets
+          the query (per ``capability_match_mode``, default ``union``).
+          Skills without ``capability`` (legacy / pre-marker) are
+          **excluded** when *capability* is set.
+        - Multiple provided → must match on **all** provided dimensions.
         """
         has_ts = bool(tech_stack)
         has_lang = bool(language)
+        has_cap = bool(capability)
 
-        if not has_ts and not has_lang:
+        if not has_ts and not has_lang and not has_cap:
             candidates = list(self.by_name.values())
             candidates.sort(key=lambda r: r.name)
-            return {
-                "skills": [
-                    {
-                        "name": r.name,
-                        "description": r.description,
-                        "tech_stack": r.tech_stack,
-                        **({"language": r.language} if r.language else {}),
-                    }
-                    for r in candidates
-                ]
-            }
+            return {"skills": [self._format(r) for r in candidates]}
 
         candidates = list(self.by_name.values())
 
@@ -185,18 +193,34 @@ class SkillCatalog:
                     if r.language and lang_set.intersection(r.language)
                 ]
 
+        if has_cap:
+            cap_set = set(capability)  # type: ignore[arg-type]
+            if self.capability_match_mode == "intersection":
+                candidates = [
+                    r for r in candidates
+                    if r.capability and cap_set.issubset(r.capability)
+                ]
+            else:
+                candidates = [
+                    r for r in candidates
+                    if r.capability and cap_set.intersection(r.capability)
+                ]
+
         candidates.sort(key=lambda r: r.name)
-        return {
-            "skills": [
-                {
-                    "name": r.name,
-                    "description": r.description,
-                    "tech_stack": r.tech_stack,
-                    **({"language": r.language} if r.language else {}),
-                }
-                for r in candidates
-            ]
+        return {"skills": [self._format(r) for r in candidates]}
+
+    @staticmethod
+    def _format(r: SkillRecord) -> dict:
+        out: dict = {
+            "name": r.name,
+            "description": r.description,
+            "tech_stack": r.tech_stack,
         }
+        if r.language:
+            out["language"] = r.language
+        if r.capability:
+            out["capability"] = r.capability
+        return out
 
     def get_skill(self, name: str) -> Optional[dict]:
         """Return skill body (frontmatter stripped, relative links rewritten)."""
