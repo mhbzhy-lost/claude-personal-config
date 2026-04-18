@@ -1,17 +1,6 @@
-# 优先使用 MCP 工具
+# 知识检索规范（开发前必做 · 强制）
 
-**执行任何任务前，必须先检索当前上下文中可用的 MCP 工具，优先利用它们完成工作。**
-
-原则：
-- **先查后做**：动手前先检查 system-reminder 中列出的 MCP 工具（`mcp__*`），判断是否已有现成能力
-- **工具优先于手写**：如果 MCP 工具能完成目标，必须优先使用
-- **未知则搜索**：不确定是否有匹配工具时，使用 ToolSearch 检索 deferred tools
-
----
-
-# 知识检索规范（强制）
-
-**规划任务、形成技术决策或排查故障前，必须先通过知识检索流程获取相关技术栈的准确信息，禁止凭记忆编写框架/组件代码。**
+**任何开发任务、任何开发计划编写，开工第一步必须是知识检索。**未完成检索前严禁凭记忆写框架/组件/库 API、严禁起草技术方案。此步骤不可跳过、不可延后、不可省略。
 
 主 agent 遇到涉及特定技术栈的任务时，按序执行：
 
@@ -83,35 +72,6 @@
 
 ---
 
-# Skill 蒸馏工作流
-
-蒸馏新 skill 时，按以下五阶段**严格顺序**执行：
-
-1. **规划**：调用 `source-planner` agent，输入 `tech_stack + scope + constraints`，输出结构化 `sources[] + skip[] + notes`。**主 agent 不得跳过本阶段**，即使已知 URL 清单也要走 planner
-2. **采集**：把 planner 的 JSON 输出直接传给 `skill-fetcher` agent，按清单下载到 `/tmp/skill-src/<tech_stack>/<skill_name>/`，每个目录附带 `_manifest.md`。skill-fetcher **不接受**自由格式输入
-3. **预处理**：对每个产出了素材的 skill 目录，调用 `skill-preprocessor` agent。**保守模式**——只去噪（删 HTML 残留 / 导航 / 重复段落）、按固定模板归档合并，**不改写原文表述**。输出到 `<skill_dir>/_processed/SOURCE.md + _meta.json`
-4. **蒸馏**：调用 `skill-builder` agent，传入 `target_skill_name + material_dir`。builder **只读** `_processed/` 下的产物，禁止回退读原始素材。frontmatter 不产出 `capability`
-5. **打标**：调用 `skill-marker` agent，为 SKILL.md 追加 `capability: [...]`。taxonomy 由 SubagentStart hook 自动注入。**必须一次性批量调用完成**，禁止分散多次
-
-**批量蒸馏**：
-- 同一 planner 调用可产出多个 skill 的 sources
-- fetcher 支持单次处理多 skill（按 target_skill_name 分组落盘）
-- preprocessor 按 skill 粒度独立跑，可并行
-- builder 按 skill 粒度独立跑，可并行
-- marker 最后**一次调用**覆盖全部新产 skill（target 传父目录 + glob），禁止拆成多次分批
-
-**增量采集**：planner 的 `scope.mode=incremental` 配合 `skip_collected_within` 自动跳过新鲜度未过期的 skill。
-
----
-
-# Git Commit Message 规范
-
-采用 Conventional Commits 风格的轻量化中文版：type/scope 英文，subject/body 中文。
-
-**需要创建 commit 时**，先读 `~/.claude/guidelines/git-commit.md` 获取完整规范（字段约束、示例、反例、拆分原则）。无 commit 任务时无需加载。
-
----
-
 # 开发计划执行后的提交
 
 **从磁盘读取开发计划并完成执行后，必须按照 Git Commit Message 规范进行一次提交。**
@@ -122,3 +82,17 @@
 - 本会话尚未针对本次计划执行创建过提交
 
 执行顺序：测试审查完成后，读取 `~/.claude/guidelines/git-commit.md` 规范，再执行提交。每次对话仅触发一次。
+
+---
+
+# Skill 蒸馏工作流
+
+蒸馏新 skill 时，先读 `~/.claude/guidelines/skill-distillation.md` 获取完整五阶段流程（规划 / 采集 / 预处理 / 蒸馏 / 打标）及批量、增量采集规则。无蒸馏任务时无需加载。
+
+---
+
+# Git Commit Message 规范
+
+采用 Conventional Commits 风格的轻量化中文版：type/scope 英文，subject/body 中文。
+
+**需要创建 commit 时**，先读 `~/.claude/guidelines/git-commit.md` 获取完整规范（字段约束、示例、反例、拆分原则）。无 commit 任务时无需加载。
