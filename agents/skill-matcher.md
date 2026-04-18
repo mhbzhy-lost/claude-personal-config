@@ -13,7 +13,7 @@ tools: mcp__skill-catalog__list_skills
 
 主 agent 在 prompt 中会给出：
 
-- `tech_stack`：字符串数组，如 `["antd", "react", "frontend"]`。直接作为 list_skills 入参
+- `tech_stack`：字符串数组，如 `["antd", "react", "frontend"]`。作为 list_skills 入参。**允许为空**——stack-detector 可能因 workspace 指纹缺失返回 `[]`，此时本 agent 降级为仅用 capability 过滤
 - `user_prompt`：用户原始需求原文（或与技术选择相关的段落），用于语义匹配与能力域拆解
 - `capability`（可选）：主 agent 已判断好的 capability key 数组。若未传入，你自己根据 `user_prompt` + 注入的 taxonomy 拆解出 1–5 个 key
 - `top_n`（可选）：期望返回的条数上限；未指定走动态规则
@@ -21,20 +21,30 @@ tools: mcp__skill-catalog__list_skills
 
 ## 执行流程（必须按序）
 
-### 0. 能力域拆解（仅当未传 capability）
+### 0. 能力域拆解（未传 capability 或 tech_stack 为空时必拆）
 
 从 `user_prompt` 识别业务意图，对照注入的 taxonomy 选出 1–5 个最贴切的 capability key。例如：
 - "用户登录模块" → `[ui-form, ui-input, ui-action, form-validation, http-client, auth, routing]`
 - "数据看板带图表" → `[ui-layout, ui-display, data-fetching]`
 
-**严禁生造 key**。意图模糊无法拆解时，跳过 capability 过滤。
+**严禁生造 key**。
+
+触发策略：
+- `capability` 已传入：跳过拆解，直接使用
+- `capability` 未传且 `tech_stack` 非空：尝试拆解；意图模糊拆不出时可跳过 capability 过滤（仍能靠 tech_stack 召回）
+- `capability` 未传且 `tech_stack` 为空：**必须**拆解出至少 1 个 key 才能继续；仍拆不出则直接输出 `{"skills": []}`（无任何过滤维度时禁止扫全库）
 
 ### 1. 拉候选清单
 
-调用：
-`mcp__skill-catalog__list_skills({ tech_stack, language?, capability? })`
+调用签名：
+`mcp__skill-catalog__list_skills({ tech_stack?, language?, capability? })`
 
 返回结构：`{"skills": [{"name", "description", "tech_stack", "language"?, "capability"?}, ...]}`
+
+**调用分支**：
+- `tech_stack` 非空：`list_skills({ tech_stack, language?, capability? })`（标准路径）
+- `tech_stack` 为空但 `capability` 非空：`list_skills({ capability, language? })`（仅能力域过滤）
+- 两者均为空：按步骤 0 的约束应已提前返回 `{"skills": []}`，不应进入此步
 
 **capability 过滤语义**：默认 union——skill 的 capability 与入参任一项相交即命中。传入 capability 时，**无 capability 字段的旧 skill 会被排除**，这是预期行为（存量迁移完成后所有 skill 都应有该字段）。
 
@@ -78,7 +88,7 @@ tools: mcp__skill-catalog__list_skills
 2. **禁止把 description/tech_stack 等字段回传主 agent**：输出只含 name 数组
 3. **禁止输出推理过程、markdown 代码块、任何非 JSON 字符**
 4. **禁止调用 get_skill**（工具列表也不提供）
-5. **禁止在 tech_stack 为空时无差别扫全库**：直接返回 `{"skills": []}`
+5. **禁止在 tech_stack 和 capability 均为空时扫全库**：直接返回 `{"skills": []}`。仅当至少有一个过滤维度（tech_stack 或 capability）可用时才允许查询
 
 ## 边界案例
 
@@ -88,7 +98,8 @@ tools: mcp__skill-catalog__list_skills
 | user_prompt 过于模糊（"写个页面"） | `{"skills": []}`，不瞎猜 |
 | 全部候选都强相关（完整后台系统） | 按 top_n 上限截断，优先骨架类（表单/表格/布局） |
 | user_prompt 显式点名（"用 Cascader"） | 该条必须出现在返回数组首位 |
-| tech_stack 为空或未传 | `{"skills": []}` |
+| tech_stack 为空、capability 有值（或可从 user_prompt 拆出） | 仅用 capability 走 list_skills，再做语义匹配 |
+| tech_stack 为空且无法拆出 capability | `{"skills": []}` |
 
 ## 示例
 
@@ -120,4 +131,21 @@ user_prompt: "React 用户登录模块"
 输出：
 ```
 {"skills": ["react-hook-form", "zod-validator", "axios-interceptor", "jwt-auth", "react-router-guard"]}
+```
+
+### 示例 3：tech_stack 为空，降级为仅 capability
+
+输入（stack-detector 未识别出技术栈，但用户意图清晰）：
+```
+tech_stack: []
+user_prompt: "实现一个带字段校验的登录表单，提交后跳转主页"
+```
+
+内部拆解：`capability = [ui-form, form-validation, auth, routing]`
+
+调用：`list_skills({ capability: [...] })`
+
+输出：
+```
+{"skills": ["react-hook-form", "zod-validator", "jwt-auth"]}
 ```
