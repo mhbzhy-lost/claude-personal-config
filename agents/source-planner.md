@@ -101,6 +101,18 @@ language: ["typescript"]           # 可选：语言约束
 - 共现核心术语（如组件名、API 名、关键概念）≥ 3 个 → 可聚合
 - 否则不聚合，候选作为独立 skill 或丢弃
 
+**URL 选择规则**（非常重要）：
+
+fetcher 对满足条件的 URL 会用 curl 原样下载，不走 WebFetch。为了让 CHANGELOG / README / 纯 markdown 文档不被 WebFetch 的大文件摘要机制截断，planner 输出的 URL **优先形式**：
+
+| 内容形式 | 首选 URL | 避免使用 |
+|---------|---------|---------|
+| github 仓库内的 CHANGELOG/README/MD | `https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>` | `https://github.com/<owner>/<repo>/blob/<ref>/<path>`（fetcher 会自动重写，但 planner 主动给 raw 更清晰） |
+| gist | `https://gist.githubusercontent.com/...` | gist.github.com 的 UI 页 |
+| 官方 docs 的渲染页 | 保持 `https://docs.xxx.com/...` 原样 | 不要手动拼 raw 版本 |
+
+原则：**能被 curl 原样抓下来的纯文本源，给 raw URL；需要 HTML 主内容提取的渲染页，保持原 URL**。planner 不需要判断 fetcher 具体走哪条路径，按上表选 URL 形式即可。
+
 **Fetcher 行为**：同一 target_skill_name 下的多个 source 会被 fetcher 按序保存为 `source-01.md`、`source-02.md`…，preprocessor 会在归档阶段做跨源去重。
 
 ### 5. 每个 source 条目的结构化输出
