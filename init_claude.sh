@@ -226,6 +226,37 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 注册设计软件 MCP server：Figma（远程）+ Sketch（本地）
+#   - Figma：远程官方 MCP，OAuth 自动处理，无需本地服务
+#     文档：https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/
+#   - Sketch：Sketch 桌面版（2025.2.4+）内置 MCP，需在 Sketch 中按 ⌘K → "Start MCP Server"
+#     文档：https://www.sketch.com/docs/mcp-server/
+# 幂等：URL 一致则 no-op；否则 remove+add 重新注册。注册行为本身不依赖目标在线
+# ---------------------------------------------------------------------------
+register_http_mcp() {
+  local name="$1"
+  local url="$2"
+
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "[warn] claude CLI 不可用，跳过 $name 注册。请手动执行：claude mcp add -s user --transport http $name $url"
+    return
+  fi
+
+  local current
+  current=$(claude mcp get "$name" 2>&1 || true)
+  if echo "$current" | grep -Fq "$url"; then
+    echo "[mcp] $name 已注册且 URL 一致"
+  else
+    claude mcp remove "$name" -s user 2>/dev/null || true
+    claude mcp add -s user --transport http "$name" "$url"
+    echo "[mcp] $name 已注册到 user scope ($url)"
+  fi
+}
+
+register_http_mcp figma  "https://mcp.figma.com/mcp"
+register_http_mcp sketch "http://localhost:31126/mcp"
+
+# ---------------------------------------------------------------------------
 # 历史逻辑：注入 claude 会话链式执行包装函数到 ~/.zshrc（与本次重构无关，保留）
 # ---------------------------------------------------------------------------
 ZSHRC="$HOME/.zshrc"
