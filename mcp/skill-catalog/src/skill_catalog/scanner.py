@@ -222,6 +222,26 @@ class SkillCatalog:
             out["capability"] = r.capability
         return out
 
+    def available_tags(self) -> dict[str, list[str]]:
+        """Return the closed-set tag universe present in the indexed library.
+
+        Consumed by downstream classifiers as a ``pick only from this set``
+        constraint. Each dimension is returned as a sorted, de-duplicated
+        list.
+        """
+        tech: set[str] = set()
+        langs: set[str] = set()
+        caps: set[str] = set()
+        for r in self.by_name.values():
+            tech.update(r.tech_stack)
+            langs.update(r.language)
+            caps.update(r.capability)
+        return {
+            "tech_stack": sorted(tech),
+            "language": sorted(langs),
+            "capability": sorted(caps),
+        }
+
     def get_skill(self, name: str) -> Optional[dict]:
         """Return skill body (frontmatter stripped, relative links rewritten)."""
         record = self.by_name.get(name)

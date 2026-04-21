@@ -1,21 +1,24 @@
-# 知识检索规范（开发前必做 · 强制）
+# 知识检索规范（harness 自动注入 · 零操作）
 
-**任何开发任务、任何开发计划编写，开工第一步必须是知识检索。**未完成检索前严禁凭记忆写框架/组件/库 API、严禁起草技术方案。此步骤不可跳过、不可延后、不可省略。
+**harness 会在用户每次提交 prompt 时，自动调 `mcp__skill-catalog__resolve` 做 workspace 指纹扫描 + LLM 分类 + skill 筛选，把结果作为 additionalContext 注入主 agent 上下文。**主 agent 起手就能看到"检测技术栈: [...]"、"相关 skill: [...]"这类信息，不需要手动检索。
 
-主 agent 遇到涉及特定技术栈的任务时，按序执行：
+## 主 agent 使用要点
 
-1. **判断技术栈**：调用
-   `Agent({ subagent_type: "stack-detector", prompt: <user 原始 prompt> })`
-   拿到 `{"tech_stack": [...]}`
-2. **筛选相关 skill**：调用
-   `Agent({ subagent_type: "skill-matcher", prompt: <包含 tech_stack + user 原始 prompt，可选 capability / top_n / language> })`
-   拿到 `{"skills": ["skill-a", "skill-b", ...]}`。复合场景（如"登录模块"同时涉及 UI + 校验 + 网络 + 认证）可显式传入 `capability` 数组进一步收敛候选。
-3. **按需加载详情**：对每个 name，调用 `mcp__skill-catalog__get_skill({ name })` 获取完整内容
-4. **基于检索到的知识开始实际任务**
+- **接到 skill 名字**：派发 coding-expert 子任务时，把这些名字**原样放入子 agent 的 prompt**，让子 agent 用 `mcp__skill-catalog__get_skill({ name })` 读详情
+- **非框架任务**（纯文档、纯配置、纯逻辑）：harness 可能返回空 skill，直接动手
+- **harness 意外失败**（ollama 离线 / 超时）：hook 会注入空 context 不报错，此时主 agent 自行判断
+  - 若判断任务涉及框架：可以调 `mcp__skill-catalog__resolve(user_prompt, cwd)` 补一次检索
+  - 若判断不涉及：直接动手
 
-禁止行为：
-- 跳过知识检索直接凭记忆编写框架/组件 API
-- **主 agent 直接调用 `mcp__skill-catalog__list_skills`**（需要候选清单必须通过 skill-matcher）
+## 禁止行为
+
+- **禁止调用 `mcp__skill-catalog__list_skills`**：清单过长会污染上下文，让 MCP server 代筛
+- **禁止凭记忆写框架 API**：即便 harness 没注入 skill，也该先 `resolve` 再动手
+
+## coding-expert 子 agent 使用
+
+- tools 里已开放 `mcp__skill-catalog__resolve` 和 `mcp__skill-catalog__get_skill`
+- 主 agent 派发时如果 prompt 里没带 skill 名字、任务又涉及框架，子 agent 自行 `resolve`（不必向主 agent 反馈"缺少输入"）
 
 ---
 
@@ -31,6 +34,7 @@
 调用要求：
 - 传入的 prompt 必须自包含：含目标、前置上下文、涉及文件路径/符号、验收标准
 - 多个独立子任务并行分发时，必须在同一消息内并发发起多个 Agent 调用
+- **派发 coding-expert 时的 skill 名字**：harness UserPromptSubmit hook 会自动注入"相关 skill: [...]"清单。主 agent 把这些名字原样包含在子任务 prompt 中即可，子 agent 自己会调 `mcp__skill-catalog__get_skill` 读详情。若 harness 未命中相关 skill（非框架任务），可显式标注"无需 skill"；子 agent 在未收到 skill 名字但判断任务涉及框架时，也会自行调用 `mcp__skill-catalog__resolve` 补检索
 
 ---
 

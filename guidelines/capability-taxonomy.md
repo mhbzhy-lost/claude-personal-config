@@ -6,7 +6,7 @@
 
 - `capability` 字段值**必须**来自本文件枚举；未覆盖的能力域先在本文件新增枚举再打标
 - 单个 skill 通常标 1–3 个 capability；跨域综合组件可到 5 个
-- 相关 agent：`skill-marker`（打标）、`skill-matcher`（用户意图→capability 筛选）
+- 相关组件：`skill-marker` agent（打标）、`mcp__skill-catalog__resolve`（用户意图→capability 筛选）
 
 ---
 

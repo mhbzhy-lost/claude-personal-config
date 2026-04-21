@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import atexit
 import os
+import signal
 import sys
 import tomllib
 from pathlib import Path
@@ -10,6 +12,9 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from .classifier import Classifier, ClassifierConfig
+from .lifecycle import OllamaConfig, OllamaLifecycleManager, OllamaStartupError
+from .pipeline import run_resolve_pipeline
 from .scanner import SkillCatalog
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -58,8 +63,81 @@ def _load_catalog() -> SkillCatalog:
     return catalog
 
 
-mcp = FastMCP("skill-catalog")
+def _build_lifecycle() -> OllamaLifecycleManager:
+    default_bin = _PROJECT_ROOT / "vendor" / "ollama" / "ollama"
+    default_models = _PROJECT_ROOT / ".ollama-models"
+    default_runtime = _PROJECT_ROOT / ".ollama-runtime"
+
+    binary_path = Path(
+        os.environ.get("SKILL_CATALOG_OLLAMA_BIN", str(default_bin))
+    )
+    models_dir = Path(
+        os.environ.get("SKILL_CATALOG_OLLAMA_MODELS_DIR", str(default_models))
+    )
+    runtime_dir = Path(
+        os.environ.get("SKILL_CATALOG_OLLAMA_RUNTIME_DIR", str(default_runtime))
+    )
+    port_raw = os.environ.get("SKILL_CATALOG_OLLAMA_PORT", "11435")
+    try:
+        port = int(port_raw)
+    except ValueError:
+        print(
+            f"[skill-catalog] FATAL: invalid SKILL_CATALOG_OLLAMA_PORT={port_raw!r}",
+            file=sys.stderr,
+        )
+        sys.exit(3)
+
+    config = OllamaConfig(
+        binary_path=binary_path,
+        models_dir=models_dir,
+        runtime_dir=runtime_dir,
+        port=port,
+    )
+    return OllamaLifecycleManager(config)
+
+
+def _build_classifier() -> Classifier:
+    host_url = os.environ.get(
+        "SKILL_CATALOG_OLLAMA_HOST", "http://127.0.0.1:11435"
+    )
+    model = os.environ.get("SKILL_CATALOG_OLLAMA_MODEL", "qwen3:4b")
+    return Classifier(ClassifierConfig(host_url=host_url, model=model))
+
+
 catalog = _load_catalog()
+classifier = _build_classifier()
+
+lifecycle = _build_lifecycle()
+try:
+    lifecycle.acquire()
+except OllamaStartupError as e:
+    print(f"[skill-catalog] FATAL: ollama daemon 启动失败: {e}", file=sys.stderr)
+    sys.exit(3)
+
+
+def _cleanup() -> None:
+    try:
+        lifecycle.release()
+    except Exception as e:  # noqa: BLE001
+        print(f"[skill-catalog] cleanup warn: {e}", file=sys.stderr)
+
+
+atexit.register(_cleanup)
+
+
+def _signal_cleanup(_signum, _frame) -> None:
+    _cleanup()
+    sys.exit(0)
+
+
+for _sig in (signal.SIGTERM, signal.SIGINT):
+    try:
+        signal.signal(_sig, _signal_cleanup)
+    except (ValueError, OSError):
+        # not on main thread or unsupported platform
+        pass
+
+mcp = FastMCP("skill-catalog")
 
 
 @mcp.tool()
@@ -110,6 +188,42 @@ def get_skill(name: str) -> Optional[dict]:
         {"content": "<markdown>"} or None if the skill is unknown.
     """
     return catalog.get_skill(name)
+
+
+@mcp.tool()
+def resolve(
+    user_prompt: str,
+    cwd: str,
+    tech_stack: list[str] | None = None,
+    capability: list[str] | None = None,
+    language: list[str] | None = None,
+    top_n_limit: int | None = None,
+) -> dict:
+    """One-stop retrieval: fingerprint + LLM classify + filter + rank + top-N.
+
+    Args:
+        user_prompt: The user's original request (Chinese/English mix OK).
+        cwd: Workspace root absolute path.
+        tech_stack: If caller has pre-computed tags, skips LLM classification
+            for this dimension (value is used as-is).
+        capability: Same as above for capability dimension.
+        language: Optional programming-language filter.
+        top_n_limit: Override dynamic top-N truncation.
+
+    Returns:
+        Dict with keys: cwd, fingerprint, tech_stack, capability,
+        classifier_error, skills.
+    """
+    return run_resolve_pipeline(
+        catalog=catalog,
+        classifier=classifier,
+        user_prompt=user_prompt,
+        cwd=cwd,
+        tech_stack=tech_stack,
+        capability=capability,
+        language=language,
+        top_n_limit=top_n_limit,
+    )
 
 
 def main() -> None:

@@ -6,7 +6,11 @@ requires-python = ">=3.11"
 dependencies = [
   "mcp>=1.0.0",
   "python-frontmatter>=1.0.0",
+  "filelock>=3.13",
 ]
+
+[project.scripts]
+skill-catalog-cli = "skill_catalog.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -17,3 +21,14 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+markers = [
+  "requires_ollama: 需要本地 ollama daemon (默认 http://127.0.0.1:11435) + qwen3:4b 模型",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "pyyaml>=6",
+]
