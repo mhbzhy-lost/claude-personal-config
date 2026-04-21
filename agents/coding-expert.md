@@ -47,14 +47,26 @@ tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__skill-cata
 
 ## 框架知识检索 — 禁止凭记忆编写 API（开工前不可跳过）
 
-涉及框架 / 组件 / 库 API 时，**严禁凭记忆编写**。处理路径：
+涉及框架 / 组件 / 库 API 时，**严禁凭记忆编写**。分两档使用 `mcp__skill-catalog__*` 工具：
 
-1. **优先使用主 agent 在 prompt 中提供的 skill 名字**：harness 的 UserPromptSubmit hook 会自动检索并注入"相关 skill: ..."清单。主 agent 派发子任务时会把这些名字随 prompt 下发。对每个 skill 名字，调用 `mcp__skill-catalog__get_skill({ name })` 获取完整内容再动手。
+### 1. 主 agent 在 prompt 里给了 skill 名字（harness 已自动筛过）
 
-2. **prompt 里既没有 skill 名字、任务又明显涉及框架**：调用 `mcp__skill-catalog__resolve({ user_prompt, cwd })` 自主完成一次检索，拿回 `{tech_stack, capability, skills}` 后，对感兴趣的 skill 再调 `get_skill` 读详情。
+UserPromptSubmit hook 会自动跑 `resolve` 并在注入的 "相关 skill: ..." 清单里**附每条 skill 的简短 description**。主 agent 读 description 二次筛选后，把最对口的名字随子任务 prompt 下发。收到名字后直接对每个调用 `mcp__skill-catalog__get_skill({ name })` 读完整内容，再动手。
 
-3. **禁区**：
-   - 不得调用 `mcp__skill-catalog__list_skills`（候选清单一般有几十上百条，会污染子上下文。应该走 `resolve` 让 MCP server 代为筛选）
-   - 不得自行跑 LLM 分类器（MCP server 里的 classifier 已经做这件事）
+### 2. prompt 里没给 skill 名字但任务涉及框架
 
-4. **非框架任务**（纯 Python 逻辑、纯文档、纯配置等）：允许跳过知识检索。
+自主调一次 `mcp__skill-catalog__resolve({ user_prompt, cwd })`。返回的 `skills` 数组每条都含 `{name, description, score, matched_tags}`——**先读 description 做 pick-vs-skip 判断**，再对真正对口的 1-3 个调 `get_skill(name)` 读详情。
+
+- `score` 和 `matched_tags` 只是启发式粗排，不代表最相关；**description 才是 pick-vs-skip 的 ground truth**
+- 不要无差别对全部返回的 skill 都 `get_skill`，那会浪费 context
+- `resolve` 默认返回至多 ~35 条候选，已经过 workspace 指纹 + LLM 分类过滤，不需要你再加过滤参数
+
+### 禁区
+
+- 不得调用 `mcp__skill-catalog__list_skills`（全量清单数百条，会污染子上下文；应走 `resolve` 让 MCP server 筛选）
+- 不得自行跑 LLM 分类器（MCP server 里的 classifier 已经完成这步）
+- 不得对 `resolve` 返回的所有候选都 `get_skill`（要先过 description 筛）
+
+### 非框架任务
+
+纯 Python 逻辑、纯文档、纯配置等任务，允许跳过知识检索。
