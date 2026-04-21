@@ -86,10 +86,18 @@ def _format_resolve_text(result: dict) -> str:
     skills = result.get("skills") or []
     lines.append(f"检测技术栈: {', '.join(ts) if ts else '(无)'}")
     lines.append(f"能力域: {', '.join(cap) if cap else '(无)'}")
-    skill_names = [s.get("name", "") for s in skills if s.get("name")]
-    lines.append(
-        f"相关 skill: {', '.join(skill_names) if skill_names else '(无)'}"
-    )
+    if skills:
+        lines.append("相关 skill（读 description 决定要不要 get_skill）:")
+        for s in skills:
+            name = s.get("name", "")
+            desc = s.get("description", "") or ""
+            # 单行化 + 截断避免 hook 注入文本爆炸
+            desc_clean = " ".join(desc.split())
+            if len(desc_clean) > 120:
+                desc_clean = desc_clean[:117] + "..."
+            lines.append(f"  - {name}: {desc_clean}" if desc_clean else f"  - {name}")
+    else:
+        lines.append("相关 skill: (无)")
     err = result.get("classifier_error")
     if err:
         lines.append(f"classifier_error: {err}")

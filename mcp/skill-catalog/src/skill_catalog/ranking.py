@@ -37,6 +37,7 @@ class RankedSkill:
     name: str
     score: float
     matched_tags: list[str] = field(default_factory=list)
+    description: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +155,14 @@ def rank(
                 score += DESC_KEYWORD_WEIGHT
                 matched.append(f"kw:{kw}")
 
-        ranked.append(RankedSkill(name=name, score=score, matched_tags=matched))
+        ranked.append(
+            RankedSkill(
+                name=name,
+                score=score,
+                matched_tags=matched,
+                description=str(s.get("description", "")),
+            )
+        )
 
     # stable sort: score desc, then name asc for determinism
     ranked.sort(key=lambda r: (-r.score, r.name))
@@ -166,17 +174,26 @@ def rank(
 # ---------------------------------------------------------------------------
 
 
+FULL_RETURN_THRESHOLD = 35
+
+
 def top_n(
     ranked: list[RankedSkill],
     n: int | None = None,
     candidate_count: int | None = None,
 ) -> list[RankedSkill]:
-    """Truncate to top N. If *n* is None, use dynamic rules per skill-matcher.md.
+    """Truncate to top N. If *n* is None, use dynamic rule.
 
-    Dynamic rules (based on *candidate_count*; falls back to ``len(ranked)``):
-      - count <= 5   → return all
-      - 6 <= count <= 30 → min(5, count)
-      - count > 30   → min(8, count)
+    Dynamic rule (based on *candidate_count*; falls back to ``len(ranked)``):
+      - count <= FULL_RETURN_THRESHOLD (35) → return all
+      - count >  FULL_RETURN_THRESHOLD      → return first FULL_RETURN_THRESHOLD
+
+    Rationale: an Opus-class consumer handles ~35 same-capability skill entries
+    without noticeable attention drift (measured boundary is ~50). Giving it
+    the full candidate set with descriptions lets the LLM do the final pick,
+    which beats score-based truncation — ranking is a heuristic and alphabetical
+    tie-breaks on equal scores otherwise lose rare-capability skills like
+    Popover/Popconfirm/Tooltip in large antd-style libraries.
     """
     if not ranked:
         return []
@@ -185,10 +202,5 @@ def top_n(
         return ranked[: max(0, n)]
 
     count = candidate_count if candidate_count is not None else len(ranked)
-    if count <= 5:
-        limit = count
-    elif count <= 30:
-        limit = min(5, count)
-    else:
-        limit = min(8, count)
+    limit = count if count <= FULL_RETURN_THRESHOLD else FULL_RETURN_THRESHOLD
     return ranked[:limit]

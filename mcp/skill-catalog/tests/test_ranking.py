@@ -136,16 +136,18 @@ def test_top_n_dynamic_small_candidate_set_returns_all() -> None:
     assert len(top_n(ranked, n=None, candidate_count=3)) == 3
 
 
-def test_top_n_dynamic_medium_candidate_set_caps_at_5() -> None:
-    ranked = _ranked_seq(20)
-    result = top_n(ranked, n=None, candidate_count=20)
-    assert len(result) == 5
+def test_top_n_dynamic_at_threshold_returns_all() -> None:
+    # 35 个候选恰好在 FULL_RETURN_THRESHOLD，全返
+    ranked = _ranked_seq(35)
+    result = top_n(ranked, n=None, candidate_count=35)
+    assert len(result) == 35
 
 
-def test_top_n_dynamic_large_candidate_set_caps_at_8() -> None:
-    ranked = _ranked_seq(50)
-    result = top_n(ranked, n=None, candidate_count=50)
-    assert len(result) == 8
+def test_top_n_dynamic_above_threshold_caps_at_35() -> None:
+    # 超过阈值时截到 35
+    ranked = _ranked_seq(80)
+    result = top_n(ranked, n=None, candidate_count=80)
+    assert len(result) == 35
 
 
 def test_top_n_empty_input() -> None:
