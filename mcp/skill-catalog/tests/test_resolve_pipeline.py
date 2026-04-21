@@ -168,3 +168,138 @@ def test_pipeline_top_n_override(catalog, tmp_path):
         top_n_limit=1,
     )
     assert len(result["skills"]) == 1
+
+
+def test_pipeline_referenced_files_injected_into_classifier(catalog, tmp_path):
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "# 计划 56 - 接入 Ant Design 登录弹窗\n涉及 antd Modal + Form。",
+        encoding="utf-8",
+    )
+    classifier = _FakeClassifier(
+        ClassifyResult(tech_stack=["antd"], capability=["ui-overlay"])
+    )
+    result = run_resolve_pipeline(
+        catalog=catalog,
+        classifier=classifier,  # type: ignore[arg-type]
+        user_prompt="执行 @plan.md",
+        cwd=str(tmp_path),
+        referenced_files=[str(plan)],
+    )
+
+    assert classifier.calls, "classifier 应被调用"
+    injected = classifier.calls[0]["user_prompt"]
+    assert "执行 @plan.md" in injected
+    assert "计划 56" in injected
+    assert "antd Modal" in injected
+    assert str(plan) in result["referenced_files"]
+
+
+def test_pipeline_referenced_files_missing_is_tolerated(catalog, tmp_path):
+    classifier = _FakeClassifier(
+        ClassifyResult(tech_stack=["antd"], capability=["ui-form"])
+    )
+    ghost = tmp_path / "does-not-exist.md"
+    result = run_resolve_pipeline(
+        catalog=catalog,
+        classifier=classifier,  # type: ignore[arg-type]
+        user_prompt="x",
+        cwd=str(tmp_path),
+        referenced_files=[str(ghost)],
+    )
+    assert result["referenced_files"] == []
+    # 原始 prompt 未被污染
+    assert classifier.calls[0]["user_prompt"] == "x"
+
+
+def test_pipeline_referenced_files_truncation(catalog, tmp_path):
+    huge = tmp_path / "huge.md"
+    # 12KB > 8KB 上限
+    huge.write_text("A" * 12_000, encoding="utf-8")
+    classifier = _FakeClassifier(
+        ClassifyResult(tech_stack=["antd"], capability=["ui-form"])
+    )
+    result = run_resolve_pipeline(
+        catalog=catalog,
+        classifier=classifier,  # type: ignore[arg-type]
+        user_prompt="x",
+        cwd=str(tmp_path),
+        referenced_files=[str(huge)],
+    )
+    assert str(huge) in result["referenced_files"]
+    injected = classifier.calls[0]["user_prompt"]
+    assert "[truncated at 8192 bytes]" in injected
+    # 截断后总长度 < 文件原始大小
+    assert injected.count("A") <= 8192
+
+
+def test_pipeline_referenced_files_caps_at_three(catalog, tmp_path):
+    files = []
+    for i in range(5):
+        f = tmp_path / f"f{i}.md"
+        f.write_text(f"# file {i}\nantd", encoding="utf-8")
+        files.append(str(f))
+    classifier = _FakeClassifier(
+        ClassifyResult(tech_stack=["antd"], capability=["ui-form"])
+    )
+    result = run_resolve_pipeline(
+        catalog=catalog,
+        classifier=classifier,  # type: ignore[arg-type]
+        user_prompt="x",
+        cwd=str(tmp_path),
+        referenced_files=files,
+    )
+    assert len(result["referenced_files"]) == 3
+
+
+def test_pipeline_referenced_files_binary_utf8_error_is_tolerated(catalog, tmp_path):
+    """非文本二进制文件通过 errors='replace' 容错，文件仍被附加而不是被跳过。"""
+    binary = tmp_path / "image.bin"
+    # 写入包含非法 UTF-8 字节序列的二进制内容
+    binary.write_bytes(b"\xff\xfe" + b"\x80\x81\x82" * 100)
+    classifier = _FakeClassifier(
+        ClassifyResult(tech_stack=["antd"], capability=["ui-form"])
+    )
+    result = run_resolve_pipeline(
+        catalog=catalog,
+        classifier=classifier,  # type: ignore[arg-type]
+        user_prompt="x",
+        cwd=str(tmp_path),
+        referenced_files=[str(binary)],
+    )
+    # 文件应被成功附加（errors='replace' 不会让它被丢弃）
+    assert str(binary) in result["referenced_files"]
+    # classifier prompt 中应包含 Unicode 替换字符（U+FFFD）
+    injected = classifier.calls[0]["user_prompt"]
+    assert "�" in injected
+
+
+def test_pipeline_referenced_files_directory_is_skipped(catalog, tmp_path):
+    """传入目录路径时，pipeline 层保底过滤：不崩溃、不附加目录。"""
+    subdir = tmp_path / "somedir"
+    subdir.mkdir()
+    valid = tmp_path / "valid.md"
+    valid.write_text("antd form", encoding="utf-8")
+    classifier = _FakeClassifier(
+        ClassifyResult(tech_stack=["antd"], capability=["ui-form"])
+    )
+    result = run_resolve_pipeline(
+        catalog=catalog,
+        classifier=classifier,  # type: ignore[arg-type]
+        user_prompt="x",
+        cwd=str(tmp_path),
+        referenced_files=[str(subdir), str(valid)],
+    )
+    # 目录被跳过，只有普通文件被附加
+    assert str(subdir) not in result["referenced_files"]
+    assert str(valid) in result["referenced_files"]
+    # 空列表与 None 行为一致：两者都不触发文件读取
+    result_empty = run_resolve_pipeline(
+        catalog=catalog,
+        classifier=classifier,  # type: ignore[arg-type]
+        user_prompt="y",
+        cwd=str(tmp_path),
+        referenced_files=[],
+    )
+    assert result_empty["referenced_files"] == []
+    assert classifier.calls[-1]["user_prompt"] == "y"

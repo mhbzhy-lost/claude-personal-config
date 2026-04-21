@@ -80,6 +80,63 @@ if [ -z "$PROMPT" ]; then
   exit 0
 fi
 
+# 扫描 prompt 里的 @-引用（@path/to/file.md 形式），解析成绝对路径列表。
+# 输出每行一个绝对路径，最多 3 条，超过跳过；非普通文件或文件大小 > 32KB 也跳过。
+EXTRACT_REFS='
+import os, re, stat, sys
+
+prompt = os.environ.get("PROMPT", "")
+cwd = os.environ.get("CWD", "")
+MAX_COUNT = 3
+MAX_SIZE = 32 * 1024
+
+# 匹配 @ 后接非空白字符（允许 / . - _ 中文字母数字等）
+pattern = re.compile(r"(?:^|\s)@([^\s]+)", re.UNICODE)
+# 句末常见尾部标点（中英文），剥离后再校验。使用 chr() 规避 shell 引号冲突。
+trailing_punct = chr(34) + chr(39) + ",.;:!?)]}" + "。，、：；？！）】"
+
+seen = set()
+out = []
+for raw in pattern.findall(prompt):
+    token = raw.rstrip(trailing_punct)
+    if not token or token in seen:
+        continue
+    seen.add(token)
+    path = token if os.path.isabs(token) else os.path.join(cwd or os.getcwd(), token)
+    try:
+        path = os.path.realpath(path)
+    except OSError:
+        continue
+    try:
+        st = os.stat(path)
+    except OSError:
+        continue
+    if not stat.S_ISREG(st.st_mode):
+        continue
+    if st.st_size > MAX_SIZE:
+        continue
+    out.append(path)
+    if len(out) >= MAX_COUNT:
+        break
+
+sys.stdout.write("\n".join(out))
+'
+# shellcheck disable=SC2086
+REFS_RAW=$(PROMPT="$PROMPT" CWD="$CWD" $PY -c "$EXTRACT_REFS" || true)
+
+REF_ARGS=()
+if [ -n "$REFS_RAW" ]; then
+  while IFS= read -r ref_path; do
+    [ -z "$ref_path" ] && continue
+    REF_ARGS+=(--referenced-file "$ref_path")
+  done <<< "$REFS_RAW"
+fi
+
+if [ "${#REF_ARGS[@]}" -gt 0 ]; then
+  printf '[%s] at-refs: %d file(s)\n' \
+    "$(date '+%Y-%m-%d %H:%M:%S')" "$((${#REF_ARGS[@]} / 2))" >> "$LOG_FILE"
+fi
+
 # 定位 skill-catalog CLI
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
@@ -112,6 +169,7 @@ RESOLVE_OUTPUT=$("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}" "$CLI" resolve \
   --prompt "$PROMPT" \
   --cwd "$CWD" \
   --text-output \
+  "${REF_ARGS[@]+"${REF_ARGS[@]}"}" \
   2>>"$LOG_FILE" || true)
 
 if [ -z "$RESOLVE_OUTPUT" ]; then

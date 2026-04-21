@@ -84,6 +84,9 @@ def _format_resolve_text(result: dict) -> str:
     ts = result.get("tech_stack") or []
     cap = result.get("capability") or []
     skills = result.get("skills") or []
+    refs = result.get("referenced_files") or []
+    if refs:
+        lines.append(f"已读 @ 引用: {', '.join(refs)}")
     lines.append(f"检测技术栈: {', '.join(ts) if ts else '(无)'}")
     lines.append(f"能力域: {', '.join(cap) if cap else '(无)'}")
     if skills:
@@ -111,6 +114,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     tech_stack = args.tech_stack or None
     capability = args.capability or None
     language = args.language or None
+    referenced_files = args.referenced_file or None
 
     result = run_resolve_pipeline(
         catalog=catalog,
@@ -121,6 +125,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
         capability=capability,
         language=language,
         top_n_limit=args.top_n,
+        referenced_files=referenced_files,
     )
 
     if args.text_output:
@@ -161,6 +166,11 @@ def main() -> int:
     p_resolve.add_argument(
         "--top-n", type=int, default=None,
         help="截断结果数量（默认走动态规则）",
+    )
+    p_resolve.add_argument(
+        "--referenced-file", action="append", default=None,
+        help="用户 prompt 里 @-引用的本地文件绝对路径，可多次指定；"
+             "pipeline 会读取内容拼进 classifier 的上下文",
     )
     out_group = p_resolve.add_mutually_exclusive_group()
     out_group.add_argument(
