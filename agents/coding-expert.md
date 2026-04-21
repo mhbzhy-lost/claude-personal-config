@@ -55,9 +55,9 @@ UserPromptSubmit hook 会自动跑 `resolve` 并在注入的 "相关 skill: ..."
 
 ### 2. prompt 里没给 skill 名字但任务涉及框架
 
-自主调一次 `mcp__skill-catalog__resolve({ user_prompt, cwd })`。返回的 `skills` 数组每条都含 `{name, description, score, matched_tags}`——**先读 description 做 pick-vs-skip 判断**，再对真正对口的 1-3 个调 `get_skill(name)` 读详情。
+自主调一次 `mcp__skill-catalog__resolve({ user_prompt, cwd })`。返回的 `skills` 数组每条都是 `{name, description}` 二元组，按内部启发式 rank 排序——**读 description 做 pick-vs-skip 判断**，再对真正对口的 1-3 个调 `get_skill(name)` 读详情。
 
-- `score` 和 `matched_tags` 只是启发式粗排，不代表最相关；**description 才是 pick-vs-skip 的 ground truth**
+- 列表顺序仅作粗排提示，**description 才是 pick-vs-skip 的 ground truth**
 - 不要无差别对全部返回的 skill 都 `get_skill`，那会浪费 context
 - `resolve` 默认返回至多 ~35 条候选，已经过 workspace 指纹 + LLM 分类过滤，不需要你再加过滤参数
 

@@ -73,12 +73,7 @@ def run_resolve_pipeline(
         "capability": capability,
         "classifier_error": classifier_error,
         "skills": [
-            {
-                "name": r.name,
-                "description": r.description,
-                "score": r.score,
-                "matched_tags": r.matched_tags,
-            }
+            {"name": r.name, "description": r.description}
             for r in top
         ],
     }

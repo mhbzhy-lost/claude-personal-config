@@ -212,11 +212,11 @@ def resolve(
 
     Returns:
         Dict with keys: cwd, fingerprint, tech_stack, capability,
-        classifier_error, skills. Each skill entry carries
-        {name, description, score, matched_tags} — **read the description to
-        decide which skill is actually relevant, then call `get_skill(name)`
-        only for the ones you need**. The ranking is heuristic; the
-        description is the ground truth for pick-vs-skip.
+        classifier_error, skills. Each skill entry is a minimal
+        {name, description} pair sorted by internal heuristic rank — **read the
+        description to decide which skill is actually relevant, then call
+        `get_skill(name)` only for the ones you need**. List order is a coarse
+        hint; description is the ground truth for pick-vs-skip.
     """
     return run_resolve_pipeline(
         catalog=catalog,
