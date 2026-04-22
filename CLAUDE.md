@@ -1,37 +1,3 @@
-# 知识检索规范（harness 自动注入 · 零操作）
-
-**主 agent 上下文由 harness 自动注入"检测技术栈: [...]"、"相关 skill: [...]"清单，无需手动检索。**
-
-## 主 agent 使用要点
-
-- 注入的 skill 清单供主 agent 自身判断/动手时参考，**无需转发给 subagent**
-- **非框架任务**（纯文档、纯配置、纯逻辑）：harness 可能返回空 skill，直接动手
-- **harness 意外失败**（hook 注入空 context）：主 agent 自行判断
-  - 若判断任务涉及框架：调 `mcp__skill-catalog__resolve(user_prompt, cwd)` 补一次检索
-  - 若判断不涉及：直接动手
-
-## 禁止行为
-
-- **禁止调用 `mcp__skill-catalog__list_skills`**，让 MCP server 代筛
-- **禁止凭记忆写框架 API**：即便 harness 没注入 skill，也先 `resolve` 再动手
-
-## coding-expert 子 agent 使用
-
-- tools 里已开放 `mcp__skill-catalog__resolve` 和 `mcp__skill-catalog__get_skill`
-- 子 agent 开工时若判断任务涉及框架，自行 `resolve` 检索并 `get_skill` 读详情；不等主 agent 下发 skill 名字
-
-## 显式检索开关（用户侧手动控制）
-
-三种可选 sentinel，放在主对话 prompt 任意位置（hook 识别后从 prompt 里剔除，不进 classifier 输入）：
-
-- `%skill` — **强制检索模式**：harness 跑 resolve 后注入硬口径尾巴，要求主 agent 派发 coding-expert 前必须携带 skill name
-- `%skill:<name>,<name>` — **指定检索模式**：跳过 resolve，直接拉指定 skill 的完整 SKILL.md 内容注入主 agent 上下文（适合你已知要用哪几条 skill 时）
-- `%skill:none` — **显式禁用**：跳过 resolve，声明本轮不涉及框架
-
-不带 sentinel 时走默认软约束检索（现状）。sentinel 仅影响主对话，subagent 侧的规范由 SubagentStart hook 独立注入，不受影响。
-
----
-
 # coding-expert 使用规范
 
 **主 agent 专注与用户讨论需求与方案、规划任务、选档派发与汇总上报；执行类子任务（不限于编码）默认委派给 `coding-expert` 三档 agent。凡是可以写成自包含 prompt + 验收标准的执行单元，都应派发。**
