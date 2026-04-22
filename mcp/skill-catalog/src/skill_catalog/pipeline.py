@@ -13,65 +13,6 @@ from .fingerprint import scan_with_submodules
 from .ranking import rank, top_n
 from .scanner import SkillCatalog
 
-# Limits for @-referenced file augmentation.
-_REF_FILE_MAX_BYTES = 8192
-_REF_FILE_MAX_COUNT = 3
-
-
-def _read_referenced_file(path: Path) -> str | None:
-    try:
-        if not path.is_file():
-            return None
-        raw = path.read_bytes()
-    except OSError:
-        return None
-    truncated = len(raw) > _REF_FILE_MAX_BYTES
-    data = raw[:_REF_FILE_MAX_BYTES] if truncated else raw
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError:
-        text = data.decode("utf-8", errors="replace")
-    if truncated:
-        text += f"\n...[truncated at {_REF_FILE_MAX_BYTES} bytes]"
-    return text
-
-
-def _augment_prompt_with_references(
-    user_prompt: str,
-    referenced_files: list[str] | None,
-) -> tuple[str, list[str]]:
-    """Append readable content of @-referenced files to the prompt.
-
-    Returns (augmented_prompt, list_of_paths_successfully_attached).
-    """
-    if not referenced_files:
-        return user_prompt, []
-
-    attached: list[str] = []
-    sections: list[str] = []
-    for raw_path in referenced_files:
-        if len(attached) >= _REF_FILE_MAX_COUNT:
-            break
-        if not raw_path:
-            continue
-        path = Path(raw_path)
-        content = _read_referenced_file(path)
-        if content is None:
-            continue
-        sections.append(f"=== @{path} ===\n{content}")
-        attached.append(str(path))
-
-    if not sections:
-        return user_prompt, []
-
-    augmented = (
-        f"{user_prompt}\n\n"
-        "--- 用户在 prompt 中用 @ 引用的本地文件（作为分类补充上下文）---\n"
-        + "\n\n".join(sections)
-    )
-    return augmented, attached
-
-
 def run_resolve_pipeline(
     catalog: SkillCatalog,
     classifier: Classifier,
@@ -81,20 +22,15 @@ def run_resolve_pipeline(
     capability: list[str] | None = None,
     language: list[str] | None = None,
     top_n_limit: int | None = None,
-    referenced_files: list[str] | None = None,
 ) -> dict:
     cwd_path = Path(cwd)
     fp = scan_with_submodules(cwd_path)
-
-    augmented_prompt, attached_refs = _augment_prompt_with_references(
-        user_prompt, referenced_files
-    )
 
     classifier_error: str | None = None
     if tech_stack is None or capability is None:
         tags = catalog.available_tags()
         result = classifier.classify(
-            user_prompt=augmented_prompt,
+            user_prompt=user_prompt,
             fingerprint_summary=fp.to_text_summary(),
             available_tech_stack=tags["tech_stack"],
             available_capability=tags["capability"],
@@ -135,7 +71,6 @@ def run_resolve_pipeline(
         "tech_stack": tech_stack,
         "capability": capability,
         "classifier_error": classifier_error,
-        "referenced_files": attached_refs,
         "skills": [
             {"name": r.name, "description": r.description}
             for r in top

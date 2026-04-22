@@ -198,7 +198,6 @@ def resolve(
     capability: list[str] | None = None,
     language: list[str] | None = None,
     top_n_limit: int | None = None,
-    referenced_files: list[str] | None = None,
 ) -> dict:
     """One-stop retrieval: fingerprint + LLM classify + filter + rank + top-N.
 
@@ -210,14 +209,10 @@ def resolve(
         capability: Same as above for capability dimension.
         language: Optional programming-language filter.
         top_n_limit: Override dynamic top-N truncation.
-        referenced_files: Absolute paths of local files the user @-referenced
-            in their prompt. When provided, each file's content (truncated to
-            8KB, max 3 files) is appended to the classifier's input so the
-            LLM can see concrete tech-stack hints from plan/design docs.
 
     Returns:
         Dict with keys: cwd, fingerprint, tech_stack, capability,
-        classifier_error, referenced_files, skills. Each skill entry is a
+        classifier_error, skills. Each skill entry is a
         minimal {name, description} pair sorted by internal heuristic rank —
         **read the description to decide which skill is actually relevant,
         then call `get_skill(name)` only for the ones you need**. List order
@@ -232,7 +227,6 @@ def resolve(
         capability=capability,
         language=language,
         top_n_limit=top_n_limit,
-        referenced_files=referenced_files,
     )
 
 
