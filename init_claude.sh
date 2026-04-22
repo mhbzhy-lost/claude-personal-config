@@ -115,9 +115,6 @@ desired_user_prompt_hooks = [
     },
 ]
 
-# 已废弃 SubagentStart matcher 列表（遇到则清理）
-deprecated_sub_start_matchers = {"stack-detector", "skill-matcher"}
-
 # 读现有 settings（不存在则从空对象起手）
 if settings_path.exists():
     try:
@@ -149,17 +146,6 @@ for desired in desired_sub_start_hooks:
         changed = True
         print(f"[settings] 更新 hooks.SubagentStart[matcher={matcher}]")
 
-# 清理已废弃的 SubagentStart matcher（stack-detector / skill-matcher）
-kept = []
-for entry in sub_start:
-    if isinstance(entry, dict) and entry.get("matcher") in deprecated_sub_start_matchers:
-        changed = True
-        print(f"[settings] 移除已废弃 hooks.SubagentStart[matcher={entry.get('matcher')}]")
-        continue
-    kept.append(entry)
-if len(kept) != len(sub_start):
-    sub_start[:] = kept
-
 # 合并 hooks.UserPromptSubmit：按 matcher upsert
 user_prompt = hooks.setdefault("UserPromptSubmit", [])
 for desired in desired_user_prompt_hooks:
@@ -177,19 +163,6 @@ for desired in desired_user_prompt_hooks:
         user_prompt[found_idx] = desired
         changed = True
         print(f"[settings] 更新 hooks.UserPromptSubmit[matcher={matcher!r}]")
-
-# 清理残留：移除 settings.json 中的 mcpServers（已迁移到 claude mcp add）
-if "mcpServers" in data:
-    del data["mcpServers"]
-    changed = True
-    print(f"[settings] 移除残留 mcpServers（已迁移到 ~/.claude.json）")
-
-# 清理残留：移除 SubagentStop hook（stack-detector-print 已废弃）
-sub_stop = hooks.get("SubagentStop")
-if sub_stop is not None:
-    del hooks["SubagentStop"]
-    changed = True
-    print(f"[settings] 移除 hooks.SubagentStop（stack-detector-print 已废弃）")
 
 if changed:
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
