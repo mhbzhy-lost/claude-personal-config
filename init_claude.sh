@@ -182,23 +182,32 @@ fi
 SKILL_CATALOG_DIR="$SRC/mcp/skill-catalog"
 SKILL_CATALOG_VENV="$SKILL_CATALOG_DIR/.venv"
 
+# venv 创建与依赖同步分离：
+#   - venv 创建：幂等，仅缺失时创建
+#   - 依赖安装：每次都跑，pip install -e . 对已满足依赖是 no-op，
+#     且能自动补装 pyproject.toml 新增的依赖，避免老 venv 依赖陈旧
 if [ ! -f "$SKILL_CATALOG_VENV/bin/python" ]; then
   echo "[venv] 创建 skill-catalog 虚拟环境..."
   if command -v uv >/dev/null 2>&1; then
     uv venv "$SKILL_CATALOG_VENV" --python ">=3.11"
-    uv pip install --python "$SKILL_CATALOG_VENV/bin/python" -e "$SKILL_CATALOG_DIR"
   elif command -v python3 >/dev/null 2>&1 \
       && python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' 2>/dev/null; then
     python3 -m venv "$SKILL_CATALOG_VENV"
-    "$SKILL_CATALOG_VENV/bin/pip" install -e "$SKILL_CATALOG_DIR"
   else
     echo "[error] 需要 python>=3.11 或 uv 来初始化 skill-catalog 环境，跳过"
   fi
-  if [ -f "$SKILL_CATALOG_VENV/bin/python" ]; then
-    echo "[venv] skill-catalog 环境就绪: $SKILL_CATALOG_VENV"
-  fi
 else
   echo "[venv] skill-catalog 环境已存在，跳过创建"
+fi
+
+if [ -f "$SKILL_CATALOG_VENV/bin/python" ]; then
+  echo "[venv] 同步 skill-catalog 依赖（pyproject.toml）..."
+  if command -v uv >/dev/null 2>&1; then
+    uv pip install --python "$SKILL_CATALOG_VENV/bin/python" -e "$SKILL_CATALOG_DIR" >/dev/null
+  else
+    "$SKILL_CATALOG_VENV/bin/pip" install -e "$SKILL_CATALOG_DIR" >/dev/null
+  fi
+  echo "[venv] skill-catalog 环境就绪: $SKILL_CATALOG_VENV"
 fi
 
 # ---------------------------------------------------------------------------
