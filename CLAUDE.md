@@ -20,6 +20,16 @@
 - tools 里已开放 `mcp__skill-catalog__resolve` 和 `mcp__skill-catalog__get_skill`
 - 子 agent 开工时若判断任务涉及框架，自行 `resolve` 检索并 `get_skill` 读详情；不等主 agent 下发 skill 名字
 
+## 显式检索开关（用户侧手动控制）
+
+三种可选 sentinel，放在主对话 prompt 任意位置（hook 识别后从 prompt 里剔除，不进 classifier 输入）：
+
+- `%skill` — **强制检索模式**：harness 跑 resolve 后注入硬口径尾巴，要求主 agent 派发 coding-expert 前必须携带 skill name
+- `%skill:<name>,<name>` — **指定检索模式**：跳过 resolve，直接拉指定 skill 的完整 SKILL.md 内容注入主 agent 上下文（适合你已知要用哪几条 skill 时）
+- `%skill:none` — **显式禁用**：跳过 resolve，声明本轮不涉及框架
+
+不带 sentinel 时走默认软约束检索（现状）。sentinel 仅影响主对话，subagent 侧的规范由 SubagentStart hook 独立注入，不受影响。
+
 ---
 
 # coding-expert 使用规范
@@ -48,7 +58,7 @@
 
 ## 三档选型（决定 subagent_type）
 
-三份定义位于 `~/.claude/agents/coding-expert{,-light,-heavy}.md`，共享 `~/.claude/guidelines/coding-expert-rules.md` 规范（subagent 开工第一步 Read 加载）：
+三份定义位于 `~/.claude/agents/coding-expert{,-light,-heavy}.md`，共享 `~/.claude/guidelines/coding-expert-rules.md` 规范（由 SubagentStart hook 强制注入，子 agent 无需手动加载）：
 
 | subagent_type | model | effort | 适用批次 |
 |---|---|---|---|

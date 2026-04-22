@@ -84,9 +84,6 @@ def _format_resolve_text(result: dict) -> str:
     ts = result.get("tech_stack") or []
     cap = result.get("capability") or []
     skills = result.get("skills") or []
-    refs = result.get("referenced_files") or []
-    if refs:
-        lines.append(f"已读 @ 引用: {', '.join(refs)}")
     lines.append(f"检测技术栈: {', '.join(ts) if ts else '(无)'}")
     lines.append(f"能力域: {', '.join(cap) if cap else '(无)'}")
     if skills:
@@ -107,6 +104,34 @@ def _format_resolve_text(result: dict) -> str:
     return "\n".join(lines)
 
 
+def cmd_get(args: argparse.Namespace) -> int:
+    """Load a single skill's body by name.
+
+    --json-output (default): prints {"name": <name>, "content": <body>|null}
+    --text-output: prints body on stdout; if missing, empty stdout + rc=2
+    """
+    catalog = _build_catalog()
+    result = catalog.get_skill(args.name)
+    content = result["content"] if result else None
+
+    if args.text_output:
+        if content is None:
+            return 2
+        sys.stdout.write(content)
+        if not content.endswith("\n"):
+            sys.stdout.write("\n")
+        return 0
+
+    print(
+        json.dumps(
+            {"name": args.name, "content": content},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
 def cmd_resolve(args: argparse.Namespace) -> int:
     catalog = _build_catalog()
     classifier = _build_classifier()
@@ -114,7 +139,6 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     tech_stack = args.tech_stack or None
     capability = args.capability or None
     language = args.language or None
-    referenced_files = args.referenced_file or None
 
     result = run_resolve_pipeline(
         catalog=catalog,
@@ -125,7 +149,6 @@ def cmd_resolve(args: argparse.Namespace) -> int:
         capability=capability,
         language=language,
         top_n_limit=args.top_n,
-        referenced_files=referenced_files,
     )
 
     if args.text_output:
@@ -167,11 +190,6 @@ def main() -> int:
         "--top-n", type=int, default=None,
         help="截断结果数量（默认走动态规则）",
     )
-    p_resolve.add_argument(
-        "--referenced-file", action="append", default=None,
-        help="用户 prompt 里 @-引用的本地文件绝对路径，可多次指定；"
-             "pipeline 会读取内容拼进 classifier 的上下文",
-    )
     out_group = p_resolve.add_mutually_exclusive_group()
     out_group.add_argument(
         "--json-output", dest="text_output", action="store_false",
@@ -182,6 +200,19 @@ def main() -> int:
         help="输出人类可读摘要（供 hook 注入用）",
     )
     p_resolve.set_defaults(func=cmd_resolve, text_output=False)
+
+    p_get = sub.add_parser("get", help="按 name 读取单条 skill 正文")
+    p_get.add_argument("--name", required=True, help="skill 的 name（SKILL.md frontmatter）")
+    get_out = p_get.add_mutually_exclusive_group()
+    get_out.add_argument(
+        "--json-output", dest="text_output", action="store_false",
+        help='输出 JSON {"name":..., "content":...}（默认）',
+    )
+    get_out.add_argument(
+        "--text-output", dest="text_output", action="store_true",
+        help="直接输出 body；skill 不存在时空 stdout + rc=2",
+    )
+    p_get.set_defaults(func=cmd_get, text_output=False)
 
     args = parser.parse_args()
     return args.func(args)
