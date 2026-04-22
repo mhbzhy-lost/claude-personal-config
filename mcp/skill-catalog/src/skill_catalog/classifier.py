@@ -94,7 +94,7 @@ _RESPONSE_FORMAT = {
 @dataclass(frozen=True)
 class ClassifierConfig:
     host_url: str
-    model: str = "qwen3:4b"
+    model: str = "qwen2.5:7b"
     timeout_s: float = 5.0
     num_ctx: int = 4096
 

@@ -292,19 +292,20 @@ if [ -f "$SKILL_CATALOG_VENV/bin/python" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 初始化本地 LLM 后端：ollama + Qwen3 4B（项目内完全自包含部署）
+# 初始化本地 LLM 后端：ollama + Qwen2.5 7B（项目内完全自包含部署）
 #
 #   设计哲学：像 .venv/ 一样，ollama binary + 模型数据 + 运行时状态都落在
 #   mcp/skill-catalog/ 目录内，不干涉用户系统环境，不占 brew services，
 #   不写 ~/.ollama/。默认端口 11435 避免与用户可能自行安装的系统 ollama
 #   (11434) 冲突。
 #
-#   选型：Qwen3 4B（Apache 2.0、Q4_K_M ~2.5GB、中文开源 SOTA、原生 JSON
-#   structured output），M 级 Mac 上 50-70 tok/s。
+#   选型：Qwen2.5 7B（Apache 2.0、Q4_K_M ~4.7GB、中文开源 SOTA、原生 JSON
+#   structured output），M 级 Mac 热推理 1-2s；非思考型模型，format 约束下
+#   表现稳定（qwen3 思考型模型 think=False+format 会输出空数组）。
 #
 #   目录布局（均在 .gitignore）：
 #     vendor/ollama/      binary + MLX/GGML 后端 (~170MB)
-#     .ollama-models/     qwen3:4b 权重 (~2.5GB)
+#     .ollama-models/     qwen2.5:7b 权重 (~4.7GB)
 #     .ollama-runtime/    ollama.pid / ollama.log
 #
 #   幂等策略：
@@ -314,7 +315,7 @@ fi
 #     - 任一步失败告警但不退出，后续 MCP 注册仍能完成，LLM 能力 lazy 启用
 # ---------------------------------------------------------------------------
 OLLAMA_VERSION="${OLLAMA_VERSION:-v0.21.0}"
-OLLAMA_MODEL="${SKILL_CATALOG_OLLAMA_MODEL:-qwen3:4b}"
+OLLAMA_MODEL="${SKILL_CATALOG_OLLAMA_MODEL:-qwen2.5:7b}"
 OLLAMA_PORT="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
 OLLAMA_HOST_URL="http://127.0.0.1:$OLLAMA_PORT"
 
@@ -416,7 +417,7 @@ else
     done
   fi
 
-  echo "[ollama] 拉取模型 ${OLLAMA_MODEL}（首次 ~2.5GB，视网络耗时数分钟）..."
+  echo "[ollama] 拉取模型 ${OLLAMA_MODEL}（首次 ~4.7GB，视网络耗时数分钟）..."
   if OLLAMA_HOST="$OLLAMA_HOST_URL" "$OLLAMA_BIN" pull "$OLLAMA_MODEL"; then
     echo "[ok] 模型 $OLLAMA_MODEL 拉取完成"
   else
