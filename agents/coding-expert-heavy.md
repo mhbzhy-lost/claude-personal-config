@@ -25,7 +25,7 @@ heavy 档**贵在思考时间**，不应用来吃机械批次——那是浪费 
 
 ## 第一步：加载共享规范
 
-**开工前第一个工具调用必须是 Read `~/.claude/guidelines/coding-expert-rules.md`**（绝对路径）。该文件含三档 subagent 共享的工作原则 / 交付格式 / 通用规范。规范对 heavy 档同样适用——深推理不免除 skill 检索 / 项目级规范 / 验收流程等义务。
+**coding-expert 共享规范已由 harness 通过 SubagentStart hook 强制注入到你的上下文开头**，含三档 subagent 共享的工作原则 / 交付格式 / 通用规范。无需再调 Read 加载。规范对 heavy 档同样适用——深推理不免除 skill 检索 / 项目级规范 / 验收流程等义务。
 
 ## 本档位专有指令
 

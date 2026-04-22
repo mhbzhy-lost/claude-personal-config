@@ -85,7 +85,10 @@ src_root = sys.argv[1]
 settings_path = Path(sys.argv[2])
 
 # SubagentStart 保留：
-#   skill-marker → 注入 capability-taxonomy 闭集，供打标使用
+#   skill-marker        → 注入 capability-taxonomy 闭集，供打标使用
+#   coding-expert       → 注入 coding-expert-rules 共享规范（standard 档）
+#   coding-expert-light → 注入 coding-expert-rules 共享规范（light 档）
+#   coding-expert-heavy → 注入 coding-expert-rules 共享规范（heavy 档）
 #
 # 已废弃（迁移到 UserPromptSubmit hook → skill-catalog resolve）：
 #   stack-detector / skill-matcher —— 由 skill-resolve-inject.sh 端到端替代
@@ -96,6 +99,66 @@ desired_sub_start_hooks = [
             {
                 "type": "command",
                 "command": f"{src_root}/hooks/capability-taxonomy-inject.sh",
+            }
+        ],
+    },
+    {
+        "matcher": "coding-expert",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/hooks/coding-expert-rules-inject.sh",
+            }
+        ],
+    },
+    {
+        "matcher": "coding-expert-light",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/hooks/coding-expert-rules-inject.sh",
+            }
+        ],
+    },
+    {
+        "matcher": "coding-expert-heavy",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/hooks/coding-expert-rules-inject.sh",
+            }
+        ],
+    },
+]
+
+# SubagentStop 保留：
+#   coding-expert{,-light,-heavy} → coding-expert-audit.sh 事后合规审计
+#     扫 transcript 检测 resolve/list_skills/Edit 前置约束，违规注入警告
+desired_subagent_stop_hooks = [
+    {
+        "matcher": "coding-expert",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/hooks/coding-expert-audit.sh",
+            }
+        ],
+    },
+    {
+        "matcher": "coding-expert-light",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/hooks/coding-expert-audit.sh",
+            }
+        ],
+    },
+    {
+        "matcher": "coding-expert-heavy",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/hooks/coding-expert-audit.sh",
             }
         ],
     },
@@ -145,6 +208,24 @@ for desired in desired_sub_start_hooks:
         sub_start[found_idx] = desired
         changed = True
         print(f"[settings] 更新 hooks.SubagentStart[matcher={matcher}]")
+
+# 合并 hooks.SubagentStop：按 matcher upsert
+sub_stop = hooks.setdefault("SubagentStop", [])
+for desired in desired_subagent_stop_hooks:
+    matcher = desired["matcher"]
+    found_idx = None
+    for i, entry in enumerate(sub_stop):
+        if isinstance(entry, dict) and entry.get("matcher") == matcher:
+            found_idx = i
+            break
+    if found_idx is None:
+        sub_stop.append(desired)
+        changed = True
+        print(f"[settings] 新增 hooks.SubagentStop[matcher={matcher}]")
+    elif sub_stop[found_idx] != desired:
+        sub_stop[found_idx] = desired
+        changed = True
+        print(f"[settings] 更新 hooks.SubagentStop[matcher={matcher}]")
 
 # 合并 hooks.UserPromptSubmit：按 matcher upsert
 user_prompt = hooks.setdefault("UserPromptSubmit", [])
