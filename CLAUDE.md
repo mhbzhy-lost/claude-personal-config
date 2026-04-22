@@ -1,40 +1,81 @@
 # 知识检索规范（harness 自动注入 · 零操作）
 
-**harness 会在用户每次提交 prompt 时，自动调 `mcp__skill-catalog__resolve` 做 workspace 指纹扫描 + LLM 分类 + skill 筛选，把结果作为 additionalContext 注入主 agent 上下文。**主 agent 起手就能看到"检测技术栈: [...]"、"相关 skill: [...]"这类信息，不需要手动检索。
+**主 agent 上下文由 harness 自动注入"检测技术栈: [...]"、"相关 skill: [...]"清单，无需手动检索。**
 
 ## 主 agent 使用要点
 
-- **接到 skill 名字**：派发 coding-expert 子任务时，把这些名字**原样放入子 agent 的 prompt**，让子 agent 用 `mcp__skill-catalog__get_skill({ name })` 读详情
+- 注入的 skill 清单供主 agent 自身判断/动手时参考，**无需转发给 subagent**
 - **非框架任务**（纯文档、纯配置、纯逻辑）：harness 可能返回空 skill，直接动手
-- **harness 意外失败**（ollama 离线 / 超时）：hook 会注入空 context 不报错，此时主 agent 自行判断
-  - 若判断任务涉及框架：可以调 `mcp__skill-catalog__resolve(user_prompt, cwd)` 补一次检索
+- **harness 意外失败**（hook 注入空 context）：主 agent 自行判断
+  - 若判断任务涉及框架：调 `mcp__skill-catalog__resolve(user_prompt, cwd)` 补一次检索
   - 若判断不涉及：直接动手
 
 ## 禁止行为
 
-- **禁止调用 `mcp__skill-catalog__list_skills`**：清单过长会污染上下文，让 MCP server 代筛
-- **禁止凭记忆写框架 API**：即便 harness 没注入 skill，也该先 `resolve` 再动手
+- **禁止调用 `mcp__skill-catalog__list_skills`**，让 MCP server 代筛
+- **禁止凭记忆写框架 API**：即便 harness 没注入 skill，也先 `resolve` 再动手
 
 ## coding-expert 子 agent 使用
 
 - tools 里已开放 `mcp__skill-catalog__resolve` 和 `mcp__skill-catalog__get_skill`
-- 主 agent 派发时如果 prompt 里没带 skill 名字、任务又涉及框架，子 agent 自行 `resolve`（不必向主 agent 反馈"缺少输入"）
+- 子 agent 开工时若判断任务涉及框架，自行 `resolve` 检索并 `get_skill` 读详情；不等主 agent 下发 skill 名字
 
 ---
 
 # coding-expert 使用规范
 
-**编码类子任务的执行默认交由 `coding-expert` agent 完成，主 agent 负责规划与编排。**
+**主 agent 专注与用户讨论需求与方案、规划任务、选档派发与汇总上报；执行类子任务（不限于编码）默认委派给 `coding-expert` 三档 agent。凡是可以写成自包含 prompt + 验收标准的执行单元，都应派发。**
 
-适用场景（以下任一情形均应调用 `coding-expert`）：
-- **并发编码任务**：发现可并行的编码子任务时，利用多个 `coding-expert` 并发执行
-- **plan mode 计划落地**：plan mode 规划的计划进入执行阶段后，每个子任务交由 `coding-expert` 完成
-- **todo list 子任务执行**：非 plan mode 场景下以 todo list 拆分的子任务，每个子任务执行时同样委派给 `coding-expert`
+## 职责边界
 
-调用要求：
+- **主 agent**：理解需求、澄清歧义、对齐方案、拆分任务、选档派发、整合结果回传用户；**尽量不亲自执行**
+- **coding-expert 三档**：实际落地执行——编码、重构、调研、文档编写、配置修改、代码分析、bug 诊断、测试扩展等一切具体产出
+
+主 agent 亲自动手的场景仅限于：
+- 与用户对话、讨论方案、澄清需求、解释概念
+- 派发前的**少量必要上下文收集**（如读一两个关键文件、grep 一个符号以判断选档）
+- **极小且一次性**的操作（如改一行 CLAUDE.md、追加一条 memory）
+
+含判断或跨多步/多文件的任务，即便不写代码（如"梳理 xx 模块调用关系"、"整理 yy 文档结构"、"排查 zz 报错根因"），也应派发 coding-expert，而非主 agent 自己铺开执行。
+
+## 适用场景
+
+以下任一情形均应派发 coding-expert：
+- **并发子任务**：发现可并行的子任务时，利用多个 coding-expert 并发执行
+- **plan mode 计划落地**：plan mode 规划的计划进入执行阶段后，每个子任务交由 coding-expert 完成
+- **todo list 子任务执行**：非 plan mode 场景下以 todo list 拆分的子任务，每个子任务同样委派给 coding-expert
+- **单个较重的执行单元**：即便未拆分，只要任务含多步操作或跨文件判断，主 agent 也应派发而非自执行
+
+## 三档选型（决定 subagent_type）
+
+三份定义位于 `~/.claude/agents/coding-expert{,-light,-heavy}.md`，共享 `~/.claude/guidelines/coding-expert-rules.md` 规范（subagent 开工第一步 Read 加载）：
+
+| subagent_type | model | effort | 适用批次 |
+|---|---|---|---|
+| `coding-expert-light` | Sonnet 4.6 | low | 纯补丁 / 范式迁移（"对标 batch D 写 yyy"）/ 文档 / docstring / 机械 helper / 枚举追加 / 单测扩展 / 小修 bugfix（已定位+已知修复） |
+| `coding-expert` | Opus | low | 默认档。含判断但规格清晰：功能实现、单模块重构、接口变更、Bug fix（已定位根因）、性能优化、测试编写 |
+| `coding-expert-heavy` | Opus | medium | 新架构设计（新节点/agent/contract 职责边界）、跨模块耦合判断（"删 X 影响哪些 Y"）、Bug 根因诊断（失败 log 推因）、实现路径权衡（A vs B）、首次构建新范式 |
+
+派发前自问三连（Plan 批次已标注 `Model/Effort` 时直接映射，跳过启发式）：
+
+```
+1. 本批次是新架构设计 / 跨模块耦合 / bug 根因 / 无先例可抄？
+   YES → coding-expert-heavy
+2. 本批次规格明确、无需权衡（纯补丁 / 迁移 / 文档 / 机械 helper）？
+   YES → coding-expert-light
+3. 其他情况（含判断但不复杂）：
+   → coding-expert（默认）
+```
+
+**选档规则**：
+- 不确定时**保守选高档**
+- light/heavy 在执行中自判档位不匹配会写"降级建议/升级建议"上报 → 主 agent 按上报调整后续派发
+
+## 调用要求
+
 - 传入的 prompt 必须自包含：含目标、前置上下文、涉及文件路径/符号、验收标准
 - 多个独立子任务并行分发时，必须在同一消息内并发发起多个 Agent 调用
-- **派发 coding-expert 时的 skill 名字**：harness UserPromptSubmit hook 会自动注入"相关 skill: [...]"清单。主 agent 把这些名字原样包含在子任务 prompt 中即可，子 agent 自己会调 `mcp__skill-catalog__get_skill` 读详情。若 harness 未命中相关 skill（非框架任务），可显式标注"无需 skill"；子 agent 在未收到 skill 名字但判断任务涉及框架时，也会自行调用 `mcp__skill-catalog__resolve` 补检索
+- **skill 知识检索由子 agent 自理**，无需主 agent 转传 harness 注入的 skill 名字
 
 ---
 
