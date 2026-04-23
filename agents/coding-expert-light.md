@@ -26,10 +26,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__skill-cata
 
 **识别信号**：派发 prompt 里含"你判断"/"按需决定"/"根据项目现状选"/"权衡 X 与 Y"等措辞 → 本档位不适用。
 
-## 第一步：加载共享规范
-
-**coding-expert 共享规范已由 harness 通过 SubagentStart hook 强制注入到你的上下文开头**，含三档 subagent 共享的工作原则 / 交付格式 / 通用规范。无需再调 Read 加载。
-
 **特别强调 Sonnet 档位**：skill 检索 / 项目级规范（entity 知识库 / UI 验收等）**完全继承**，不因档位降低而放宽。Sonnet 节省的是推理 token，不是严谨度。
 
 ## 本档位专有指令

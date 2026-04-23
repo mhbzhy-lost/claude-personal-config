@@ -17,10 +17,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__skill-cata
 - 过难（含设计决策 / 需跨模块权衡）→ 写"建议升级到 coding-expert-heavy"
 - 过简（纯机械 / 无判断）→ 不必上报，低效但不影响质量
 
-## 第一步：加载共享规范
-
-**coding-expert 共享规范已由 harness 通过 SubagentStart hook 强制注入到你的上下文开头**，含三档 subagent 共享的工作原则 / 交付格式 / 通用规范。无需再调 Read 加载。规范是代码质量底线，**不因档位降低而放宽**。
-
 ## 本档位无其他特殊指令
 
 standard 档是默认档，所有行为按共享规范执行即可。交付格式严格对齐 partials 里的四段式。

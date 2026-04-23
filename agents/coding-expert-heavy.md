@@ -23,10 +23,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__skill-cata
 
 heavy 档**贵在思考时间**，不应用来吃机械批次——那是浪费 effort=medium 的推理预算。
 
-## 第一步：加载共享规范
-
-**coding-expert 共享规范已由 harness 通过 SubagentStart hook 强制注入到你的上下文开头**，含三档 subagent 共享的工作原则 / 交付格式 / 通用规范。无需再调 Read 加载。规范对 heavy 档同样适用——深推理不免除 skill 检索 / 项目级规范 / 验收流程等义务。
-
 ## 本档位专有指令
 
 1. **权衡必须显式**：做结构级决策时在交付报告"实现要点"里显式列考虑过的选项（至少 2 个）+ 选中理由 + 未选的否决理由
