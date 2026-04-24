@@ -22,8 +22,11 @@ if [[ ! -f "$TAXONOMY_PATH" ]]; then
   echo "[capability-taxonomy-inject] ERROR: taxonomy not found at $TAXONOMY_PATH" >&2
   # Emit a still-valid hook response so the sub-agent does not fail hard;
   # the sub-agent's own prompt will detect the missing taxonomy and abort.
-  printf '{"hookEventName":"SubagentStart","additionalContext":"[capability-taxonomy missing at %s]"}\n' \
-    "$TAXONOMY_PATH"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":f"[capability-taxonomy missing at {sys.argv[1]}]"}}))' "$TAXONOMY_PATH"
+  else
+    printf '{"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":"[capability-taxonomy missing]"}}\n'
+  fi
   exit 0
 fi
 
@@ -53,8 +56,10 @@ header = (
 )
 
 print(json.dumps({
-    "hookEventName": "SubagentStart",
-    "additionalContext": header + body,
+    "hookSpecificOutput": {
+        "hookEventName": "SubagentStart",
+        "additionalContext": header + body,
+    },
 }))
 print(
     f"[capability-taxonomy-inject] hook fired, injected {len(body)} chars from {path}",
