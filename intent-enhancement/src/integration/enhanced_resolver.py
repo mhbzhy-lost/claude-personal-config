@@ -6,7 +6,7 @@
 
 import time
 import yaml
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict, is_dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
@@ -96,11 +96,26 @@ class EnhancedSkillResolver:
             top_n = top_n or self.config.retrieval.top_n
             search_result = self._search_skills(user_prompt, recognition_result.enhanced_intent.enhanced_intent,
                                              tech_stack, capability, language, top_n, search_context)
-            
+
+            # HybridRetrievalEngine.search 的缓存命中分支返回 dict 列表，非缓存
+            # 分支返回 SkillResult dataclass 列表。在这里统一规范为 dict，下游
+            # ranker/dependency 按 dict 访问。
+            skill_dicts: List[Dict[str, Any]] = []
+            for s in search_result.skills:
+                if isinstance(s, dict):
+                    skill_dicts.append(s)
+                elif is_dataclass(s):
+                    skill_dicts.append(asdict(s))
+                else:
+                    skill_dicts.append({
+                        'name': getattr(s, 'name', ''),
+                        'description': getattr(s, 'description', ''),
+                    })
+
             if self.config.retrieval.enable_dependency_analysis:
-                ranked_skills = self._rank_skills_with_dependencies(search_result.skills, search_context)
+                ranked_skills = self._rank_skills_with_dependencies(skill_dicts, search_context)
             else:
-                ranked_skills = search_result.skills
+                ranked_skills = skill_dicts
             
             processing_time = time.time() - start_time
             
@@ -116,7 +131,10 @@ class EnhancedSkillResolver:
                 dependency_analysis=self._get_dependency_analysis(ranked_skills, search_context)
             )
         except Exception as e:
-            print(f"增强解析失败: {e}")
+            import logging, traceback
+            logging.getLogger(__name__).warning(
+                "增强解析失败，走 fallback: %s\n%s", e, traceback.format_exc()
+            )
             return self._create_fallback_result(user_prompt, start_time, e)
     
     def _recognize_intent(self, user_prompt: str, cwd: str, conversation_id: str = None) -> RecognitionResult:

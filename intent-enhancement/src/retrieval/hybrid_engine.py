@@ -5,6 +5,7 @@
 """
 
 import json
+import re
 import time
 import hashlib
 from datetime import datetime
@@ -426,16 +427,24 @@ class HybridRetrievalEngine:
                 if any(lang in skill.get('language', []) for lang in language)
             ]
         
-        # 文本匹配
+        # 文本匹配：OR 而非 AND（至少一个 token 命中 name/description 即保留）。
+        # 对中文查询（不依赖空格分词）额外做整串子串匹配。所有 token 都未命中
+        # 时不做过滤，保留 tech/capability/language 硬过滤后的候选，交给
+        # _rank_skills 打分层处理。
+        tokens = [t.lower() for t in query.split() if t.strip()]
         query_lower = query.lower()
-        for keyword in query.split():
-            keyword_lower = keyword.lower()
-            candidates = [
-                skill for skill in candidates
-                if keyword_lower in skill.get('name', '').lower() or 
-                   keyword_lower in skill.get('description', '').lower()
-            ]
-        
+        if tokens:
+            def _hits(skill):
+                name = skill.get('name', '').lower()
+                desc = skill.get('description', '').lower()
+                if query_lower and (query_lower in name or query_lower in desc):
+                    return True
+                return any(tok in name or tok in desc for tok in tokens)
+
+            filtered = [s for s in candidates if _hits(s)]
+            if filtered:
+                candidates = filtered
+
         return candidates
     
     def _rule_based_filter(self, query: str, candidates: List[Dict[str, Any]], 
@@ -444,21 +453,22 @@ class HybridRetrievalEngine:
         # 应用内置规则
         candidates = self.rule_engine.apply_rules(query, candidates)
         
-        # 应用上下文规则
-        if 'technical_stack' in context:
-            context_tech = context['technical_stack']
+        # 应用上下文规则：仅当上下文字段非空时过滤，空列表不视作过滤条件
+        # （否则 any([]) 恒假会把所有候选清空）
+        context_tech = context.get('technical_stack') or []
+        if context_tech:
             candidates = [
                 skill for skill in candidates
                 if any(tech in skill.get('tech_stack', []) for tech in context_tech)
             ]
-        
-        if 'requirements' in context:
-            requirements = context['requirements']
+
+        requirements = context.get('requirements') or []
+        if requirements:
             candidates = [
                 skill for skill in candidates
                 if any(req.lower() in skill.get('description', '').lower() for req in requirements)
             ]
-        
+
         return candidates
     
     def _vector_search(self, query: str, candidates: List[Dict[str, Any]], 
