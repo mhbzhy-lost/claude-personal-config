@@ -19,10 +19,10 @@ cases:
         - nextjs-rendering
         - nextjs-server-components
       min_skills: 1
-      # nextjs 类 skill 库已扩至 24 条，当 classifier 仅返 tech_stack=['nextjs']
-      # 无 capability 二维收窄时，过滤结果等于全量召回。25 的上限反映当前库规模，
-      # 兜底防止退化到数百条无关 skill。
-      max_skills: 25
+      # 对齐 ranking.top_n 的 FULL_RETURN_THRESHOLD=35（生产代码注释里的
+      # "Opus-class consumer ~35 条同类 skill 无注意力漂移，实测边界 ~50"）。
+      # 之前 12 的阈值是基于旧库规模，已过时。35 兜底防退化到数百条即可。
+      max_skills: 35
 
   - id: fingerprint-dominant
     description: "django 项目 + 异步任务需求"
@@ -60,8 +60,8 @@ cases:
       # 必须同时识别出两侧栈（monorepo 验证核心断言）
       tech_stack_must_include_one_of: ["django"]
       # 由于 list_skills 默认 intersection 模式，跨栈 tag 组合很可能 0 skill，
-      # 因此不设 min_skills。
-      max_skills: 20
+      # 因此不设 min_skills。max_skills 对齐 FULL_RETURN_THRESHOLD=35。
+      max_skills: 35
 
   - id: vague-python-backend
     description: "模糊意图 Python 后端"
