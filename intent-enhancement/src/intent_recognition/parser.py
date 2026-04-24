@@ -12,6 +12,8 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from uuid import UUID
 
+from .text_path_extractor import TextPathExtractor
+
 @dataclass
 class ConversationMessage:
     """对话消息数据结构"""
@@ -51,15 +53,29 @@ class ConversationSession:
 class ClaudeCodeLogParser:
     """Claude Code日志解析器"""
     
-    def __init__(self, log_directory: Optional[str] = None):
+    def __init__(
+        self,
+        log_directory: Optional[str] = None,
+        text_path_extractor: Optional[TextPathExtractor] = None,
+        prose_extraction_cwd: Optional[str] = None,
+    ):
         """
         初始化日志解析器
-        
+
         Args:
             log_directory: 日志文件目录，默认为 ~/.claude/projects
+            text_path_extractor: 行文路径抽取器。未传入时按 `prose_extraction_cwd`
+                （未传则 os.getcwd()）惰性构造默认 extractor。
+            prose_extraction_cwd: 默认 extractor 使用的项目根，仅在未显式传入
+                `text_path_extractor` 时生效。
         """
         self.log_dir = Path(log_directory) if log_directory else Path.home() / ".claude" / "projects"
         self.current_session = None
+        self.text_path_extractor = text_path_extractor or TextPathExtractor(
+            cwd=prose_extraction_cwd,
+        )
+        # 同一个 session 内记录已抽取过的 (file_path) 以避免重复 append
+        self._prose_seen: set[tuple[str, str]] = set()
         
     def parse_conversation(self, session_id: str) -> ConversationSession:
         """
@@ -101,10 +117,12 @@ class ClaudeCodeLogParser:
         if event_type == "user":
             message = self._parse_user_message(event)
             session.messages.append(message)
-            
+            self._harvest_prose_paths(session, message, event.get("timestamp", ""))
+
         elif event_type == "assistant":
             message = self._parse_assistant_message(event)
             session.messages.append(message)
+            self._harvest_prose_paths(session, message, event.get("timestamp", ""))
             
         elif event_type == "attachment":
             attachment = event.get("attachment", {})
@@ -167,6 +185,52 @@ class ClaudeCodeLogParser:
             session_id=event.get("sessionId")
         )
     
+    def _harvest_prose_paths(
+        self,
+        session: ConversationSession,
+        message: ConversationMessage,
+        timestamp: str,
+    ) -> None:
+        """从消息 text 字段中抽取行文路径并补充到 session.file_references.
+
+        不改动现有 `@path` / attachment 流 —— 这里仅新增 source='prose' 类型
+        的 FileReference 条目，与 attachment 产生的条目共用同一份 schema，
+        analyzer.py::analyze_files 无需改动即可消费。
+        """
+        text_parts: List[str] = []
+        for item in message.content:
+            if not isinstance(item, dict):
+                continue
+            t = item.get("type")
+            if t == "text" and isinstance(item.get("text"), str):
+                text_parts.append(item["text"])
+            elif t == "thinking" and isinstance(item.get("thinking"), str):
+                text_parts.append(item["thinking"])
+        if not text_parts:
+            return
+
+        combined = "\n".join(text_parts)
+        try:
+            extracted = self.text_path_extractor.extract(combined)
+        except Exception as e:  # 抽取永远不该打断解析
+            print(f"警告：行文路径抽取失败: {e}")
+            return
+
+        for ep in extracted:
+            key = (message.uuid or "", ep.absolute)
+            if key in self._prose_seen:
+                continue
+            self._prose_seen.add(key)
+
+            file_type = self._identify_file_type(ep.path)
+            session.file_references.append(FileReference(
+                file_path=ep.path,
+                content=None,  # 行文抽取不加载文件内容
+                timestamp=timestamp,
+                file_type=file_type,
+                purpose="mentioned",
+            ))
+
     def _parse_file_reference(self, attachment: Dict[str, Any], timestamp: str) -> FileReference:
         """解析文件引用"""
         filename = attachment.get("filename")
