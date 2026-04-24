@@ -1,0 +1,2588 @@
+{
+  "fallback_overall": {
+    "tech_precision": 0.6147089947089948,
+    "tech_recall": 0.8174603174603174,
+    "tech_f1": 0.6465608465608466,
+    "cap_precision": 0.5544573643410853,
+    "cap_recall": 0.6833333333333333,
+    "cap_f1": 0.5303350970017636,
+    "elapsed_s": 0.23129516019899812,
+    "n": 45
+  },
+  "llm_overall": {
+    "tech_precision": 0.5940740740740741,
+    "tech_recall": 0.7805555555555556,
+    "tech_f1": 0.5251851851851852,
+    "cap_precision": 0.47619047619047616,
+    "cap_recall": 0.5085470085470085,
+    "cap_f1": 0.4274074074074074,
+    "elapsed_s": 2.8568670463437837,
+    "n": 45
+  },
+  "fallback_by_source": {
+    "real": {
+      "tech_precision": 0.4375,
+      "tech_recall": 0.6274509803921569,
+      "tech_f1": 0.45452380952380955,
+      "cap_precision": 0.27824074074074073,
+      "cap_recall": 0.4444444444444444,
+      "cap_f1": 0.2715873015873016,
+      "elapsed_s": 0.36745071241166444,
+      "n": 20
+    },
+    "synthetic": {
+      "tech_precision": 0.7564761904761905,
+      "tech_recall": 0.9466666666666667,
+      "tech_f1": 0.8001904761904762,
+      "cap_precision": 0.7533333333333333,
+      "cap_recall": 0.8787878787878788,
+      "cap_f1": 0.7373333333333333,
+      "elapsed_s": 0.12237071842886507,
+      "n": 25
+    }
+  },
+  "llm_by_source": {
+    "real": {
+      "tech_precision": 0.3,
+      "tech_recall": 0.5238095238095238,
+      "tech_f1": 0.21666666666666667,
+      "cap_precision": 0.16666666666666666,
+      "cap_recall": 0.17857142857142858,
+      "cap_f1": 0.13333333333333333,
+      "elapsed_s": 4.960394956299569,
+      "n": 20
+    },
+    "synthetic": {
+      "tech_precision": 0.8293333333333334,
+      "tech_recall": 0.8586956521739131,
+      "tech_f1": 0.772,
+      "cap_precision": 0.7083333333333334,
+      "cap_recall": 0.6933333333333334,
+      "cap_f1": 0.6626666666666666,
+      "elapsed_s": 1.1740447183791547,
+      "n": 25
+    }
+  },
+  "fallback_by_diff": {
+    "L1": {
+      "tech_precision": 0.696078431372549,
+      "tech_recall": 0.7916666666666666,
+      "tech_f1": 0.6823529411764706,
+      "cap_precision": 0.45637254901960783,
+      "cap_recall": 0.6875,
+      "cap_f1": 0.5018674136321195,
+      "elapsed_s": 0.28139457105905474,
+      "n": 17
+    },
+    "L2": {
+      "tech_precision": 0.4583333333333333,
+      "tech_recall": 0.6666666666666666,
+      "tech_f1": 0.4993197278911565,
+      "cap_precision": 0.532051282051282,
+      "cap_recall": 0.6538461538461539,
+      "cap_f1": 0.5142857142857142,
+      "elapsed_s": 0.2669373987841287,
+      "n": 14
+    },
+    "L3": {
+      "tech_precision": 0.401984126984127,
+      "tech_recall": 1.0,
+      "tech_f1": 0.5619047619047619,
+      "cap_precision": 0.8333333333333334,
+      "cap_recall": 0.6111111111111112,
+      "cap_f1": 0.611111111111111,
+      "elapsed_s": 0.15540911798598245,
+      "n": 6
+    },
+    "L4": {
+      "tech_precision": 0.875,
+      "tech_recall": 0.9583333333333334,
+      "tech_f1": 0.8916666666666666,
+      "cap_precision": 0.625,
+      "cap_recall": 0.8333333333333334,
+      "cap_f1": 0.5583333333333333,
+      "elapsed_s": 0.11937452625716105,
+      "n": 8
+    }
+  },
+  "llm_by_diff": {
+    "L1": {
+      "tech_precision": 0.5882352941176471,
+      "tech_recall": 0.75,
+      "tech_f1": 0.4803921568627451,
+      "cap_precision": 0.4117647058823529,
+      "cap_recall": 0.4666666666666667,
+      "cap_f1": 0.4019607843137255,
+      "elapsed_s": 3.7099482304526163,
+      "n": 17
+    },
+    "L2": {
+      "tech_precision": 0.4642857142857143,
+      "tech_recall": 0.8125,
+      "tech_f1": 0.4523809523809524,
+      "cap_precision": 0.3076923076923077,
+      "cap_recall": 0.3,
+      "cap_f1": 0.23809523809523808,
+      "elapsed_s": 3.313898916647304,
+      "n": 14
+    },
+    "L3": {
+      "tech_precision": 0.7055555555555555,
+      "tech_recall": 0.9444444444444444,
+      "tech_f1": 0.7944444444444445,
+      "cap_precision": 0.8,
+      "cap_recall": 0.6666666666666666,
+      "cap_f1": 0.6666666666666666,
+      "elapsed_s": 1.751096208463423,
+      "n": 6
+    },
+    "L4": {
+      "tech_precision": 0.75,
+      "tech_recall": 0.625,
+      "tech_f1": 0.5458333333333334,
+      "cap_precision": 0.7142857142857143,
+      "cap_recall": 0.7291666666666666,
+      "cap_f1": 0.6333333333333333,
+      "elapsed_s": 1.0735918854916235,
+      "n": 8
+    }
+  },
+  "per_sample": [
+    {
+      "sample_id": "intent_real_000",
+      "source": "real",
+      "difficulty": "L1",
+      "user_prompt_head": "独立文件可以，但对于低智能模型，是否能保证一定会读呢，有没有harness手段能保证强制加载",
+      "gt_tech": [
+        "agent",
+        "claude-code",
+        "mcp"
+      ],
+      "gt_cap": [
+        "cc-hook",
+        "cc-subagent"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "agent",
+          "claude-code",
+          "mcp"
+        ],
+        "pred_cap": [
+          "cc-hook",
+          "cc-mcp",
+          "cc-settings",
+          "cc-subagent",
+          "prompt-engineering"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.4,
+        "cap_recall": 1.0,
+        "cap_f1": 0.5714285714285715,
+        "elapsed_s": 0.5510682089952752
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "agent"
+        ],
+        "pred_cap": [
+          "cc-hook"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.3333333333333333,
+        "tech_f1": 0.5,
+        "cap_precision": 1.0,
+        "cap_recall": 0.5,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 6.505459166946821
+      }
+    },
+    {
+      "sample_id": "intent_real_001",
+      "source": "real",
+      "difficulty": "L1",
+      "user_prompt_head": "目前加载共享规范是通过coding-expert-rules.md文件链接的，又需要agent自行加载，感觉很不靠谱，建议做成通过hook监听subagent启",
+      "gt_tech": [
+        "agent",
+        "claude-code",
+        "mcp"
+      ],
+      "gt_cap": [
+        "cc-hook",
+        "cc-subagent"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "agent",
+          "claude-code"
+        ],
+        "pred_cap": [
+          "cc-hook",
+          "cc-settings",
+          "cc-subagent",
+          "tool-calling",
+          "ui-display"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.6666666666666666,
+        "tech_f1": 0.8,
+        "cap_precision": 0.4,
+        "cap_recall": 1.0,
+        "cap_f1": 0.5714285714285715,
+        "elapsed_s": 0.45755370799452066
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "claude-code"
+        ],
+        "pred_cap": [
+          "cc-hook",
+          "cc-subagent"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.3333333333333333,
+        "tech_f1": 0.5,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 6.146702500060201
+      }
+    },
+    {
+      "sample_id": "intent_real_002",
+      "source": "real",
+      "difficulty": "L1",
+      "user_prompt_head": "我发现“!”也是claude code 关键按键，需要换一个，用“#”吧。",
+      "gt_tech": [
+        "claude-code"
+      ],
+      "gt_cap": [
+        "cc-hook",
+        "cc-slash-command"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "agent",
+          "claude-code",
+          "mcp"
+        ],
+        "pred_cap": [
+          "cc-hook",
+          "cc-mcp",
+          "cc-settings",
+          "cc-slash-command",
+          "cc-subagent",
+          "unit-testing"
+        ],
+        "tech_precision": 0.3333333333333333,
+        "tech_recall": 1.0,
+        "tech_f1": 0.5,
+        "cap_precision": 0.3333333333333333,
+        "cap_recall": 1.0,
+        "cap_f1": 0.5,
+        "elapsed_s": 0.42364158295094967
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": NaN,
+        "cap_f1": 0.0,
+        "elapsed_s": 5.204244374996051
+      }
+    },
+    {
+      "sample_id": "intent_real_003",
+      "source": "real",
+      "difficulty": "L1",
+      "user_prompt_head": "值得注意的是项目级agents也引用了自己的coding-expert-rules.md，claude code的加载机制是否会导致其与全局的coding-ex",
+      "gt_tech": [
+        "agent",
+        "claude-code"
+      ],
+      "gt_cap": [
+        "cc-subagent"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "agent",
+          "claude-code"
+        ],
+        "pred_cap": [
+          "cc-subagent"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.2327862080419436
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "claude-code"
+        ],
+        "pred_cap": [
+          "cc-plugin"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.5,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 3.2465749999973923
+      }
+    },
+    {
+      "sample_id": "intent_real_004",
+      "source": "real",
+      "difficulty": "L1",
+      "user_prompt_head": "那我觉得可以新增一个skill-marker，专门用来给skill打标，skill-builder蒸馏skill时也不需要在frontmatter当中生成这些标",
+      "gt_tech": [
+        "agent",
+        "claude-code"
+      ],
+      "gt_cap": [
+        "cc-subagent"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "claude-code"
+        ],
+        "pred_cap": [
+          "encryption",
+          "form-validation",
+          "i18n",
+          "observability",
+          "orchestration",
+          "prompt-engineering",
+          "rag",
+          "routing",
+          "ui-navigation",
+          "websocket"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.5,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.3538067910121754
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [
+          "auth",
+          "data-fetching",
+          "file-upload",
+          "form-validation",
+          "http-client",
+          "i18n",
+          "media-processing",
+          "observability",
+          "permission",
+          "routing",
+          "state-management",
+          "task-scheduler",
+          "theming",
+          "ui-display",
+          "ui-feedback",
+          "ui-layout",
+          "ui-navigation",
+          "ui-overlay",
+          "websocket"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 7.48671408300288
+      }
+    },
+    {
+      "sample_id": "intent_real_005",
+      "source": "real",
+      "difficulty": "L2",
+      "user_prompt_head": "问题是自动注入的内容都只是列表，但没有get_skill流量也就意味着agent从未真正读取过skill的内容",
+      "gt_tech": [
+        "agent",
+        "claude-code",
+        "mcp"
+      ],
+      "gt_cap": [
+        "cc-mcp"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "agent",
+          "langgraph",
+          "nextjs",
+          "phaser"
+        ],
+        "pred_cap": [
+          "cc-hook",
+          "cc-subagent",
+          "form-validation",
+          "observability",
+          "tool-calling",
+          "ui-display"
+        ],
+        "tech_precision": 0.25,
+        "tech_recall": 0.3333333333333333,
+        "tech_f1": 0.28571428571428575,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.7869890830479562
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [
+          "api-design",
+          "http-client",
+          "orm",
+          "state-management",
+          "task-scheduler"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 10.741496750037186
+      }
+    },
+    {
+      "sample_id": "intent_real_006",
+      "source": "real",
+      "difficulty": "L2",
+      "user_prompt_head": "我觉得可以设计一条显式指令，让人类的prompt输入来强制控制agent执行数据检索",
+      "gt_tech": [
+        "claude-code"
+      ],
+      "gt_cap": [
+        "cc-hook",
+        "cc-slash-command"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "agent",
+          "langgraph"
+        ],
+        "pred_cap": [
+          "cc-hook"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": 0.0,
+        "tech_f1": 0.0,
+        "cap_precision": 1.0,
+        "cap_recall": 0.5,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 0.46674166701268405
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": NaN,
+        "cap_f1": 0.0,
+        "elapsed_s": 5.970175249967724
+      }
+    },
+    {
+      "sample_id": "intent_real_007",
+      "source": "real",
+      "difficulty": "L2",
+      "user_prompt_head": "[Request interrupted by user]",
+      "gt_tech": [
+        "antd",
+        "mcp",
+        "react"
+      ],
+      "gt_cap": [
+        "cc-mcp"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "agent",
+          "antd",
+          "claude-code",
+          "react"
+        ],
+        "pred_cap": [
+          "cc-hook",
+          "cc-subagent",
+          "llm-client"
+        ],
+        "tech_precision": 0.5,
+        "tech_recall": 0.6666666666666666,
+        "tech_f1": 0.5714285714285715,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.2430575410835445
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "claude-code"
+        ],
+        "pred_cap": [],
+        "tech_precision": 0.0,
+        "tech_recall": 0.0,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": NaN,
+        "cap_f1": 0.0,
+        "elapsed_s": 3.234642375027761
+      }
+    },
+    {
+      "sample_id": "intent_real_008",
+      "source": "real",
+      "difficulty": "L1",
+      "user_prompt_head": "至少看起来机制已经OK了，先将所有代码commit&push吧",
+      "gt_tech": [
+        "claude-code",
+        "mcp"
+      ],
+      "gt_cap": [
+        "cc-mcp",
+        "cc-slash-command"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "agent",
+          "claude-code"
+        ],
+        "pred_cap": [
+          "cc-hook",
+          "cc-settings",
+          "cc-subagent",
+          "permission",
+          "theming"
+        ],
+        "tech_precision": 0.5,
+        "tech_recall": 0.5,
+        "tech_f1": 0.5,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.22146416699979454
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [
+          "ci-cd"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 3.1282166249584407
+      }
+    },
+    {
+      "sample_id": "intent_real_009",
+      "source": "real",
+      "difficulty": "L2",
+      "user_prompt_head": "是不是可以不用webfetch，而是用bash命令把源文件完整下载？这样就避免了摘要问题",
+      "gt_tech": [
+        "claude-code"
+      ],
+      "gt_cap": [],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "tailwindcss"
+        ],
+        "pred_cap": [
+          "auth",
+          "cc-settings",
+          "permission",
+          "routing"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": 0.0,
+        "tech_f1": 0.0,
+        "cap_precision": NaN,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.2585006660083309
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [
+          "http-client"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": NaN,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 3.050189874949865
+      }
+    },
+    {
+      "sample_id": "intent_real_010",
+      "source": "real",
+      "difficulty": "L2",
+      "user_prompt_head": "我还有个疑问，如何判断「haiku置信度低」的结果，让sonnet可以精准复核这些内容",
+      "gt_tech": [
+        "claude-code"
+      ],
+      "gt_cap": [
+        "prompt-engineering"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [],
+        "pred_cap": [
+          "form-validation",
+          "llm-client",
+          "prompt-engineering",
+          "ui-feedback"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.25,
+        "cap_recall": 1.0,
+        "cap_f1": 0.4,
+        "elapsed_s": 0.5985915829660371
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": NaN,
+        "cap_f1": 0.0,
+        "elapsed_s": 7.678071875008754
+      }
+    },
+    {
+      "sample_id": "intent_real_011",
+      "source": "real",
+      "difficulty": "L1",
+      "user_prompt_head": "prompt caching 实测",
+      "gt_tech": [
+        "claude-code"
+      ],
+      "gt_cap": [
+        "observability"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "agent",
+          "claude-code"
+        ],
+        "pred_cap": [
+          "auth",
+          "cc-hook",
+          "cc-subagent",
+          "prompt-engineering"
+        ],
+        "tech_precision": 0.5,
+        "tech_recall": 1.0,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.5204888749867678
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "claude-code"
+        ],
+        "pred_cap": [
+          "orm",
+          "task-scheduler"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 7.922127249999903
+      }
+    },
+    {
+      "sample_id": "intent_real_012",
+      "source": "real",
+      "difficulty": "L2",
+      "user_prompt_head": "需要注意的是，通过mcpserver查询skill list时，很有可能tech_stack或language输入空值，如果二者都是空值，则什么都不返回；若仅有",
+      "gt_tech": [
+        "mcp"
+      ],
+      "gt_cap": [
+        "cc-mcp"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "harmonyos"
+        ],
+        "pred_cap": [],
+        "tech_precision": 0.0,
+        "tech_recall": 0.0,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": NaN,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.30151195800863206
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": NaN,
+        "cap_f1": 0.0,
+        "elapsed_s": 4.440943334018812
+      }
+    },
+    {
+      "sample_id": "intent_real_013",
+      "source": "real",
+      "difficulty": "L1",
+      "user_prompt_head": "commit & push",
+      "gt_tech": [
+        "im",
+        "react"
+      ],
+      "gt_cap": [
+        "realtime-messaging"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "backend",
+          "im",
+          "react"
+        ],
+        "pred_cap": [
+          "cc-settings"
+        ],
+        "tech_precision": 0.6666666666666666,
+        "tech_recall": 1.0,
+        "tech_f1": 0.8,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.12795087497215718
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [
+          "ci-cd"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 1.3441859169397503
+      }
+    },
+    {
+      "sample_id": "intent_real_014",
+      "source": "real",
+      "difficulty": "L3",
+      "user_prompt_head": "我认为你上面提到的都很重要，我再补充一点：对于harmonyos和android，与c++的混编，以及相应的工程配置方法，都需要蒸馏标准实践，有时编写代码并不难",
+      "gt_tech": [
+        "android",
+        "harmonyos"
+      ],
+      "gt_cap": [],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "android",
+          "harmonyos",
+          "swiftui"
+        ],
+        "pred_cap": [
+          "ui-navigation"
+        ],
+        "tech_precision": 0.6666666666666666,
+        "tech_recall": 1.0,
+        "tech_f1": 0.8,
+        "cap_precision": NaN,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.3083670830819756
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "android",
+          "harmonyos"
+        ],
+        "pred_cap": [
+          "cc-plugin"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": NaN,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 4.002422666992061
+      }
+    },
+    {
+      "sample_id": "intent_real_015",
+      "source": "real",
+      "difficulty": "L2",
+      "user_prompt_head": "需要创建一个真实用例测试，判断新链路下是否能够成功检索",
+      "gt_tech": [
+        "agent",
+        "claude-code",
+        "mcp"
+      ],
+      "gt_cap": [
+        "cc-mcp",
+        "cc-subagent"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [],
+        "pred_cap": [
+          "auth",
+          "e2e-testing"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.1703694590833038
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [
+          "unit-testing"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 2.0391126250615343
+      }
+    },
+    {
+      "sample_id": "intent_real_016",
+      "source": "real",
+      "difficulty": "L1",
+      "user_prompt_head": "接了ollama embedding 还需要qwen小模型吗？它们职责是否重合",
+      "gt_tech": [
+        "mcp"
+      ],
+      "gt_cap": [
+        "llm-client",
+        "rag"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "django",
+          "react"
+        ],
+        "pred_cap": [
+          "auth",
+          "llm-client"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": 0.0,
+        "tech_f1": 0.0,
+        "cap_precision": 0.5,
+        "cap_recall": 0.5,
+        "cap_f1": 0.5,
+        "elapsed_s": 0.4829700830159709
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": NaN,
+        "cap_f1": 0.0,
+        "elapsed_s": 6.6206871250178665
+      }
+    },
+    {
+      "sample_id": "intent_real_017",
+      "source": "real",
+      "difficulty": "L1",
+      "user_prompt_head": "自动注入机制目前是怎样工作的",
+      "gt_tech": [
+        "claude-code"
+      ],
+      "gt_cap": [
+        "cc-hook"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "agent",
+          "claude-code",
+          "mcp"
+        ],
+        "pred_cap": [
+          "auth",
+          "cc-hook",
+          "cc-mcp",
+          "cc-settings",
+          "cc-subagent",
+          "llm-client",
+          "prompt-engineering",
+          "tool-calling"
+        ],
+        "tech_precision": 0.3333333333333333,
+        "tech_recall": 1.0,
+        "tech_f1": 0.5,
+        "cap_precision": 0.125,
+        "cap_recall": 1.0,
+        "cap_f1": 0.2222222222222222,
+        "elapsed_s": 0.4870622920570895
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [
+          "cc-hook"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 6.467949334066361
+      }
+    },
+    {
+      "sample_id": "intent_real_018",
+      "source": "real",
+      "difficulty": "L1",
+      "user_prompt_head": "python依赖统一使用uv管理，ENABLE_INTENT_ENHANCEMENT=true这个可以体现在 @init_claude.sh 当中，配置mcps",
+      "gt_tech": [
+        "mcp"
+      ],
+      "gt_cap": [
+        "cc-mcp"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [],
+        "pred_cap": [],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": NaN,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.1943986249389127
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [
+          "cc-plugin",
+          "orm"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 2.060150707955472
+      }
+    },
+    {
+      "sample_id": "intent_real_019",
+      "source": "real",
+      "difficulty": "L2",
+      "user_prompt_head": "@../../init_claude.sh 初始化脚本也要更新一下",
+      "gt_tech": [
+        "claude-code",
+        "mcp"
+      ],
+      "gt_cap": [
+        "cc-mcp"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "claude-code",
+          "mcp"
+        ],
+        "pred_cap": [
+          "cc-mcp"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.16169379197526723
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "claude-code"
+        ],
+        "pred_cap": [
+          "tool-calling"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.5,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 1.9178322909865528
+      }
+    },
+    {
+      "sample_id": "intent_syn_001",
+      "source": "synthetic",
+      "difficulty": "L1",
+      "user_prompt_head": "用 React 和 Ant Design 写一个地址三级联动的 Cascader 选择器",
+      "gt_tech": [
+        "antd",
+        "react"
+      ],
+      "gt_cap": [
+        "ui-input"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "antd",
+          "react"
+        ],
+        "pred_cap": [
+          "ui-input"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.12249091698322445
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "antd",
+          "react"
+        ],
+        "pred_cap": [
+          "ui-input"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 1.138338541961275
+      }
+    },
+    {
+      "sample_id": "intent_syn_002",
+      "source": "synthetic",
+      "difficulty": "L1",
+      "user_prompt_head": "写一个 Celery 异步订单处理任务，跑定时清理",
+      "gt_tech": [
+        "celery",
+        "django"
+      ],
+      "gt_cap": [
+        "task-scheduler"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "celery"
+        ],
+        "pred_cap": [
+          "task-scheduler"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.5,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.12102041591424495
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "celery",
+          "django"
+        ],
+        "pred_cap": [
+          "task-scheduler"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 1.110380957950838
+      }
+    },
+    {
+      "sample_id": "intent_syn_003",
+      "source": "synthetic",
+      "difficulty": "L1",
+      "user_prompt_head": "用 FastAPI 写一个登录接口，返回 JWT token，带密码校验",
+      "gt_tech": [
+        "fastapi"
+      ],
+      "gt_cap": [
+        "api-design",
+        "auth"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "fastapi"
+        ],
+        "pred_cap": [
+          "auth",
+          "form-validation"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.5,
+        "cap_recall": 0.5,
+        "cap_f1": 0.5,
+        "elapsed_s": 0.1214752501109615
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "fastapi"
+        ],
+        "pred_cap": [
+          "auth",
+          "http-client"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.5,
+        "cap_recall": 0.5,
+        "cap_f1": 0.5,
+        "elapsed_s": 1.0481774589279667
+      }
+    },
+    {
+      "sample_id": "intent_syn_004",
+      "source": "synthetic",
+      "difficulty": "L1",
+      "user_prompt_head": "前端加一个带校验的表单弹窗，使用 Ant Design 的 Modal + Form + Rules",
+      "gt_tech": [
+        "antd",
+        "react"
+      ],
+      "gt_cap": [
+        "form-validation",
+        "ui-form",
+        "ui-overlay"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "antd",
+          "frontend"
+        ],
+        "pred_cap": [
+          "form-validation",
+          "ui-form",
+          "ui-overlay"
+        ],
+        "tech_precision": 0.5,
+        "tech_recall": 0.5,
+        "tech_f1": 0.5,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.12439116695895791
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "antd",
+          "react"
+        ],
+        "pred_cap": [
+          "form-validation",
+          "ui-form",
+          "ui-overlay"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 1.4400554589228705
+      }
+    },
+    {
+      "sample_id": "intent_syn_005",
+      "source": "synthetic",
+      "difficulty": "L1",
+      "user_prompt_head": "使用 TailwindCSS 给按钮加一个 dark mode 切换",
+      "gt_tech": [
+        "tailwindcss"
+      ],
+      "gt_cap": [
+        "theming"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "tailwindcss"
+        ],
+        "pred_cap": [
+          "theming",
+          "ui-action"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.5,
+        "cap_recall": 1.0,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 0.1194721250794828
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "tailwindcss"
+        ],
+        "pred_cap": [
+          "ui-action"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.9922942080302164
+      }
+    },
+    {
+      "sample_id": "intent_syn_006",
+      "source": "synthetic",
+      "difficulty": "L1",
+      "user_prompt_head": "iOS 项目需要一个 SwiftUI 的图片列表，Kingfisher 加载远程图片",
+      "gt_tech": [
+        "ios",
+        "kingfisher",
+        "swiftui"
+      ],
+      "gt_cap": [
+        "ui-display"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "ios",
+          "kingfisher",
+          "swiftui"
+        ],
+        "pred_cap": [
+          "ui-display"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.12166641699150205
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "swiftui"
+        ],
+        "pred_cap": [
+          "http-client",
+          "ui-display"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.3333333333333333,
+        "tech_f1": 0.5,
+        "cap_precision": 0.5,
+        "cap_recall": 1.0,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 1.2068612079601735
+      }
+    },
+    {
+      "sample_id": "intent_syn_007",
+      "source": "synthetic",
+      "difficulty": "L2",
+      "user_prompt_head": "按刚才讨论的方案把那个 hook 的逻辑落地",
+      "gt_tech": [
+        "claude-code"
+      ],
+      "gt_cap": [
+        "cc-hook",
+        "cc-subagent"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "agent",
+          "claude-code"
+        ],
+        "pred_cap": [
+          "cc-hook",
+          "cc-settings",
+          "cc-subagent"
+        ],
+        "tech_precision": 0.5,
+        "tech_recall": 1.0,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 0.6666666666666666,
+        "cap_recall": 1.0,
+        "cap_f1": 0.8,
+        "elapsed_s": 0.13210270798299462
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "claude-code"
+        ],
+        "pred_cap": [
+          "cc-hook"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 0.5,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 1.2923388748895377
+      }
+    },
+    {
+      "sample_id": "intent_syn_008",
+      "source": "synthetic",
+      "difficulty": "L2",
+      "user_prompt_head": "前面提到的那个组件库，帮我写个表格出来",
+      "gt_tech": [
+        "react",
+        "shadcn-ui"
+      ],
+      "gt_cap": [
+        "ui-display"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "antd",
+          "react",
+          "shadcn-ui"
+        ],
+        "pred_cap": [
+          "ui-display"
+        ],
+        "tech_precision": 0.6666666666666666,
+        "tech_recall": 1.0,
+        "tech_f1": 0.8,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.12421241693664342
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "react",
+          "shadcn-ui"
+        ],
+        "pred_cap": [
+          "ui-display"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 1.3161855830112472
+      }
+    },
+    {
+      "sample_id": "intent_syn_009",
+      "source": "synthetic",
+      "difficulty": "L2",
+      "user_prompt_head": "按刚才说的那个模型换一下",
+      "gt_tech": [
+        "langgraph"
+      ],
+      "gt_cap": [
+        "orchestration"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "langchain",
+          "langgraph"
+        ],
+        "pred_cap": [
+          "agent-orchestration",
+          "orchestration"
+        ],
+        "tech_precision": 0.5,
+        "tech_recall": 1.0,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 0.5,
+        "cap_recall": 1.0,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 0.12086237501353025
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "langgraph"
+        ],
+        "pred_cap": [
+          "agent-orchestration"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 1.23859354108572
+      }
+    },
+    {
+      "sample_id": "intent_syn_010",
+      "source": "synthetic",
+      "difficulty": "L2",
+      "user_prompt_head": "继续我们刚才的任务",
+      "gt_tech": [
+        "playwright"
+      ],
+      "gt_cap": [
+        "auth",
+        "e2e-testing"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "playwright"
+        ],
+        "pred_cap": [
+          "auth",
+          "e2e-testing"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.12575879192445427
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "playwright"
+        ],
+        "pred_cap": [
+          "e2e-testing"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 0.5,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 1.1434192499145865
+      }
+    },
+    {
+      "sample_id": "intent_syn_011",
+      "source": "synthetic",
+      "difficulty": "L2",
+      "user_prompt_head": "加一下上面提到的那个缓存",
+      "gt_tech": [
+        "redis"
+      ],
+      "gt_cap": [
+        "key-value-store"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "redis"
+        ],
+        "pred_cap": [
+          "key-value-store"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.12311970803420991
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "django",
+          "redis"
+        ],
+        "pred_cap": [
+          "data-fetching"
+        ],
+        "tech_precision": 0.5,
+        "tech_recall": 1.0,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 1.279633584083058
+      }
+    },
+    {
+      "sample_id": "intent_syn_012",
+      "source": "synthetic",
+      "difficulty": "L3",
+      "user_prompt_head": "给前端加一个任务列表的弹窗，展示 pending 任务，支持接受/拒绝操作",
+      "gt_tech": [
+        "antd",
+        "react"
+      ],
+      "gt_cap": [
+        "ui-action",
+        "ui-display",
+        "ui-overlay"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "antd",
+          "celery",
+          "fastapi",
+          "frontend",
+          "langgraph",
+          "react"
+        ],
+        "pred_cap": [
+          "task-scheduler",
+          "ui-display",
+          "ui-overlay"
+        ],
+        "tech_precision": 0.3333333333333333,
+        "tech_recall": 1.0,
+        "tech_f1": 0.5,
+        "cap_precision": 0.6666666666666666,
+        "cap_recall": 0.6666666666666666,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 0.13285491592250764
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "antd",
+          "react"
+        ],
+        "pred_cap": [
+          "ui-action",
+          "ui-display",
+          "ui-overlay"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 1.4806746250251308
+      }
+    },
+    {
+      "sample_id": "intent_syn_013",
+      "source": "synthetic",
+      "difficulty": "L3",
+      "user_prompt_head": "后端加一个异步发邮件的任务",
+      "gt_tech": [
+        "celery",
+        "django"
+      ],
+      "gt_cap": [
+        "task-scheduler"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "antd",
+          "backend",
+          "celery",
+          "django",
+          "react",
+          "redis"
+        ],
+        "pred_cap": [
+          "task-scheduler"
+        ],
+        "tech_precision": 0.3333333333333333,
+        "tech_recall": 1.0,
+        "tech_f1": 0.5,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.12307008297648281
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "celery",
+          "django",
+          "redis"
+        ],
+        "pred_cap": [
+          "task-scheduler"
+        ],
+        "tech_precision": 0.6666666666666666,
+        "tech_recall": 1.0,
+        "tech_f1": 0.8,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 1.18519116693642
+      }
+    },
+    {
+      "sample_id": "intent_syn_014",
+      "source": "synthetic",
+      "difficulty": "L3",
+      "user_prompt_head": "给 Android 端加一个本地数据库缓存商品列表",
+      "gt_tech": [
+        "android",
+        "room"
+      ],
+      "gt_cap": [
+        "local-storage",
+        "ui-display"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "android",
+          "coredata",
+          "ios",
+          "room",
+          "swiftui"
+        ],
+        "pred_cap": [
+          "ui-display"
+        ],
+        "tech_precision": 0.4,
+        "tech_recall": 1.0,
+        "tech_f1": 0.5714285714285715,
+        "cap_precision": 1.0,
+        "cap_recall": 0.5,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 0.11939929192885756
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "android",
+          "compose",
+          "room"
+        ],
+        "pred_cap": [
+          "orm"
+        ],
+        "tech_precision": 0.6666666666666666,
+        "tech_recall": 1.0,
+        "tech_f1": 0.8,
+        "cap_precision": 0.0,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 1.1767510420177132
+      }
+    },
+    {
+      "sample_id": "intent_syn_015",
+      "source": "synthetic",
+      "difficulty": "L3",
+      "user_prompt_head": "给支付模块写一个对账脚本",
+      "gt_tech": [
+        "alipay",
+        "django",
+        "unionpay"
+      ],
+      "gt_cap": [
+        "payment-reconcile"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "alipay",
+          "antd",
+          "celery",
+          "django",
+          "payment",
+          "react",
+          "unionpay"
+        ],
+        "pred_cap": [
+          "payment-reconcile",
+          "task-scheduler"
+        ],
+        "tech_precision": 0.42857142857142855,
+        "tech_recall": 1.0,
+        "tech_f1": 0.6,
+        "cap_precision": 0.5,
+        "cap_recall": 1.0,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 0.1217893339926377
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "antd",
+          "celery",
+          "django",
+          "react",
+          "unionpay"
+        ],
+        "pred_cap": [
+          "payment-reconcile"
+        ],
+        "tech_precision": 0.4,
+        "tech_recall": 0.6666666666666666,
+        "tech_f1": 0.5,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 1.560502874897793
+      }
+    },
+    {
+      "sample_id": "intent_syn_016",
+      "source": "synthetic",
+      "difficulty": "L3",
+      "user_prompt_head": "React 侧的路由加个鉴权守卫",
+      "gt_tech": [
+        "react"
+      ],
+      "gt_cap": [
+        "auth",
+        "routing"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "antd",
+          "fastapi",
+          "react",
+          "sqlalchemy"
+        ],
+        "pred_cap": [
+          "routing"
+        ],
+        "tech_precision": 0.25,
+        "tech_recall": 1.0,
+        "tech_f1": 0.4,
+        "cap_precision": 1.0,
+        "cap_recall": 0.5,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 0.1269740000134334
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "fastapi",
+          "react"
+        ],
+        "pred_cap": [
+          "auth",
+          "routing"
+        ],
+        "tech_precision": 0.5,
+        "tech_recall": 1.0,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 1.10103487491142
+      }
+    },
+    {
+      "sample_id": "intent_syn_017",
+      "source": "synthetic",
+      "difficulty": "L4",
+      "user_prompt_head": "用 langgraph 编排一个 ReAct 风格的 agent，带工具调用",
+      "gt_tech": [
+        "langgraph"
+      ],
+      "gt_cap": [
+        "orchestration",
+        "prompt-engineering",
+        "tool-calling"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "langgraph",
+          "react"
+        ],
+        "pred_cap": [
+          "orchestration",
+          "tool-calling"
+        ],
+        "tech_precision": 0.5,
+        "tech_recall": 1.0,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 1.0,
+        "cap_recall": 0.6666666666666666,
+        "cap_f1": 0.8,
+        "elapsed_s": 0.12301679200027138
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "langgraph"
+        ],
+        "pred_cap": [
+          "agent-orchestration",
+          "tool-calling"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.5,
+        "cap_recall": 0.3333333333333333,
+        "cap_f1": 0.4,
+        "elapsed_s": 1.3255822090432048
+      }
+    },
+    {
+      "sample_id": "intent_syn_018",
+      "source": "synthetic",
+      "difficulty": "L4",
+      "user_prompt_head": "iOS 需要做 FairPlay DRM 集成，支持 HLS 流",
+      "gt_tech": [
+        "drm",
+        "fairplay",
+        "hls",
+        "ios"
+      ],
+      "gt_cap": [
+        "media-processing"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "drm",
+          "fairplay",
+          "hls",
+          "ios"
+        ],
+        "pred_cap": [],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.0,
+        "cap_recall": NaN,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.11483729199972004
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "ios"
+        ],
+        "pred_cap": [
+          "encryption",
+          "media-processing"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.25,
+        "tech_f1": 0.4,
+        "cap_precision": 0.5,
+        "cap_recall": 1.0,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 0.985450749984011
+      }
+    },
+    {
+      "sample_id": "intent_syn_019",
+      "source": "synthetic",
+      "difficulty": "L4",
+      "user_prompt_head": "用 Cilium 替换现有 Calico 网络插件",
+      "gt_tech": [
+        "calico",
+        "cilium",
+        "kubernetes"
+      ],
+      "gt_cap": [],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "calico",
+          "cilium",
+          "kubernetes"
+        ],
+        "pred_cap": [],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.1159435419831425
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "cilium"
+        ],
+        "pred_cap": [
+          "orchestration"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.3333333333333333,
+        "tech_f1": 0.5,
+        "cap_precision": NaN,
+        "cap_recall": 0.0,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.9858158329734579
+      }
+    },
+    {
+      "sample_id": "intent_syn_020",
+      "source": "synthetic",
+      "difficulty": "L4",
+      "user_prompt_head": "ArgoCD 接 FluxCD 做多集群 GitOps",
+      "gt_tech": [
+        "argocd",
+        "fluxcd",
+        "kubernetes"
+      ],
+      "gt_cap": [
+        "ci-cd"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "argocd",
+          "fluxcd",
+          "kubernetes"
+        ],
+        "pred_cap": [],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.0,
+        "cap_recall": NaN,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.132802875014022
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "argocd",
+          "fluxcd"
+        ],
+        "pred_cap": [
+          "ci-cd",
+          "orchestration"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.6666666666666666,
+        "tech_f1": 0.8,
+        "cap_precision": 0.5,
+        "cap_recall": 1.0,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 1.3656675419770181
+      }
+    },
+    {
+      "sample_id": "intent_syn_021",
+      "source": "synthetic",
+      "difficulty": "L4",
+      "user_prompt_head": "给抖音小程序加个 Taro 跨端页面",
+      "gt_tech": [
+        "douyin-miniprogram",
+        "taro"
+      ],
+      "gt_cap": [],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "douyin-miniprogram",
+          "taro"
+        ],
+        "pred_cap": [],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.11963870900217444
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "taro"
+        ],
+        "pred_cap": [],
+        "tech_precision": 1.0,
+        "tech_recall": 0.5,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.834441207931377
+      }
+    },
+    {
+      "sample_id": "intent_syn_022",
+      "source": "synthetic",
+      "difficulty": "L4",
+      "user_prompt_head": "接入 Sign in with Apple 和 QQ 互联登录",
+      "gt_tech": [
+        "apple-auth",
+        "oauth-social-login",
+        "qq-connect"
+      ],
+      "gt_cap": [
+        "auth"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "apple-auth",
+          "qq-connect"
+        ],
+        "pred_cap": [
+          "auth"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 0.6666666666666666,
+        "tech_f1": 0.8,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 0.11465525010135025
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [
+          "auth"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 1.0267277919920161
+      }
+    },
+    {
+      "sample_id": "intent_syn_023",
+      "source": "synthetic",
+      "difficulty": "L4",
+      "user_prompt_head": "Prometheus 采集 Loki 日志的指标，OpenTelemetry 串起来",
+      "gt_tech": [
+        "grafana-loki",
+        "opentelemetry",
+        "prometheus"
+      ],
+      "gt_cap": [
+        "observability"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "grafana-loki",
+          "opentelemetry",
+          "prometheus"
+        ],
+        "pred_cap": [],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.0,
+        "cap_recall": NaN,
+        "cap_f1": 0.0,
+        "elapsed_s": 0.11535045795608312
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [],
+        "pred_cap": [
+          "integration-testing",
+          "observability"
+        ],
+        "tech_precision": 0.0,
+        "tech_recall": NaN,
+        "tech_f1": 0.0,
+        "cap_precision": 0.5,
+        "cap_recall": 1.0,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 1.0031078340252861
+      }
+    },
+    {
+      "sample_id": "intent_syn_024",
+      "source": "synthetic",
+      "difficulty": "L4",
+      "user_prompt_head": "Godot 4 写一个 2D 平台跳跃的物理引擎",
+      "gt_tech": [
+        "godot4"
+      ],
+      "gt_cap": [
+        "game-input",
+        "game-physics"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "godot4",
+          "phaser"
+        ],
+        "pred_cap": [
+          "game-physics"
+        ],
+        "tech_precision": 0.5,
+        "tech_recall": 1.0,
+        "tech_f1": 0.6666666666666666,
+        "cap_precision": 1.0,
+        "cap_recall": 0.5,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 0.1187512920005247
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "godot4"
+        ],
+        "pred_cap": [
+          "game-physics"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 0.5,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 1.0619419160066172
+      }
+    },
+    {
+      "sample_id": "intent_syn_025",
+      "source": "synthetic",
+      "difficulty": "L2",
+      "user_prompt_head": "把那个加密换成 AES-256",
+      "gt_tech": [
+        "crypto"
+      ],
+      "gt_cap": [
+        "encryption"
+      ],
+      "fallback": {
+        "system": "fallback",
+        "pred_tech": [
+          "crypto"
+        ],
+        "pred_cap": [
+          "e2e-testing",
+          "encryption"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 0.5,
+        "cap_recall": 1.0,
+        "cap_f1": 0.6666666666666666,
+        "elapsed_s": 0.12361183390021324
+      },
+      "llm": {
+        "system": "llm",
+        "pred_tech": [
+          "crypto"
+        ],
+        "pred_cap": [
+          "encryption"
+        ],
+        "tech_precision": 1.0,
+        "tech_recall": 1.0,
+        "tech_f1": 1.0,
+        "cap_precision": 1.0,
+        "cap_recall": 1.0,
+        "cap_f1": 1.0,
+        "elapsed_s": 1.0519496250199154
+      }
+    }
+  ],
+  "regressions_fallback_worse": [
+    {
+      "sample_id": "intent_real_011",
+      "difficulty": "L1",
+      "gt_tech": [
+        "claude-code"
+      ],
+      "gt_cap": [
+        "observability"
+      ],
+      "fallback_tech": [
+        "agent",
+        "claude-code"
+      ],
+      "fallback_cap": [
+        "auth",
+        "cc-hook",
+        "cc-subagent",
+        "prompt-engineering"
+      ],
+      "llm_tech": [
+        "claude-code"
+      ],
+      "llm_cap": [
+        "orm",
+        "task-scheduler"
+      ],
+      "f1_fallback": 0.333,
+      "f1_llm": 0.5,
+      "user_prompt_head": "prompt caching 实测"
+    },
+    {
+      "sample_id": "intent_real_014",
+      "difficulty": "L3",
+      "gt_tech": [
+        "android",
+        "harmonyos"
+      ],
+      "gt_cap": [],
+      "fallback_tech": [
+        "android",
+        "harmonyos",
+        "swiftui"
+      ],
+      "fallback_cap": [
+        "ui-navigation"
+      ],
+      "llm_tech": [
+        "android",
+        "harmonyos"
+      ],
+      "llm_cap": [
+        "cc-plugin"
+      ],
+      "f1_fallback": 0.4,
+      "f1_llm": 0.5,
+      "user_prompt_head": "我认为你上面提到的都很重要，我再补充一点：对于harmonyos和android，与c++的混编，以及相应的工程配置方法，都需要蒸馏标准实践，有时编写代码并不难，配置工程才复杂，尤其是如何将cmake与ohpm/gradle结合起来。"
+    },
+    {
+      "sample_id": "intent_real_017",
+      "difficulty": "L1",
+      "gt_tech": [
+        "claude-code"
+      ],
+      "gt_cap": [
+        "cc-hook"
+      ],
+      "fallback_tech": [
+        "agent",
+        "claude-code",
+        "mcp"
+      ],
+      "fallback_cap": [
+        "auth",
+        "cc-hook",
+        "cc-mcp",
+        "cc-settings",
+        "cc-subagent",
+        "llm-client",
+        "prompt-engineering",
+        "tool-calling"
+      ],
+      "llm_tech": [],
+      "llm_cap": [
+        "cc-hook"
+      ],
+      "f1_fallback": 0.361,
+      "f1_llm": 0.5,
+      "user_prompt_head": "自动注入机制目前是怎样工作的"
+    }
+  ],
+  "wins_fallback_better": [
+    {
+      "sample_id": "intent_real_002",
+      "difficulty": "L1",
+      "gt_tech": [
+        "claude-code"
+      ],
+      "gt_cap": [
+        "cc-hook",
+        "cc-slash-command"
+      ],
+      "fallback_tech": [
+        "agent",
+        "claude-code",
+        "mcp"
+      ],
+      "fallback_cap": [
+        "cc-hook",
+        "cc-mcp",
+        "cc-settings",
+        "cc-slash-command",
+        "cc-subagent",
+        "unit-testing"
+      ],
+      "llm_tech": [],
+      "llm_cap": [],
+      "f1_fallback": 0.5,
+      "f1_llm": 0.0,
+      "user_prompt_head": "我发现“!”也是claude code 关键按键，需要换一个，用“#”吧。"
+    },
+    {
+      "sample_id": "intent_real_003",
+      "difficulty": "L1",
+      "gt_tech": [
+        "agent",
+        "claude-code"
+      ],
+      "gt_cap": [
+        "cc-subagent"
+      ],
+      "fallback_tech": [
+        "agent",
+        "claude-code"
+      ],
+      "fallback_cap": [
+        "cc-subagent"
+      ],
+      "llm_tech": [
+        "claude-code"
+      ],
+      "llm_cap": [
+        "cc-plugin"
+      ],
+      "f1_fallback": 1.0,
+      "f1_llm": 0.333,
+      "user_prompt_head": "值得注意的是项目级agents也引用了自己的coding-expert-rules.md，claude code的加载机制是否会导致其与全局的coding-expert-rules.md被重复载入两份"
+    },
+    {
+      "sample_id": "intent_real_019",
+      "difficulty": "L2",
+      "gt_tech": [
+        "claude-code",
+        "mcp"
+      ],
+      "gt_cap": [
+        "cc-mcp"
+      ],
+      "fallback_tech": [
+        "claude-code",
+        "mcp"
+      ],
+      "fallback_cap": [
+        "cc-mcp"
+      ],
+      "llm_tech": [
+        "claude-code"
+      ],
+      "llm_cap": [
+        "tool-calling"
+      ],
+      "f1_fallback": 1.0,
+      "f1_llm": 0.333,
+      "user_prompt_head": "@../../init_claude.sh 初始化脚本也要更新一下"
+    },
+    {
+      "sample_id": "intent_syn_011",
+      "difficulty": "L2",
+      "gt_tech": [
+        "redis"
+      ],
+      "gt_cap": [
+        "key-value-store"
+      ],
+      "fallback_tech": [
+        "redis"
+      ],
+      "fallback_cap": [
+        "key-value-store"
+      ],
+      "llm_tech": [
+        "django",
+        "redis"
+      ],
+      "llm_cap": [
+        "data-fetching"
+      ],
+      "f1_fallback": 1.0,
+      "f1_llm": 0.333,
+      "user_prompt_head": "加一下上面提到的那个缓存"
+    },
+    {
+      "sample_id": "intent_syn_014",
+      "difficulty": "L3",
+      "gt_tech": [
+        "android",
+        "room"
+      ],
+      "gt_cap": [
+        "local-storage",
+        "ui-display"
+      ],
+      "fallback_tech": [
+        "android",
+        "coredata",
+        "ios",
+        "room",
+        "swiftui"
+      ],
+      "fallback_cap": [
+        "ui-display"
+      ],
+      "llm_tech": [
+        "android",
+        "compose",
+        "room"
+      ],
+      "llm_cap": [
+        "orm"
+      ],
+      "f1_fallback": 0.619,
+      "f1_llm": 0.4,
+      "user_prompt_head": "给 Android 端加一个本地数据库缓存商品列表"
+    },
+    {
+      "sample_id": "intent_syn_019",
+      "difficulty": "L4",
+      "gt_tech": [
+        "calico",
+        "cilium",
+        "kubernetes"
+      ],
+      "gt_cap": [],
+      "fallback_tech": [
+        "calico",
+        "cilium",
+        "kubernetes"
+      ],
+      "fallback_cap": [],
+      "llm_tech": [
+        "cilium"
+      ],
+      "llm_cap": [
+        "orchestration"
+      ],
+      "f1_fallback": 1.0,
+      "f1_llm": 0.25,
+      "user_prompt_head": "用 Cilium 替换现有 Calico 网络插件"
+    },
+    {
+      "sample_id": "intent_syn_023",
+      "difficulty": "L4",
+      "gt_tech": [
+        "grafana-loki",
+        "opentelemetry",
+        "prometheus"
+      ],
+      "gt_cap": [
+        "observability"
+      ],
+      "fallback_tech": [
+        "grafana-loki",
+        "opentelemetry",
+        "prometheus"
+      ],
+      "fallback_cap": [],
+      "llm_tech": [],
+      "llm_cap": [
+        "integration-testing",
+        "observability"
+      ],
+      "f1_fallback": 0.5,
+      "f1_llm": 0.333,
+      "user_prompt_head": "Prometheus 采集 Loki 日志的指标，OpenTelemetry 串起来"
+    }
+  ]
+}

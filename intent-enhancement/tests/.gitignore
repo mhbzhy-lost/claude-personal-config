@@ -1,0 +1,4 @@
+# 实验期中间产物：candidate 抽取 / curate / prelabel / LLM 原始输出等
+# 保留 golden 评估集与报告，不提交构造脚本与原始 dump
+_*.py
+_*.json

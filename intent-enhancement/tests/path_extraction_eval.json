@@ -1,0 +1,988 @@
+[
+  {
+    "sample_id": "Sad994c91-38e37b",
+    "source_session": "ad994c91-5870-49dc-be78-19ad3bbc9059",
+    "uuid_anchor": "38e37b9f-f770-4b52-b69d-f2c0a362b492",
+    "context_snippet": "[user] 独立文件可以，但对于低智能模型，是否能保证一定会读呢，有没有harness手段能保证强制加载\n\n---\n\n[assistant] 有,而且**本库已有先例**。`stack-detector` agent 就是这么做的:\n\n```json\n// ~/.claude/settings.json 现状\n\"hooks\": {\n  \"SubagentStart\": [\n    {\n      \"matcher\": \"stack-detector\",\n      \"hooks\": [{\"type\": \"command\", \"command\": \".../stack-list-inject.sh\"}]\n    }\n  ]\n}\n```\n\nhook 脚本返回 `{\"hookEventName\": \"SubagentStart\", \"additionalContext\": \"...\"}`,Claude Code 加载时把 `additionalContext` **强制拼接到 sub-agent 的系统提示词**,模型无法跳过。haiku/sonnet 都绕不过去,因为这不是\"让模型读文件\",而是内容已在上下文里。\n\n## 对 skill-marker 的最终方案\n\n兼顾\"独立文件可维护\"和\"低智能模型强制加载\":\n\n```\n~/.claude/guidelines/capability-taxonomy.md   ← 真相源,人工维护\n~/.claude/hooks/capability-taxonomy-inject.sh ← 读取上面的文件并 echo 成 additionalContext JSON\n~/.claude/settings.json                       ← 加一条 SubagentStart matcher: \"skill-marker\"\n~/.claude/agents/skill-marker.md              ← agent 提示词只需引用\"见 capability 枚举表\"即可\n```\n\n**额外收益**:未来 `skill-matcher` 需要做 intent→capability 拆解时,加一条同款 matcher 就行,两个 agent 共用一份 taxonomy,无漂移风险。\n\n## 执行依赖拓扑(更新版)\n\n```\n批次 1(基础,无依赖):\n  1a. 写 capability-taxonomy.md 初稿\n\n批次 2(依赖 1a,可并行):\n  2a. 写 capability-taxonomy-inject.sh\n  2b. 写 skill-marker.md agent\n  2c. 更新 skill-builder.md(移除 capability 职责)\n\n批次 3(依赖 2a、2b):\n  3. 在 settings.json 加 SubagentStart matcher\n\n批次 4(依赖 1a,可并行批次 2):\n  4. 更新 skill-matcher.md 接受 capability 入参\n\n批次 5(依赖批次 2、3):\n  5a. 更新 CLAUDE.md 工作流: fetcher → builder → marker\n  5b. 存量迁移:对 skills/ 批跑 skill-marker\n```\n\nauto mode 下我开始执行批次 1——拟 `capability-taxonomy.md` 初稿。\n\n---\n\n[assistant] 执行批次 1——拟 capability-taxonomy.md 初稿。\n\n---\n\n[assistant] 阶段汇报:批次 1–3 的 5 个任务已完成,进入批次 4 时发现**未预料的依赖**。\n\n## 已完成\n- ✅ `~/.claude/guidelines/capability-taxonomy.md`(枚举 ~60 个,按 15 个域分组)\n- ✅ `/Users/mhbzhy/claude-config/hooks/capability-taxonomy-inject.sh`(已冒烟测试,注入 4136 字符)\n- ✅ `/Users/mhbzhy/claude-config/agents/skill-marker.md`(sonnet,单条+批量模式)\n- ✅ `skill-builder.md` 加了\"不要产出 capability\"的提示\n- ✅ `~/.claude/settings.json` 注册了 skill-marker 与 skill-matcher 两条 SubagentStart matcher(共用同一注入脚本)\n\n## 发现的新依赖\n\n为了让 skill-matcher 真正能用 capability 筛选,`mcp__skill-catalog__list_skills` 当前**只支持 tech_stack + language**,需要升级 Python MCP server(位于 `/Users/mhbzhy/claude-config/mcp/skill-catalog/`):\n\n1. `scanner.py` `SkillRecord` 增加 `capability` 字段,`_scan()` 解析 frontmatter,`list_skills()` 增加 `capability` 过滤参数 + 输出字段\n2. `server.py` tool 签名增加 `capability: list[str] | None = None`\n3. `tests/test_scanner.py` 补 capability 相关用例\n4. 重启 MCP server(`SKILL_LIBRARY_PATH` 扫描是进程启动时一次性完成的,代码变更需要重启才能生效)\n\n改动不大(代码新增约 30–50 行),但超出了最初的\"agent 提示词改动\"范围。\n\n## 下一步选择\n\n**A**(推荐):我继续升级 MCP server,然后完成 skill-matcher.md / CLAUDE.md 更新,最后停在存量迁移前等你确认\n**B**:我先只改 skill-matcher.md 让它客户端读文件过滤(性能差但不动 MCP),把 MCP 升级拆成独立一轮\n**C**:你先审视已产出物(尤其 capability-taxonomy.md 的粒度),再决定怎么推进\n\nauto mode 下我倾向 A,但这是会动 MCP server + 需要重启的改动,想让你有机会否决。要 A 就回\"继续\",要 B/C 就告诉我。",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "capability-taxonomy.md",
+      "config/agents/skill-marker.md",
+      "config/hooks/capability-taxonomy-inject.sh",
+      "config/mcp/skill-catalog/",
+      "list-inject.sh",
+      "server.py",
+      "settings.json",
+      "skill-builder.md",
+      "skill-matcher.md",
+      "tests/test_scanner.py"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "capability-taxonomy-inject.sh",
+        "capability-taxonomy.md",
+        "config/agents/skill-marker.md",
+        "config/hooks/capability-taxonomy-inject.sh",
+        "config/mcp/skill-catalog/",
+        "list-inject.sh",
+        "marker.md",
+        "scanner.py",
+        "server.py",
+        "settings.json",
+        "skill-builder.md",
+        "skill-marker.md",
+        "skill-matcher.md",
+        "taxonomy-inject.sh",
+        "taxonomy.md",
+        "tests/test_scanner.py"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S2fab91bb-45d383",
+    "source_session": "2fab91bb-15ef-4abf-95ec-e722b797bae9",
+    "uuid_anchor": "45d38311-8dff-4ebf-9a2c-28179355c7cf",
+    "context_snippet": "[user] 目前加载共享规范是通过coding-expert-rules.md文件链接的，又需要agent自行加载，感觉很不靠谱，建议做成通过hook监听subagent启动然后直接把内容塞进subagent上下文。\n\n---\n\n[assistant] 好的，这个改动方向对——SubagentStart hook 注入是现成模式（`capability-taxonomy-inject.sh` 就是），靠 agent 自律读文件确实不稳。\n\n## 设计\n\n**新增** `hooks/coding-expert-rules-inject.sh`（对标现有 `capability-taxonomy-inject.sh` 模板）：\n- 读 `~/.claude/guidelines/coding-expert-rules.md` 全文\n- 作为 `SubagentStart.additionalContext` 注入\n- 头部加一段 \"[coding-expert 共享规范 — harness 强制注入]\" 说明\n\n**配置** `init_claude.sh` 的 `desired_sub_start_hooks`：给三档 coding-expert 各配一条 matcher（保守写法，不赌 regex 是否支持），共三条 entries 指向同一个 hook 脚本。\n\n**清理** 三份 agent 文件和上层文档里\"开工前第一个工具调用必须 Read ...\"的指令——既然 hook 已经强制注入，这条指令冗余且会产生多余工具调用。\n\n## 派发前先摸一下仓库里的对应位点\n\n---\n\n[assistant] 位点确认：\n\n- **`agents/coding-expert.md:22`** / **`coding-expert-light.md:31`** / **`coding-expert-heavy.md:28`** — 三条\"开工前第一个工具调用必须 Read\"指令\n- **`CLAUDE.md:51`** — 那句\"subagent 开工第一步 Read 加载\"括号说明\n- **`init_claude.sh:52-54`** 证实 `CLAUDE.md` / `agents` / `guidelines` 都是符号链接部署（仓库内即权威版本）\n- **`init_claude.sh:92-102`** 的 `desired_sub_start_hooks` list 需要扩展三条 coding-expert matcher 指向新 hook\n\n派发 light 档执行——纯\"新 hook 脚本（对标现有 `capability-taxonomy-inject.sh` 模板）+ 配置扩展 + 文档同步\"。\n\n---\n\n[assistant] 改动已落地。本会话至此的完整改动链：\n\n1. **`@-引用` 链路拆除**（5 文件 + 6 测试用例删）\n2. **子 agent 检索规则硬化**（`coding-expert-rules.md` 开工必须 `resolve`，三档分流 a/b/c）\n3. **共享规范改为 hook 强制注入**（新 hook + `init_claude.sh` + 3 agent .md + CLAUDE.md）\n\n**需要你手动触发一步**：跑 `bash /Users/mhbzhy/claude-config/init_claude.sh` 才能把 `desired_sub_start_hooks` 的变更合并到 `~/.claude/settings.json`——merge 脚本是幂等的，只会新增三条 coding-expert matcher，不动 skill-marker 那条。跑完可以 `grep -c '\"matcher\": \"coding-expert' ~/.claude/settings.json` 验证应为 3。\n\n**跑完后本次会话的行为变化**：\n- 主对话提交 prompt → UserPromptSubmit hook 跑 `resolve`，注入 `name: desc` 列表（不再附带 `@-引用` 文件内容）\n- 派发 coding-expert 三档任一 → SubagentStart hook 拍入 `coding-expert-rules.md` 全文 + 头部说明\n- 子 agent 开工首个工具调用应是 `mcp__skill-catalog__resolve`，按返回走 a/b/c 三档\n- 子 agent 不再需要 Read 规范文件（旧指令已清理）\n\n**未落地的待办**：\n- 主对话侧 `!skill` / `!skill:<name>` / `!skill:none` 显式开关（上次讨论的设计草案，你让我等新规则跑一段观察再定）\n- 可选二期：SubagentStop hook 审计子 agent 是否真的走了 `resolve`（若数据仍不改善再做）\n\n建议先跑 `init_claude.sh` 让新 hook 上线，之后观察几天 `mcp__skill-catalog__*` 调用分布——sidechain=True 计数应该从 0 爬起来。数据不好看再考虑是否上 `!skill` 开关 + SubagentStop 审计。",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "agents/coding-expert.md",
+      "capability-taxonomy-inject.sh",
+      "coding-expert-heavy.md",
+      "coding-expert-light.md",
+      "coding-expert-rules.md",
+      "config/init_claude.sh",
+      "hooks/coding-expert-rules-inject.sh"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "agents/coding-expert.md",
+        "capability-taxonomy-inject.sh",
+        "claude.sh",
+        "coding-expert-heavy.md",
+        "coding-expert-light.md",
+        "coding-expert-rules.md",
+        "config/init_claude.sh",
+        "expert-rules-inject.sh",
+        "expert-rules.md",
+        "expert.md",
+        "hooks/coding-expert-rules-inject.sh",
+        "init_claude.sh"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S2fab91bb-4a9dfb",
+    "source_session": "2fab91bb-15ef-4abf-95ec-e722b797bae9",
+    "uuid_anchor": "4a9dfbd1-e9e3-4633-a07f-4fd66963117f",
+    "context_snippet": "[user] 未落地项直接一次性落地\n\n---\n\n[assistant] 好的，两件事一次并行落地：\n\n**Batch A** · 主对话 `!skill` 开关（改 hook + CLI 新增 `get` 子命令 + CLAUDE.md 说明 + 测试）\n**Batch B** · SubagentStop 审计 hook（新 hook + `init_claude.sh` 配 SubagentStop 匹配 + 违规警告通道）\n\n两批次**无文件冲突**（A 碰 `hooks/skill-resolve-inject.sh`/`cli.py`/`CLAUDE.md`/tests；B 碰新 `hooks/coding-expert-audit.sh`/`init_claude.sh`），可以同批派发。\n\n派发前先快速摸两个关键位点，避免把探索成本压给子 agent：\n\n---\n\n[assistant] 两个 batch 同批落地，关键改动全量汇总：\n\n## 本轮 2 个 batch\n\n**Batch A · `!skill` 主对话开关**\n- `mcp/skill-catalog/src/skill_catalog/cli.py` 新增 `cmd_get` + `p_get` 子命令（JSON/text 双输出，text 模式 miss 时 rc=2）\n- `mcp/skill-catalog/tests/test_cli_get.py` 新增 4 个用例（全绿）\n- `hooks/skill-resolve-inject.sh` 重写：加 sentinel 正则识别 + strict/pinned/disabled/default 四路分支；sentinel 识别后从 prompt 剔除再送 classifier\n- `CLAUDE.md` 插入\"显式检索开关\"小节（含三种语法说明）\n- 全量 pytest **127 passed**，四模式烟雾测试均输出预期标记\n\n**Batch B · SubagentStop 审计 hook**\n- `hooks/coding-expert-audit.sh` 新建（扫 transcript，R1/R2/R3 违规判定，违规走 additionalContext 警告 + 落审计日志）\n- `init_claude.sh` merge_script 新增 `desired_subagent_stop_hooks` + SubagentStop upsert 合并逻辑\n- `guidelines/coding-expert-rules.md:91-93` 加一条\"审计\"说明\n- agent_type / subagent_type / matcher 三字段兼容（防 payload schema 文档不准）\n- 合规 + 违规两份假 transcript 测试通过，日志格式分别 `OK` 和 `R1,R3`\n\n## 整轮会话累计改动\n\n1. `@-引用` 链路整条拆除（hook / pipeline / CLI / MCP server / 测试）\n2. coding-expert 子 agent 规则硬化（开工必调 `resolve`，三档 a/b/c 分流）\n3. 共享规范改为 SubagentStart hook 注入（新 hook + init_claude.sh + 清理 agent .md Read 指令）\n4. 主对话 `!skill` / `!skill:<name>` / `!skill:none` 三态开关\n5. SubagentStop 合规审计 hook\n\n## 你需要做的两件事\n\n**1. 跑 init_claude.sh 把 hook 配置合并到 settings.json**：\n```bash\nbash /Users/mhbzhy/claude-config/init_claude.sh\n```\n合并后应该有：\n- UserPromptSubmit × 1（skill-resolve-inject.sh，已存在）\n- SubagentStart × 4（skill-marker + 三档 coding-expert）\n- **SubagentStop × 3（三档 coding-expert 审计）**\n\n可以用 `grep -c \"coding-expert-audit\\|coding-expert-rules-inject\\|capability-taxonomy-inject\\|skill-resolve-inject\" ~/.claude/settings.json` 验证应为 8。\n\n**2. 考虑是否 commit**\n\n本会话五个方向的改动累计 10+ 文件，没有进行过提交。要不要我把改动 staged + commit 一次（按 `~/.claude/guidelines/git-commit.md` 规范拆提交或合并一次）？我建议按方向拆成 3-4 个 commit：\n- `refactor(skill-catalog): 拆除 @-引用链路`\n- `feat(subagent): SubagentStart hook 强制注入 coding-expert 共享规范 + 硬化检索规则`\n- `feat(skill-resolve): 新增 !skill 显式检索开关`\n- `feat(audit): SubagentStop hook 审计 coding-expert 合规性`\n\n要不要我现在就执行？",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "commit.md",
+      "config/init_claude.sh",
+      "guidelines/coding-expert-rules.md",
+      "hooks/coding-expert-audit.sh",
+      "hooks/skill-resolve-inject.sh",
+      "mcp/skill-catalog/src/skill_catalog/cli.py",
+      "mcp/skill-catalog/tests/test_cli_get.py",
+      "settings.json"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "claude.sh",
+        "cli.py",
+        "cli_get.py",
+        "commit.md",
+        "config/init_claude.sh",
+        "expert-audit.sh",
+        "expert-rules.md",
+        "guidelines/coding-expert-rules.md",
+        "hooks/coding-expert-audit.sh",
+        "hooks/skill-resolve-inject.sh",
+        "init_claude.sh",
+        "mcp/skill-catalog/src/skill_catalog/cli.py",
+        "mcp/skill-catalog/tests/test_cli_get.py",
+        "resolve-inject.sh",
+        "settings.json",
+        "skill-resolve-inject.sh"
+      ],
+      "n_turns": 3
+    }
+  },
+  {
+    "sample_id": "Sad994c91-0e23d5",
+    "source_session": "ad994c91-5870-49dc-be78-19ad3bbc9059",
+    "uuid_anchor": "0e23d55c-b147-4d92-9e74-76157791dff3",
+    "context_snippet": "[user] 热重载不需要，重点放在新的skill蒸馏流程设计上\n\n---\n\n[assistant] 新工作流设计。先定总览,再拆各 agent 的输入输出契约和关键设计决策。\n\n## 五阶段总览\n\n```\n┌─────────────────┐   ┌────────────┐   ┌──────────────────┐   ┌─────────────┐   ┌──────────────┐\n│ source-planner  │ → │skill-fetcher│ → │skill-preprocessor│ → │skill-builder│ → │skill-marker  │\n│ (sonnet, 新增)  │   │(sonnet)    │   │(sonnet, 新增)    │   │(opus low)   │   │(sonnet)      │\n│                 │   │            │   │                  │   │             │   │              │\n│ 权威源 + 去重   │   │纯下载       │   │去噪 / 合并去重   │   │80/20 蒸馏   │   │capability 打标│\n│ 清单            │   │+ manifest  │   │+ 结构化 bullet   │   │+ 示例提取   │   │              │\n└─────────────────┘   └────────────┘   └──────────────────┘   └─────────────┘   └──────────────┘\n   主 agent 转发输入                    削 60% 输入体积           opus 只啃干货\n```\n\n## 每阶段契约\n\n### 1. source-planner(新增)\n\n**职责**:判断权威数据源、与现有 skill 去重、输出结构化采集清单。\n\n**Input**(主 agent 传入):\n```yaml\ntech_stack: \"antd\"           # 目标技术栈\nscope:                       # 可选\n  mode: full | incremental | components\n  components: [\"Form\", \"Table\"]   # components 模式下指定\nconstraints:                 # 可选\n  since_version: \"5.0\"       # 只采该版本之后的增量\n  skip_collected_within: 90  # 90 天内采集过的跳过\n```\n\n**Execution**:\n1. 调 `list_skills({tech_stack})` 看已有 skill 与 `collected_at`\n2. WebSearch 找官方文档 + GitHub repo\n3. 针对 components 模式逐个组件拉 TOC\n4. 输出去重后的采集清单\n\n**Output**:\n```json\n{\n  \"sources\": [\n    {\n      \"type\": \"docs|repo|changelog|issue\",\n      \"url\": \"https://...\",\n      \"target_skill_name\": \"ant-select\",\n      \"reason\": \"官方组件文档\",\n      \"priority\": \"high\",\n      \"estimated_tokens\": 3000\n    }\n  ],\n  \"skip\": [\n    {\"skill_name\": \"ant-button\", \"reason\": \"collected_at=2026-03-12, 小于阈值\"}\n  ],\n  \"notes\": \"...\"\n}\n```\n\n**Tools**: `WebSearch, WebFetch, mcp__skill-catalog__list_skills`\n**模型**: sonnet\n\n---\n\n### 2. skill-fetcher(保留,轻度升级)\n\n**改动点**:\n\n- 输入从\"自由格式清单\"改为 source-planner 的结构化 `sources[]`\n- 每个 source 对应产出:`/tmp/skill-src/<lib>/<skill_name>/<source_hash>.md`\n- 同目录再产出 `_manifest.md` 记录:source url、fetched_at、http_status、byte_size、version 提示(从页面解析)\n\n**为什么不合并进 preprocessor**:fetcher 纯 IO 密集,preprocessor 纯文本重写,职责分离便于失败重试。\n\n---\n\n### 3. skill-preprocessor(新增 ⭐ 核心优化)\n\n**职责**:把粗糙素材压成 builder 友好的精简素材。\n\n**Input**(主 agent 传入):\n```yaml\nmaterial_dir: /tmp/skill-src/<lib>/<skill_name>/\ntarget_skill_name: ant-select\n```\n\n**Execution**:\n1. 读入所有 fetched `.md` 文件\n2. **去噪**:剥导航栏、广告、版权、重复 breadcrumb\n3. **合并**:识别多源讲同一 API 的段落,保留最详细版本\n4. **结构化**:转为固定模板——\n   ```markdown\n   # <skill_name>\n   ## 核心概念: <3–5 条 bullet>\n   ## 高频 API: <每条一行 + 最小示例>\n   ## 已知陷阱: <每条一行,含版本差异>\n   ## 示例代码: <挑 2–3 个最小可运行>\n   ```\n5. **提取元数据**:版本号、文档链接、适用语言列表\n6. **校验**:如果合并后正文 < 某阈值(如 500 字)→ 报告\"素材不足\",让主 agent 决定补采\n\n**Output**:`material_dir/_processed/SOURCE.md` + `_meta.json`\n\n**模型**: sonnet\n**Tools**: `Read, Glob, Write, Edit`\n\n---\n\n### 4. skill-builder(保留)\n\n**唯一改动**:`第一步: 确认素材` 改为读 `_processed/SOURCE.md`,不再读原始素材。其他全不变。\n\n输入体积从 ~50K 降到 ~15K,opus 单次成本砍 60%+。\n\n---\n\n### 5. skill-marker(保留)\n\n完全不动。\n\n---\n\n## 目录约定(新)\n\n```\n/tmp/skill-src/<lib>/\n├── ant-select/\n│   ├── doc-main.md              # fetcher 产出\n│   ├── doc-api.md\n│   ├── changelog-entry.md\n│   ├── _manifest.md             # fetcher 产出\n│   └── _processed/\n│       ├── SOURCE.md            # preprocessor 产出,builder 读这个\n│       └── _meta.json           # 版本/链接/语言\n├── ant-button/\n│   └── ...\n└── _plan.json                   # source-planner 产出,整批清单\n```\n\n## CLAUDE.md 工作流文档升级\n\n现有三阶段(fetcher → builder → marker)改为五阶段。文档里还要加:\n\n- **增量模式**:`source-planner`\n...[truncated]",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "SOURCE.md",
+      "_manifest.md",
+      "_meta.json",
+      "_plan.json",
+      "changelog-entry.md",
+      "doc-api.md",
+      "doc-main.md"
+    ],
+    "path_types": "B",
+    "difficulty": "hard",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "SOURCE.md",
+        "_manifest.md",
+        "_meta.json",
+        "_plan.json",
+        "changelog-entry.md",
+        "doc-api.md",
+        "doc-main.md"
+      ],
+      "n_turns": 2
+    }
+  },
+  {
+    "sample_id": "S2fab91bb-317691",
+    "source_session": "2fab91bb-15ef-4abf-95ec-e722b797bae9",
+    "uuid_anchor": "3176916b-c225-4c35-9761-fb104e8d2cbd",
+    "context_snippet": "[user] 我发现“!”也是claude code 关键按键，需要换一个，用“#”吧。\n\n---\n\n[assistant] 等等——`#` 在 Claude Code 里是 **memory mode 触发符**，以 `#` 开头的 prompt 会被 harness 当作追加到 CLAUDE.md 的命令消费掉，UserPromptSubmit hook 根本收不到。和 `!`（bash mode）的行为完全对称，换了只是从一个雷踩到另一个雷。\n\nClaude Code 的 prompt 保留开头字符一共三个：\n- `/` — slash command\n- `!` — bash mode\n- `#` — memory mode\n\n只要 sentinel 是**单字符前缀**，选任何一个都会在用户习惯把 sentinel 放句首时翻车。\n\n## 建议候选\n\n| 写法 | 优势 | 劣势 |\n|---|---|---|\n| **`[skill]` / `[skill:name]` / `[skill:none]`** | 视觉上就是 sentinel、零冲突、grep 友好 | 多一个字符 |\n| `%skill` / `%skill:name` / `%skill:none` | 单字符前缀、贴近原 `!skill` 手感 | `%` 在极少数文本场景可能被误触（低概率） |\n| `::skill` / `::skill:name` / `::skill:none` | 双冒号独特、类似命名空间风格 | 稍生僻 |\n\n我推荐 **`[skill]`** —— 方括号本身就是典型的标记语法，不会和 Claude Code / shell / markdown 的任何保留语义冲突，而且看起来就是 sentinel，记忆负担低。\n\n你同意用 `[skill]` 吗？确认后我直接派发 light 档做机械替换（改动面很小：hook 正则 + CLAUDE.md 说明文字 + 注入文本里的标注文字）。如果你偏好其他候选直接告诉我。\n\n---\n\n[assistant] 好，直接派发 light 档做机械替换。\n\n---\n\n[assistant] `%skill` 替换完成。四条烟雾测试全部符合预期，127 pytest 全绿。\n\n## 本会话改动全貌（最终版）\n\n1. **`@-引用` 链路拆除** · hook / pipeline / CLI / MCP server / 测试\n2. **coding-expert 规则硬化** · 开工必调 `resolve`，三档 a/b/c 分流\n3. **共享规范改为 hook 注入** · 新 `coding-expert-rules-inject.sh` + 三档 matcher + 清理 agent .md Read 指令\n4. **主对话 `%skill` 显式开关** · strict / pinned / disabled 三态\n5. **SubagentStop 审计 hook** · `coding-expert-audit.sh` 扫 transcript 判 R1/R2/R3\n\n## 上线步骤（你需要做的）\n\n**1. 跑 init_claude.sh 合并 hook 配置**：\n```bash\nbash /Users/mhbzhy/claude-config/init_claude.sh\n```\n\n合并后 `~/.claude/settings.json` 应该有：\n- `UserPromptSubmit`: 1 条（skill-resolve-inject）\n- `SubagentStart`: 4 条（skill-marker + 三档 coding-expert）\n- `SubagentStop`: 3 条（三档 coding-expert audit）\n\n验证：`grep -cE \"skill-resolve-inject|capability-taxonomy-inject|coding-expert-rules-inject|coding-expert-audit\" ~/.claude/settings.json` 应为 **8**。\n\n**2. Commit 决定**\n\n本会话改动累计覆盖 `hooks/` / `mcp/skill-catalog/` / `agents/` / `guidelines/` / `CLAUDE.md` / `init_claude.sh`，按功能拆 4 个 commit 最清晰：\n\n- `refactor(skill-catalog): 拆除 @-引用链路`\n- `feat(subagent): SubagentStart hook 强制注入共享规范并硬化检索规则`\n- `feat(skill-resolve): 新增 %skill 显式检索开关`\n- `feat(audit): SubagentStop hook 审计 coding-expert 合规性`\n\n要现在就 commit 吗？需要的话我读 `~/.claude/guidelines/git-commit.md` 规范后按上述拆分执行。",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "coding-expert-audit.sh",
+      "coding-expert-rules-inject.sh",
+      "commit.md",
+      "config/init_claude.sh",
+      "mcp/skill-catalog/"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "claude.sh",
+        "coding-expert-audit.sh",
+        "coding-expert-rules-inject.sh",
+        "commit.md",
+        "config/init_claude.sh",
+        "init_claude.sh",
+        "mcp/skill-catalog/"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S2fab91bb-9044f5",
+    "source_session": "2fab91bb-15ef-4abf-95ec-e722b797bae9",
+    "uuid_anchor": "9044f5ef-1696-49df-a5ed-9d2e68bea696",
+    "context_snippet": "[user] 有了\"!skill\"显式开关之后，\"@\"的那条链路可以干掉了，代码、配置、还有 init_claude.sh 脚本里面的相关内容都要修改。\n\n---\n\n[assistant] 好的，先摸清 `@-引用` 链路在仓库里牵涉的全部位点，再出拆除计划。\n\n---\n\n[assistant] 范围摸清了。命中位点如下，按文件归类：\n\n- **hook**：`hooks/skill-resolve-inject.sh:83-137` 的 `@-引用` 扫描段 + `REF_ARGS` + CLI 调用里的透传\n- **pipeline**：`mcp/skill-catalog/src/skill_catalog/pipeline.py` 里 `_REF_FILE_MAX_*` 常量、`_read_referenced_file` / `_augment_prompt_with_references` 两个函数、`run_resolve_pipeline` 的 `referenced_files` 参数、返回里的 `referenced_files` 字段\n- **CLI**：`cli.py` 里 `--referenced-file` argparse、`cmd_resolve` 透传、`_format_resolve_text` 的 \"已读 @ 引用\" 行\n- **MCP server**：`server.py:201,213-235` 的 `referenced_files` 入参与 docstring\n- **测试**：`tests/test_resolve_pipeline.py` 里 6 个 `test_pipeline_referenced_files_*` 用例\n- **脚本/文档**：`init_claude.sh` 自身**没有** `@-引用` 相关代码（只是配 hook 路径）；`CLAUDE.md` / `guidelines/*.md` / `README.md` 都没提；`skills/` 下出现的 `@path` 是 Claude Code 原生 slash command / memory import 语法，**不在本次清理范围**\n\n派发 `coding-expert-light` 执行拆除——纯删除+对应测试同步，规格明确。\n\n---\n\n[assistant] 先收尾上一步：`@-引用` 链路拆除已完成（5 个文件改动、6 个测试用例删除、123 passed、残留扫描无命中、hook 烟雾测试返回合法 JSON）。\n\n---\n\n回到你的新观察。你说得对，这是 hook 触发机制的结构性边界——\n\n**`!skill` 只能覆盖主对话**：UserPromptSubmit hook 的触发源是\"用户向主对话提交 prompt\"这个动作。subagent 的 prompt 是主 agent 写的，不走 UserPromptSubmit 链路，所以 `!skill` 语法对 subagent 无效。\n\n**subagent 侧必须换触发机制**：要么走\"主 agent 派发时强制附带 skill name\"（之前已论证被低档 Sonnet 跳过），要么走\"subagent 开工自律\"——也就是你提的这个方案。\n\n## 规则改动草案\n\n改 `guidelines/coding-expert-rules.md` 的「开工前框架知识检索」章节（60-84 行），核心三点：\n\n**1. 硬化开工第一步**\n- 当前：\"分档 1/档 2，档 2 触发条件是任务涉及框架\"——弱触发\n- 改为：**开工后第一个工具调用必须是 `mcp__skill-catalog__resolve({ user_prompt, cwd })`**——无分档、无豁免、无判断权\n\n**2. resolve 返回后的三档分流**（判断权交给 MCP server，而非 agent）\n- **a. 主 agent 派发 prompt 已指定 skill name**：确认 name 出现在 resolve 候选里（防过期 skill），然后对每个 `get_skill`\n- **b. resolve 候选非空且 description 匹配任务**：按 description 挑 1~3 条 `get_skill`\n- **c. resolve 返回 `tech_stack=[]` 或候选明显不相关**：首次 assistant 输出首行写 `skill-retrieval: no-match`，继续动手\n\n**3. 删除\"非框架任务允许跳过\"后门**\n- 82-84 行\"纯逻辑、纯文档、纯配置等任务，允许跳过知识检索\"这条整个删\n- 替代品是 (c) 档：跳过由 resolve 结果决定（server 说没相关 skill），不是 agent 自己说了算\n\n**设计意图**：把\"判断该不该检索\"的权力从 agent 手里收走，让 `resolve` 调用本身成为刚性锚点（一次调用 ~百毫秒，成本接近 Read 一个文件）。agent 只负责根据 resolve 返回决定下一步——这一步仍是渐进式（按需 `get_skill`），但入口是刚性的。\n\n**配套**：禁区条目保留（不得 `list_skills`、不得无差别 `get_skill` 全部候选、不得自行跑 LLM 分类器）。三档 coding-expert 的 agent 文件不用动（它们本来就 Read 这份 rules）。\n\n派发 light 档做规则改写。",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "README.md",
+      "cli.py",
+      "guidelines/coding-expert-rules.md",
+      "hooks/skill-resolve-inject.sh",
+      "init_claude.sh",
+      "mcp/skill-catalog/src/skill_catalog/pipeline.py",
+      "server.py",
+      "tests/test_resolve_pipeline.py"
+    ],
+    "path_types": "B",
+    "difficulty": "hard",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "README.md",
+        "cli.py",
+        "expert-rules.md",
+        "guidelines/coding-expert-rules.md",
+        "hooks/skill-resolve-inject.sh",
+        "init_claude.sh",
+        "mcp/skill-catalog/src/skill_catalog/pipeline.py",
+        "resolve-inject.sh",
+        "resolve_pipeline.py",
+        "server.py",
+        "tests/test_resolve_pipeline.py"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S8c0ff45b-391fe9",
+    "source_session": "8c0ff45b-eaae-41be-8f90-f632ed64c71e",
+    "uuid_anchor": "391fe9ef-6a24-40fe-a414-666659fb48ac",
+    "context_snippet": "[user] 值得注意的是项目级agents也引用了自己的coding-expert-rules.md，claude code的加载机制是否会导致其与全局的coding-expert-rules.md被重复载入两份\n\n---\n\n[assistant] 不会重复加载。拆开看两层：\n\n**1. Agent 定义的覆盖规则（非叠加）**\n\nClaude Code 对 subagent 按 name 解析，**项目级目录 `.claude/agents/` 会完全覆盖用户级 `~/.claude/agents/` 中的同名 agent**——是\"取代\"而不是\"继承+合并\"。在 code-assistant 工作目录里派发 `coding-expert` 时，只有项目版本的那份 `.md` 被注入子上下文，全局版那份根本不参与。\n\n**2. `coding-expert-rules.md` 的加载（按需 Read，不是自动注入）**\n\n两份 rules.md 都不是 frontmatter 引用，而是 agent body 里写了\"开工前 Read xxx\"。项目版 agent body 指向 `.claude/partials/coding-expert-rules.md`，全局版 agent body 指向 `~/.claude/guidelines/coding-expert-rules.md`——subagent 会 Read 哪一个完全取决于它被加载的是哪份 agent 定义。\n\n**组合起来**：\n\n| 运行场景 | 加载的 agent 定义 | agent 会 Read 的 rules |\n|---|---|---|\n| code-assistant 工作目录 | 项目级（`.claude/agents/`）| `.claude/partials/coding-expert-rules.md` |\n| 其他目录 | 全局（`~/.claude/agents/`）| `~/.claude/guidelines/coding-expert-rules.md` |\n\n**不存在\"两份 rules 被同时载入\"的情况**——项目 agent 不会神奇地还去 Read 全局 rules，反之亦然。真正需要关注的风险反而是：两份 rules 长期演化会逐渐漂移（通用工作原则在全局改了、项目那份没跟上），这是内容同步问题，不是加载机制问题。",
+    "ground_truth_paths": [
+      "coding-expert-rules.md"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "coding-expert-rules.md",
+        "expert-rules.md",
+        "rules.md"
+      ],
+      "n_turns": 2
+    }
+  },
+  {
+    "sample_id": "Sad994c91-6d451d",
+    "source_session": "ad994c91-5870-49dc-be78-19ad3bbc9059",
+    "uuid_anchor": "6d451db7-99b7-4e0b-afa5-63f371c2c09d",
+    "context_snippet": "[user] 那我觉得可以新增一个skill-marker，专门用来给skill打标，skill-builder蒸馏skill时也不需要在frontmatter当中生成这些标记了，这部分工作完全交给skill-marker\n\n---\n\n[assistant] 这个拆分很合理——单一职责，枚举表演进时只改 skill-marker，skill-builder 不受污染。确认方向前先对齐几个关键设计点：\n\n## skill-marker 的职责边界\n\n**输入契约**：\n- 单条模式：传入 SKILL.md 绝对路径\n- 批量模式：传入目录路径 + 可选 glob 过滤\n\n**输出行为**：\n- 直接 Edit 目标文件的 frontmatter，补 `capability: [...]` 字段\n- 已有 capability 的默认**跳过**，除非显式传 `force: true`\n- 返回简报：`{marked: N, skipped: M, failed: [...]}`\n\n**模型选择**：`sonnet`（分类任务甜点，对边界案例判断明显优于 haiku；opus 浪费）\n\n## 枚举表归属（关键决策）\n\n两种方案：\n\n| 方案 | 优点 | 缺点 |\n|------|------|------|\n| 硬编码在 `skill-marker.md` 提示词里 | 自包含、版本绑定 | 更新需改 agent 文件 |\n| 独立到 `~/.claude/guidelines/capability-taxonomy.md` | 易维护、可被 skill-matcher 共享引用 | 多一次文件加载 |\n\n**推荐后者**：因为 `skill-matcher` 未来接受 `capability` 入参时也需要读这张表做用户意图拆解，两个 agent 共用同一份\"真相源\"才不会漂移。\n\n## 配套改动清单（依赖拓扑）\n\n```\n1. 拟 capability-taxonomy.md                    （无依赖，基础）\n2. 写 skill-marker.md agent                     （依赖 1）\n3. 更新 skill-builder.md：移除 capability 责任   （依赖 1，可与 2 并行）\n4. 更新 skill-matcher.md：接受 capability 入参   （依赖 1，可与 2、3 并行）\n5. 更新 CLAUDE.md 工作流：fetcher→builder→marker（依赖 2、3）\n6. 存量迁移：对 skills/ 批量跑 skill-marker     （依赖 2）\n```\n\n第 1 步是所有后续工作的前提。我先按照以下结构拟一版 `capability-taxonomy.md` 初稿：\n\n- **UI 呈现域**：ui-layout / ui-display / ui-feedback / ui-navigation / ui-overlay\n- **UI 交互域**：ui-form / ui-input / ui-action\n- **数据流/状态域**：state-management / form-validation / data-fetching / cache\n- **网络通信域**：http-client / websocket / rpc\n- **认证安全域**：auth / permission / encryption\n- **平台能力域**：routing / i18n / theming / file-upload / media-processing\n- **基础设施域**：database / message-queue / task-scheduler / container / observability\n- **工具链域**：build-tooling / testing / deployment\n- **AI 能力域**：llm-client / agent-orchestration / prompt-engineering / rag\n\n每项会配\"包含/不包含\"说明 + 2–3 个归属示例。\n\n确认这个粒度方向后我就动手产出初稿——或者你想先把枚举表的顶层分类再调整一轮？",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "SKILL.md",
+      "capability-taxonomy.md",
+      "skill-builder.md",
+      "skill-marker.md",
+      "skill-matcher.md"
+    ],
+    "path_types": "B",
+    "difficulty": "hard",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "SKILL.md",
+        "capability-taxonomy.md",
+        "skill-builder.md",
+        "skill-marker.md",
+        "skill-matcher.md",
+        "taxonomy.md"
+      ],
+      "n_turns": 2
+    }
+  },
+  {
+    "sample_id": "Sb481571c-e8ada0",
+    "source_session": "b481571c-3860-48ff-9d08-b99ffabcb130",
+    "uuid_anchor": "e8ada08b-b4c7-4b6a-8aeb-b47c08646030",
+    "context_snippet": "[user] 本系统迭代完成之后，在agent当中使用这套skills的完整流程是什么？\n\n---\n\n[assistant] 让我先把 agent 实际使用 skill 的各个关键点摸清楚，再做完整流程梳理。\n\n---\n\n[assistant] 本次迭代完成后，agent 使用 skill 的流程由 **hooks + MCP server + subagent 协议** 三层组成。默认仍走原流程；本次迭代新增的意图增强是默认关闭的 opt-in 分支。\n\n## 🔄 完整流程（以主 agent 派发 coding-expert 编码任务为例）\n\n```\n[用户输入] \n   │\n   ▼\n1. UserPromptSubmit hook（skill-resolve-inject.sh）\n   • 处理用户显式的 %skill 触发词（一般无操作）\n   │\n   ▼\n2. 主 agent 理解任务 → 按 CLAUDE.md 规范选档派发\n   → Task(subagent_type=\"coding-expert{-light/-heavy}\", prompt=...)\n   │\n   ▼\n3. SubagentStart hook（coding-expert-rules-inject.sh）\n   • 自动注入 guidelines/knowledge-retrieval-process.md 到 subagent 上下文\n   • 强制硬约束：subagent 第一个工具调用必须是 resolve\n   │\n   ▼\n4. Subagent 第一个工具调用：\n   mcp__skill-catalog__resolve({ user_prompt, cwd })\n   │\n   ▼\n5. ─── MCP server 内部 ─── pipeline.run_resolve_pipeline\n        │\n        ├── ENABLE_INTENT_ENHANCEMENT ≠ \"true\"（默认）\n        │     │\n        │     ▼ Legacy 路径\n        │     • scan_with_submodules(cwd) → workspace 指纹\n        │     • Classifier(qwen2.5:7b@Ollama) → 推断 tech_stack + capability\n        │     • catalog.list_skills(tech, lang, cap) → 初筛\n        │     • rank() + top_n()\n        │     • 返回 { cwd, fingerprint, tech_stack, capability,\n        │              classifier_error, skills:[{name,description}] }\n        │\n        └── ENABLE_INTENT_ENHANCEMENT = \"true\"（本次迭代新增）\n              │\n              ▼ 动态 import → IntentEnhancedResolver 适配层\n              │  （任何异常 → logger.warning + fall back 到 Legacy）\n              ▼\n              EnhancedSkillResolver.resolve\n               ├─ IntentRecognitionEngine\n               │   · 解析 ~/.claude/projects/<session>.jsonl（若有 conversation_id）\n               │   · FileReferenceAnalyzer 抽技术栈/项目结构/代码模式\n               │   · IntentCompleter 补全\"按讨论执行\"等模糊指令\n               │   · 无日志时降级为纯文本 RecognitionResult（confidence=0.6）\n               ├─ HybridRetrievalEngine\n               │   · QueryOptimizer（同义词扩展、查询重写、模式匹配）\n               │   · _keyword_filter（OR 语义 + 中文整串匹配）\n               │   · _rule_based_filter（只在条件非空时过滤）\n               │   · _vector_search（候选>5 时触发）\n               │   · _rank_skills（名称/描述/技术栈加分）\n               └─ SkillDependencyGraph → dependency_analysis\n              返回 Legacy 字段 + { intent_enhancement_used=True,\n                enhanced_intent, original_intent, intent_confidence,\n                confidence, technical_context, dependency_analysis,\n                processing_time, used_cache, enhanced_skills }\n   │\n   ▼\n6. Subagent 拿到 skills 列表（{name, description}）\n   • 按 description 判断 pick-vs-skip（不是按顺序）\n   • 对真正对口的 1-3 条调 mcp__skill-catalog__get_skill({ name })\n   • 空结果 → 首行输出 \"skill-retrieval: no-match\" 后正常动手\n   │\n   ▼\n7. Subagent 按 skill 完整 markdown 指导完成编码\n   │\n   ▼\n8. SubagentStop hook（coding-expert-audit.sh）\n   • 扫 transcript 采集知识检索指标（是否跳过 resolve、是否滥用 get_skill…）\n   • 不阻断 subagent 交付\n   │\n   ▼\n9. 主 agent 收到 subagent 返回 → 整合后汇报给用户\n```\n\n## 📌 本次迭代带来的三个实际变化\n\n| 项 | 默认行为 | 启用增强后 |\n|---|---|---|\n| **resolve 返回字段** | 6 个字段（含 `skills`） | 超集：原 6 + 9 个增强字段，`skills` minimal shape 保持不变 |\n| **意图理解** | 仅靠 qwen2.5:7b 分类 `tech_stack/capability` | 读日志做多轮上下文理解 + 模糊指令补全 + 查询优化重写 |\n| **排序依据** | catalog 内置 rank 启发式 | QueryOptimizer + 规则引擎 + 向量相似度 + 依赖图加权 |\n\n## 🔧 启用增强路径\n\n```bash\n# 1. 装依赖（一次性）\npip install -r /Users/mhbzhy/claude-config/intent-enhancement/requirements.txt\n\n# 2. 给 MCP server 设置环境变量（在启动 Claude Code 的 shell 里）\nexport ENABLE_INTENT_ENHANCEMENT=true\n```\n\n任一失败条件（yaml 未装 / import 错误 / resolve 内部异常）→ 自动降级 legacy + WARNING 日志，对 subagent 透明。\n\n## 📖 Subagent 侧实际看\n...[truncated]",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "coding-expert-audit.sh",
+      "coding-expert-rules-inject.sh",
+      "config/intent-enhancement/requirements.txt",
+      "guidelines/knowledge-retrieval-process.md",
+      "skill-resolve-inject.sh"
+    ],
+    "path_types": "B",
+    "difficulty": "hard",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "coding-expert-audit.sh",
+        "coding-expert-rules-inject.sh",
+        "config/intent-enhancement/requirements.txt",
+        "guidelines/knowledge-retrieval-process.md",
+        "retrieval-process.md",
+        "skill-resolve-inject.sh"
+      ],
+      "n_turns": 3
+    }
+  },
+  {
+    "sample_id": "S2fab91bb-8a2f4e",
+    "source_session": "2fab91bb-15ef-4abf-95ec-e722b797bae9",
+    "uuid_anchor": "8a2f4e71-4e86-4ab5-ba15-e5fc64ea4fb0",
+    "context_snippet": "[user] 问题是自动注入的内容都只是列表，但没有get_skill流量也就意味着agent从未真正读取过skill的内容\n\n---\n\n[assistant] 你这个观察击中要害。我再量化一下，确认问题严重到什么程度。\n\n## 7 天窗口内的实际分布\n\n| 调用方 | `resolve` | `list_skills` | `get_skill` |\n|---|---|---|---|\n| **主 agent** (sidechain=False) | 9 | 24 | **34** |\n| **子 agent** (sidechain=True) | **0** | - | **0** |\n\n> 近 24 小时窗口：`get_skill = 0`、`resolve = 9`（其中 7 次是你在 2ca586c4 会话里手动验证 classifier，1 次是 claude-config 里\"你尝试调用一下\"）。\n\n几个硬事实：\n\n1. **子 agent 从未调过 skill-catalog 的任何工具**。coding-expert 开工链路里那条\"自行 `resolve` + `get_skill` 读详情\"的规则，事实上**从来没被执行过**\n2. **全部 34 次 `get_skill` 都是主 agent 自己调的**，而且主 agent 还在违规调 24 次 `list_skills`（CLAUDE.md 明令禁止）\n3. 每次 `get_skill` 传入的 `name` 都完全落在 hook 注入的那份 list 里（langgraph-core / phaser-tweens / nextjs-core 等）——说明这些会话里，主 agent 至少偶尔会去认真读，但**这个\"偶尔\"也在衰减**（最近 24h 归零）\n\n## 为什么会这样\n\n回看 `hooks/skill-resolve-inject.sh:188-199` 生成的尾巴：\n\n```\n主 agent 派发 coding-expert 时请在 prompt 中携带上述 skill 名字；\n子 agent 可自行调 mcp__skill-catalog__get_skill 读取 skill 详情。\n若任务不涉及框架/组件（纯文档/配置），可忽略此段。\n```\n\n问题就在这里：\n\n- **\"请在 prompt 中携带 skill 名字\"是弱要求**，没说不携带会怎样，模型自然省略\n- **\"子 agent 可自行调\"里的\"可\"是最弱的情态动词**，对低档模型（Sonnet / low effort）几乎等于\"无所谓\"\n- **\"若不涉及框架可忽略\"又给了主 agent 一个心理退路**——主 agent 一旦判断\"描述看着够了\"，就把整段当背景读掉\n- 注入文本自己设计成 `name: desc(≤120 字)` 的 preview 形式，**观感上就像已经给够了**，反而强化了\"不用再查\"的倾向\n\n再叠加 coding-expert 子 agent 的定义问题——让我验证一下 agent 文件里是否有强制条款。\n\n---\n\n[assistant] ## 根因拆解\n\n规则写得不糟——`guidelines/coding-expert-rules.md:60-85` 明确规定了档 1（主 agent 给名字 → 子 agent 对每个 `get_skill`）和档 2（主 agent 没给 → 子 agent 自主 `resolve` + `get_skill`）。但执行链有两处断点：\n\n**断点 1 · 主 agent 不下发 skill 名字给子 agent**\n\n- hook 注入文本里那句\"请在 prompt 中携带上述 skill 名字\"是**弱要求 + 无后果**，主 agent 倾向省略\n- 一旦 description（≤120 字）看着像够用，主 agent 自己偶尔 `get_skill` 查一下就开派（`sidechain=False` 的 34 次正是这种捷径）\n- 派发给 coding-expert 的 prompt 里**没带 skill 名字**，子 agent 就无从执行档 1\n\n**断点 2 · 子 agent 不走档 2 的兜底**\n\n- 子 agent 100% 不调 `resolve` 或 `get_skill`（7 天窗口 sidechain=True 计数 0）\n- 档 2 触发条件是\"任务涉及框架\"——rules 文末开了后门\"纯逻辑/文档/配置可跳过\"，模型几乎总能把自己正在做的批次归入\"已经 Read 代码 + Grep 模式够用\"\n- 加上 Sonnet/low-effort 档尤其惯于走\"Read 现有代码照着改\"的路径，`resolve` 的起手成本（一次 MCP 调用 + 30+ 候选读一遍 description）劝退\n\n**自我强化**：主 agent 读了 hook 注入的 name+desc 清单就觉得\"派发信息已齐\"、子 agent 读了 Rules 后觉得\"当前批次能跳过\" → `get_skill` 从主 agent 侧降、从未在子 agent 侧升，最终归零。\n\n## 三条候选改造路径\n\n**A. 把档 2 从\"可/应当\"改成\"硬约束\"**\n- 改 `coding-expert-rules.md` 和 hook 尾巴的口径：框架任务**开工第一个工具调用必须是** `get_skill(<name>)` 或 `resolve` + `get_skill`；非框架任务要在首次输出里显式写\"无框架依赖，跳过 skill 检索\"才算合规\n- 成本：派发噪声+1（子 agent 显式豁免声明）；收益：可以用 SubagentStop hook 做合规校验\n- 风险：低档 Sonnet 仍可能违反，需要 hook 事后兜底\n\n**B. 把 top-1/2 skill 全文直接塞进 hook 注入（最贴合数据）**\n- `skill-catalog-cli resolve --text-output` 现在只吐 name+desc 列表；改成 **top-1（或 top-1~2）附完整 SKILL.md body + 其余 K 条 name:desc**\n- 主 agent 不需要再 get_skill、不需要把名字下发，skill 知识\"在当轮 prompt 就位\"\n- 成本：主 agent context 每轮 +2~8 KB（单条典型 SKILL.md 大小），非框架任务也要承担这份注入\n- 收益：彻底绕过执行链断点，把\"按需深读\"降级为\"硬注入 top-1\"，但这是数据显示的实际使用模式（34 次 get_skill 几乎都照着 rank 头部挑）\n- 可加旋钮：`SKILL_RESOLVE_INJECT_BODY_TOPK=1` 控制注入深度\n\n**C. 被动兜底：加 SubagentStop hook 做事后检查**\n- coding-expert 退出时扫它本轮 transcript：若出现 Edit/Write 但没有 `get_skill`/`resolve`，在返回汇报里附一条\"⚠️ 本批次框架代码未走 skill 检索\"\n- 不改流程主干，只增加可见度\n- 缺点：已经写完的代码不会回溯修正，只是让用户知道违规发生了\n\n---\n\n我的判断：**B 最对症**。你当前的痛点不是\"主 agent 不知道该派哪条 skill\"——hook 的 classifier+rank 排序质量已经足够用，数据显示真正被 `get_skill` 的都落在 rank 头部。真正的瓶颈是执行链上\"把 description 升级成 body\"那一步，两个 agent 都不愿意跨。与其靠口径约束逼它们跨，不如在 hook 层就把 top-1 的 body 拼进去，把这步跨越从\"agent 行为\"降级为\"harness 数据\"。\n\nC 可以作为 B 的补充监控，A 单独执行收益有限（Rules 已经写得很清楚，加强语气未必能扭转 Sonnet 的退路判断）。\n\n要不要我出一份 B 方案的具体改造 patch？主要改动点是 `pipeline.py` 的 `run_resolve_pipeline` 返回里给 top-K skill \n...[truncated]",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "SKILL.md",
+      "guidelines/coding-expert-rules.md",
+      "hooks/skill-resolve-inject.sh",
+      "pipeline.py"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "SKILL.md",
+        "coding-expert-rules.md",
+        "expert-rules.md",
+        "guidelines/coding-expert-rules.md",
+        "hooks/skill-resolve-inject.sh",
+        "pipeline.py",
+        "resolve-inject.sh"
+      ],
+      "n_turns": 3
+    }
+  },
+  {
+    "sample_id": "S2fab91bb-5d8620",
+    "source_session": "2fab91bb-15ef-4abf-95ec-e722b797bae9",
+    "uuid_anchor": "5d862084-09a7-4ad0-a4c2-764b7534338e",
+    "context_snippet": "[user] 我觉得可以设计一条显式指令，让人类的prompt输入来强制控制agent执行数据检索\n\n---\n\n[assistant] 这个思路更干净——把判断权从 agent 手里拿走交给人。agent 容易偷懒但人不会糊涂（至少对自己正在做的事有判断）。让我把它落成具体设计。\n\n## 触发语法\n\n参考现有 `@path` 引用的扁平化风格，用 `!skill` 前缀：\n\n| 语法 | 含义 | hook 行为 |\n|---|---|---|\n| `!skill` | 强制检索：走完整 classifier，top-K 都必读 | 注入文本口径硬化 + 追加违规定义 |\n| `!skill:langgraph-hitl,ant-pro-layout` | 指定检索：跳过 classifier，硬拉指定名字的 body | hook 直接调 `get_skill` 注入 body（用户显式要求，不破坏稀疏） |\n| `!skill:none` | 显式禁用：跳过整个 resolve | hook 空注入 + 标记\"用户声明无框架依赖\" |\n| *（不带标记）* | 默认：当前软约束行为不变 | 保持现状 |\n\n关键：**默认行为完全不动**（不破坏现有非框架场景），只有用户显式声明时才升格。\n\n## hook 实现变化\n\n`skill-resolve-inject.sh` 三个改动：\n\n1. 扫 prompt 扫出 `!skill` / `!skill:<names>` / `!skill:none` 这三种 sentinel，和 `@-引用` 扫描并列\n2. 根据模式分支：\n   - **强制模式**：正常跑 `resolve`，但注入文本尾巴从\"可忽略\"改成硬口径（下文）\n   - **指定模式**：跳过 `resolve`，对每个名字直接调新 CLI 子命令 `skill-catalog-cli get --name <name>` 拿 body，直接拼进 `additionalContext`\n   - **禁用模式**：跳过 `resolve`，输出 `[harness skill retrieval: user-disabled]`\n\n3. 强制模式下注入文本尾巴改成：\n   ```\n   [本轮为用户强制检索模式]\n   派发 coding-expert 前，主 agent 必须对上述 top-N skill 中每条调一次\n   mcp__skill-catalog__get_skill 读完整内容，再在派发 prompt 里携带 skill 名字。\n   子 agent 收到派发 prompt 后对每个 skill name 调 get_skill 读详情，再动手。\n   未执行此流程直接 Edit/Write 视为违规。\n   ```\n\n## 规范对齐\n\n- `CLAUDE.md` 加一节\"显式检索指令\"：罗列 `!skill` / `!skill:<name>` / `!skill:none` 三档语法 + 何时用\n- `guidelines/coding-expert-rules.md` 的\"开工前框架知识检索\"章节加一条\"若派发 prompt 含 `!skill` 强制模式标记，档 1 流程升格为硬约束（违规将被审计）\"\n- 原本的软约束（Rules 档 1 / 档 2）**完全保留**，作为未声明时的默认\n\n## 项目级默认\n\n给 CLAUDE.md 开一个项目级旋钮：\n\n```md\nskill-retrieval-default: force   # 或 off / soft（默认）\n```\n\n重框架项目可以把默认升成 `force`，等效于每条 prompt 都带 `!skill`；用户仍可在单条 prompt 里用 `!skill:none` 关闭。这一步可以二期做。\n\n---\n\n## 需要你决定的\n\n1. **标记语法**：`!skill` 这个形式你接受吗？还是偏好 `/skill` / `@@skill` / 中文的 `[检]` 之类？（`!` 开头和 `@path` 并列，不会和 bash `!command` 冲突因为在 prompt 里）\n2. **指定模式是否需要**（`!skill:name1,name2`）？它的价值是跳过 classifier，对你明确知道 skill 名字的场景更精准；代价是多维护一条 CLI 子命令 `get`。如果你觉得强制模式已经够用，可以砍掉只留 `!skill` + `!skill:none`\n3. **禁用模式 `!skill:none` 要不要**？当前软约束下\"什么都不写\"已经等效禁用；但有了硬约束语义后，显式禁用可以把\"用户判断这不是框架任务\"的信号落到 transcript 里，便于后续审计/统计\n4. **项目级默认**这一期做不做？\n\n方案对齐后我派 coding-expert 落地，改动面集中在 `hooks/skill-resolve-inject.sh` + `cli.py` + 两份规范文件。",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "cli.py",
+      "guidelines/coding-expert-rules.md",
+      "hooks/skill-resolve-inject.sh"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "cli.py",
+        "expert-rules.md",
+        "guidelines/coding-expert-rules.md",
+        "hooks/skill-resolve-inject.sh",
+        "resolve-inject.sh",
+        "skill-resolve-inject.sh"
+      ],
+      "n_turns": 2
+    }
+  },
+  {
+    "sample_id": "S8c0ff45b-4c5889",
+    "source_session": "8c0ff45b-eaae-41be-8f90-f632ed64c71e",
+    "uuid_anchor": "4c588917-4fe1-4fe2-9b55-9ab0360314d8",
+    "context_snippet": "[user] 那么项目级agent能否「include」全局agent，仅额外写与项目相关的内容，这样来确保不漂移\n\n---\n\n[assistant] Claude Code 对 agent 没有原生 `include/extends` 机制——frontmatter 和 body 都是自包含文件，按 name 整体覆盖。但 body 本质是 prompt，可以通过**指示 subagent Read 两份文件**来模拟继承，这是目前最干净的防漂移方案。\n\n## 推荐结构\n\n**把\"共享通用规范\"和\"项目专有规范\"物理拆开，agent body 串行 Read 两份：**\n\n```\n~/.claude/guidelines/coding-expert-rules.md   # 通用规范（单一事实源）\n                                              # 工作原则、skill 检索流程、交付格式\n\ncode-assistant/.claude/partials/\n  coding-expert-project-rules.md              # 仅项目专有（entity 知识库、\n                                              # webui 验收、Plan 75 引用等）\n```\n\n项目级 agent body 改为：\n\n```\n## 第一步：加载规范（两份串行）\n\n1. Read `~/.claude/guidelines/coding-expert-rules.md` — 通用工作规范\n2. Read `.claude/partials/coding-expert-project-rules.md` — 项目专有补充\n```\n\n## 几个要点\n\n- **frontmatter 仍需重复**（name/description/model/effort/tools 无继承机制），但这些字段变化极少，漂移风险低\n- **@-引用不适用**：`@file` 语法由 harness 在 user prompt 阶段解析，Read 工具只返回原始文本\n- **符号链接也能用**（`.claude/partials/coding-expert-rules.md → ~/.claude/guidelines/coding-expert-rules.md`），但那样项目无法再追加专有内容，**除非再拆一个专有 overlay 文件并 Read 两次**，最终和上面方案等价\n- **subagent 自判断**：若全局 rules 文件缺失（用户未装 dotfiles），第一个 Read 会失败——可在 body 注一句\"若第一份缺失则仅按第二份 + 本 preamble 执行\"作为兜底\n\n## 代价评估\n\n- **收益**：通用规范只维护一份，项目 overlay 只放真正项目专有的内容，漂移风险消除\n- **成本**：每次 subagent 开工多一次 Read（~几百 tokens）+ 需要把现有项目 rules 手工拆成\"通用 vs 项目专有\"两份\n\n要不要我起一个拆分计划？需要先对比两份现有 rules 内容差异，识别哪些段落该下沉到全局、哪些该留在项目 overlay。",
+    "ground_truth_paths": [
+      "coding-expert-project-rules.md",
+      "expert-rules.md"
+    ],
+    "path_types": "B",
+    "difficulty": "hard",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "coding-expert-project-rules.md",
+        "expert-project-rules.md",
+        "expert-rules.md"
+      ],
+      "n_turns": 2
+    }
+  },
+  {
+    "sample_id": "S3d72b9a0-94ab5a",
+    "source_session": "3d72b9a0-1d90-45a0-8dc1-c16108b9a60b",
+    "uuid_anchor": "94ab5ae4-79dd-409d-b8bf-260fff5ccb0e",
+    "context_snippet": "[user] [Request interrupted by user]\n\n---\n\n[user] 排查一下mcp工具为何没有返回相应skills，代码都在本工程当中\n\n---\n\n[assistant] 先了解一下工程结构。\n\n---\n\n[assistant] 원인을 찾았습니다. 장애 체인을 설명하겠습니다.\n\n## 근본 원인\n\n**스킬 라이브러리에 React/Ant Design 관련 스킬이 전혀 없습니다.**\n\n`SKILL_LIBRARY_PATH=/Users/mhbzhy/claude-config/skills` 에 있는 스킬은 오직 5개, 전부 claude-code 관련:\n\n```\nclaude-code-plugins     tech_stack: [claude-code]\nclaude-code-subagents   tech_stack: [claude-code]\nclaude-code-settings    tech_stack: [claude-code]\nclaude-code-slash-commands\nclaude-code-hooks\n```\n\n## 실패 체인 (pipeline.py + classifier.py)\n\n1. `catalog.available_tags()` → `tech_stack: [\"claude-code\"]` 만 반환\n2. Classifier (Ollama qwen3:4b, 정상 동작 확인)가 `available_tech_stack=[\"claude-code\"]` 를 받음\n3. LLM은 `react`, `antd` 를 정확히 분류하지만, 이 태그들이 허용 집합에 없으므로 `classifier.py:242` 에서 필터링됨:\n   ```python\n   ts_allowed = set(available_tech_stack)  # {\"claude-code\"}만 있음\n   tech_stack = [t for t in ts_raw if t in ts_allowed]  # react, antd → 탈락\n   ```\n4. `pipeline.py:47`에서 단락:\n   ```python\n   if not tech_stack and not capability:\n       filtered = {\"skills\": []}  # 바로 빈 결과 반환\n   ```\n\n## 해결책\n\nReact + Ant Design 스킬을 라이브러리에 증류해야 합니다. 현재 `classifier_error: null` 이고 Ollama도 정상 동작 중이므로 **코드 버그가 아닌 스킬 데이터 부재** 문제입니다. `/skill-distillation` 워크플로우로 `react`, `antd` 스킬을 새로 채집해 `skills/` 폴더에 추가하면 됩니다.",
+    "ground_truth_paths": [
+      "classifier.py",
+      "config/skills",
+      "pipeline.py"
+    ],
+    "path_types": "B",
+    "difficulty": "easy",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "classifier.py",
+        "config/skills",
+        "pipeline.py"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S1f654568-3da13a",
+    "source_session": "1f654568-9ba3-4c30-84f7-a6d82746851e",
+    "uuid_anchor": "3da13a12-d39e-4cee-b1a2-e89a7eae5dc7",
+    "context_snippet": "[user] # Update Config Skill\n\nModify Claude Code configuration by updating settings.json files.\n\n## When Hooks Are Required (Not Memory)\n\nIf the user wants something to happen automatically in response to an EVENT, they need a **hook** configured in settings.json. Memory/preferences cannot trigger automated actions.\n\n**These require hooks:**\n- \"Before compacting, ask me what to preserve\" → PreCompact hook\n- \"After writing files, run prettier\" → PostToolUse hook with Write|Edit matcher\n- \"When I run bash commands, log them\" → PreToolUse hook with Bash matcher\n- \"Always run tests after code changes\" → PostToolUse hook\n\n**Hook events:** PreToolUse, PostToolUse, PreCompact, PostCompact, Stop, Notification, SessionStart\n\n## CRITICAL: Read Before Write\n\n**Always read the existing settings file before making changes.** Merge new settings with existing ones - never replace the entire file.\n\n## CRITICAL: Use AskUserQuestion for Ambiguity\n\nWhen the user's request is ambiguous, use AskUserQuestion to clarify:\n- Which settings file to modify (user/project/local)\n- Whether to add to existing arrays or replace them\n- Specific values when multiple options exist\n\n## Decision: Config Tool vs Direct Edit\n\n**Use the Config tool** for these simple settings:\n- `theme`, `editorMode`, `verbose`, `model`\n- `language`, `alwaysThinkingEnabled`\n- `permissions.defaultMode`\n\n**Edit settings.json directly** for:\n- Hooks (PreToolUse, PostToolUse, etc.)\n- Complex permission rules (allow/deny arrays)\n- Environment variables\n- MCP server configuration\n- Plugin configuration\n\n## Workflow\n\n1. **Clarify intent** - Ask if the request is ambiguous\n2. **Read existing file** - Use Read tool on the target settings file\n3. **Merge carefully** - Preserve existing settings, especially arrays\n4. **Edit file** - Use Edit tool (if file doesn't exist, ask user to create it first)\n5. **Confirm** - Tell user what was changed\n\n## Merging Arrays (Important!)\n\nWhen adding to permission arrays or hook arrays, **merge with existing**, don't replace:\n\n**WRONG** (replaces existing permissions):\n```json\n{ \"permissions\": { \"allow\": [\"Bash(npm *)\"] } }\n```\n\n**RIGHT** (preserves existing + adds new):\n```json\n{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git *)\",      // existing\n      \"Edit(.claude)\",    // existing\n      \"Bash(npm *)\"       // new\n    ]\n  }\n}\n```\n\n## Settings File Locations\n\nChoose the appropriate file based on scope:\n\n| File | Scope | Git | Use For |\n|------|-------|-----|---------|\n| `~/.claude/settings.json` | Global | N/A | Personal preferences for all projects |\n| `.claude/settings.json` | Project | Commit | Team-wide hooks, permissions, plugins |\n| `.claude/settings.local.json` | Project | Gitignore | Personal overrides for this project |\n\nSettings load in order: user → project → local (later overrides earlier).\n\n## Settings Schema Reference\n\n### Permissions\n```json\n{\n  \"permissions\": {\n    \"allow\": [\"Bash(npm *)\", \"Edit(.claude)\", \"Read\"],\n    \"deny\": [\"Bash(rm -rf *)\"],\n    \"ask\": [\"Write(/etc/*)\"],\n    \"defaultMode\": \"default\" | \"plan\" | \"acceptEdits\" | \"dontAsk\",\n    \"additionalDirectories\": [\"/extra/dir\"]\n  }\n}\n```\n\n**Permission Rule Syntax:**\n- Exact match: `\"Bash(npm run test)\"`\n- Prefix wildcard: `\"Bash(git *)\"` - matches `git`, `git status`, `git commit`, etc.\n- Tool only: `\"Read\"` - allows all Read operations\n\n### Environment Variables\n```json\n{\n  \"env\": {\n    \"DEBUG\": \"true\",\n    \"MY_API_KEY\": \"value\"\n  }\n}\n```\n\n### Model & Agent\n```json\n{\n  \"model\": \"sonnet\", \n...[truncated]",
+    "ground_truth_paths": [
+      "local.json",
+      "settings.json"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "local.json",
+        "settings.json"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S2fab91bb-bfb97f",
+    "source_session": "2fab91bb-15ef-4abf-95ec-e722b797bae9",
+    "uuid_anchor": "bfb97f36-4fab-426d-b78e-4b034fddc3ac",
+    "context_snippet": "[user] 至少看起来机制已经OK了，先将所有代码commit&push吧\n\n---\n\n[assistant] 按规范要求（subject/body 中文，禁止 AI 署名）拆 3 个 commit：\n\n1. `refactor(skill-catalog): 拆除 @-引用链路` — 纯拆除，对标单一主题\n2. `feat(skill-catalog): 引入 %skill 显式检索开关与 CLI get 子命令` — 含 CLAUDE.md 全部改动\n3. `feat(coding-expert): 通过 SubagentStart/Stop hook 强化 subagent 检索机制` — 含 rules.md / agents / init_claude.sh / 两个新 hook\n\n---\n\n[assistant] 3 个 commit 已经落库（`9664304 → a01aa7d → f98ec62`，共 `+643 / -368`）。\n\n**push 被 harness 安全机制拦截** —— 默认分支（main）直推受保护。你可以用以下任一方式放行：\n\n1. **直接手动推**（终端里执行）：\n   ```bash\n   git push origin main\n   ```\n2. **加权限规则**（`~/.claude/settings.json` 里新增 Bash 规则允许 `git push origin main`）\n\n这是你的 claude-config 个人仓库，是否有 PR 流程你最清楚——如果没有，方案 1 最快。当前 3 个 commit 已在本地 main 分支上，仅等推送。\n\n**本会话工程总收尾**：\n- 3 个 commit 干净分主题：refactor（@-引用拆除）/ feat（%skill 开关）/ feat（subagent hook 矩阵）\n- 共 14 个文件改动、3 个新文件（2 hook + 1 test）、 +643 / -368 行\n- 尚未跑 `init_claude.sh`（push 后按需手动跑一次让新 hook 矩阵生效）",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "init_claude.sh",
+      "rules.md"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "init_claude.sh",
+        "rules.md"
+      ],
+      "n_turns": 3
+    }
+  },
+  {
+    "sample_id": "S2fab91bb-5fc62b",
+    "source_session": "2fab91bb-15ef-4abf-95ec-e722b797bae9",
+    "uuid_anchor": "5fc62b26-66e3-40b0-8fab-e91611028ce7",
+    "context_snippet": "[user] 仅heavy读取skill吧，其他两档没必要用hook去强制要求\n\n---\n\n[user] coding-expert-audit.sh只做知识检索相关指标统计，不要做其他多余的事情\n\n---\n\n[assistant] 好，把 audit hook 从\"合规审计 + 主 agent 警告\"降级为\"纯指标统计\"——只数数、落日志，不打扰主 agent。派发 light 档重写。\n\n---\n\n[assistant] audit hook 降级完成。当前状态收尾：\n\n**本会话全部改动（按时间序）**：\n1. 拆除 `@-引用` 链路\n2. 硬化 coding-expert 子 agent 检索规则（开工必调 `resolve`）\n3. SubagentStart hook 强制注入共享规范（`coding-expert-rules-inject.sh`）\n4. 主对话 `%skill` / `%skill:<name>` / `%skill:none` 显式开关\n5. SubagentStop 纯指标统计 hook（`coding-expert-audit.sh`，JSON Lines 落 `~/.claude/logs/coding-expert-audit.log`）\n\n**代码层全绿**：127 pytest 通过、所有 hook `bash -n` 语法正常、`%skill` 四模式烟雾测试符合预期、audit hook 四场景测试符合预期且永不向主 agent 发信号。\n\n**待你手动触发两件事**：\n\n1. **上线新 hook 配置**：\n   ```bash\n   bash /Users/mhbzhy/claude-config/init_claude.sh\n   ```\n   合并后应有 UserPromptSubmit×1 / SubagentStart×4 / SubagentStop×3，共 8 条 hook 引用。\n\n2. **提交决定**：未自动 commit（CLAUDE.md 规则要求用户明确授权）。准备好时告诉我\"提交\"即可，我按先前拟定的 4 个方向拆 commit 执行。\n\n**观察建议**：init_claude.sh 上线后跑一两个真实派发 coding-expert 的任务，然后看：\n```bash\ntail -20 ~/.claude/logs/coding-expert-audit.log | jq\n```\n`first_tool` 字段应是 `\"mcp__skill-catalog__resolve\"`；若不是，说明子 agent 即使有 hook 注入的规范也没遵守，再决定是否升级（加 SubagentStop 的主 agent 警告通道或其他手段）。",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "coding-expert-audit.sh",
+      "coding-expert-rules-inject.sh",
+      "config/init_claude.sh"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "claude.sh",
+        "coding-expert-audit.sh",
+        "coding-expert-rules-inject.sh",
+        "config/init_claude.sh",
+        "init_claude.sh"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "Sf88487b5-ebab08",
+    "source_session": "f88487b5-9695-4d8d-ad4d-ceda2d4b5fd7",
+    "uuid_anchor": "ebab087e-d997-400a-95ae-e3da5eac9642",
+    "context_snippet": "[user] stack-detector角色需要保留，这部分还是要独立出来\n\n---\n\n[assistant] [claude-opus-4-6] 明白，stack-detector 保持独立。我来把它从 scanner 中拆回去，恢复相关引用。\n\n---\n\n[assistant] 现在从 scanner.md 移除 stack-detect 模式，并恢复 CLAUDE.md、init_claude.sh、hook 脚本中的 stack-detector 引用。\n\n---\n\n[assistant] 现在恢复 CLAUDE.md、init_claude.sh、hook 脚本中的 stack-detector 引用。",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "init_claude.sh",
+      "scanner.md"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "init_claude.sh",
+        "scanner.md"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S8c0ff45b-6d37a9",
+    "source_session": "8c0ff45b-eaae-41be-8f90-f632ed64c71e",
+    "uuid_anchor": "6d37a915-552b-47e3-a3c4-19cdbbb38ee7",
+    "context_snippet": "[user] @../code-assistant/ 这里也配置了agents，覆盖了全局配置，把我们刚才对几个agent的描述改动同步到对应的项目级agent当中，但要保留它们对项目特有的描述。\n\n---\n\n[assistant] 只有 `coding-expert` (standard) 的 description 多了末尾一句，heavy/light 已一致。同步该一句。\n\n---\n\n[assistant] 同步完成。对比结果：\n\n- **coding-expert.md**: 追加 `并行分发编码子任务时默认使用本 agent。` 一句（其他项目特有内容——`.claude/partials/coding-expert-rules.md` 路径、档位定位措辞——保持不动）\n- **coding-expert-heavy.md**: description 与全局完全一致，无需改动\n- **coding-expert-light.md**: description 与全局完全一致，无需改动\n\n项目级 body（包含 entity 知识库、webui 验收、Plan 75 批次引用等特有内容）全部保留未动。",
+    "ground_truth_paths": [
+      "../code-assistant/",
+      "coding-expert-heavy.md",
+      "coding-expert-light.md",
+      "coding-expert.md",
+      "expert-rules.md"
+    ],
+    "path_types": "mixed",
+    "difficulty": "hard",
+    "meta": {
+      "at_paths": [
+        "../code-assistant/"
+      ],
+      "prose_paths": [
+        "coding-expert-heavy.md",
+        "coding-expert-light.md",
+        "coding-expert.md",
+        "expert-rules.md"
+      ],
+      "n_turns": 3
+    }
+  },
+  {
+    "sample_id": "Sad994c91-ca7b07",
+    "source_session": "ad994c91-5870-49dc-be78-19ad3bbc9059",
+    "uuid_anchor": "ca7b0726-8ab2-4837-83a9-4f7a17ce1475",
+    "context_snippet": "[user] 这样看方案就很清晰了，你之前最激进的优化方案，链路上是有可取之处的，但完全没必要使用haiku，最低的模型使用sonnet就可以了\n\n---\n\n[assistant] 完全同意——**sonnet 是所有非蒸馏阶段的合理地板**。三点共识:\n\n1. haiku 省那 3× 套利不够偿还工程风险(提示词重写、边界验证、偶尔漏召回)\n2. sonnet 在分类/采集/预处理这种\"按规则执行\"任务上已经近乎完美,没有再往下掏的空间\n3. 只有 **opus** 真的贵到值得围绕它做架构优化——压缩它的输入,而不是换掉它\n\n## 简化后的工作流定稿\n\n| 阶段 | Agent | 模型 | 动作 |\n|------|-------|------|------|\n| 决策数据源 | `source-planner`(新增) | **sonnet** | 主 agent 不再亲自规划 URL |\n| 采集 | `skill-fetcher` | **sonnet**(保留) | 不动 |\n| 预处理 | `skill-preprocessor`(新增) | **sonnet** | 去噪 / 合并 / 结构化 |\n| 蒸馏 | `skill-builder` | **opus low**(保留) | 输入被 preprocessor 砍 60% |\n| 打标 | `skill-marker` | **sonnet**(保留) | 不动 |\n\n**真正的杠杆只剩一件事:在 fetcher 和 builder 之间插入 preprocessor**,把 opus 的输入压下去。其他(source-planner、prompt caching、并行化)都是边际优化,边做边加即可。\n\n## 优化项的优先级\n\n| 优化 | 投入 | 收益 | 建议 |\n|------|------|------|------|\n| `skill-preprocessor` | 中(新 agent + CLAUDE.md 工作流改动) | 蒸馏成本减 ~50%,是大头 | **P0** |\n| prompt caching 全链 | 低(检查现有提示词是否命中) | 20–40% 普适 | **P1**,随手可做 |\n| `source-planner` | 中(新 agent) | 决策成本减 70%,但决策本身占比小 | **P2**,后续实验 |\n| 并行化 pipeline | 中(编排脚本) | 延迟改进,非 token 节省 | **P3**,值得时再说 |\n\n## 对存量迁移的影响\n\n几个关键判断:\n\n- **存量迁移不需要等这些优化完成**——迁移只走打标(marker,sonnet),已经就位\n- preprocessor 是给**未来新蒸馏 skill** 省钱的,不改造存量已蒸馏的 SKILL.md\n- 所以现在两条路可并行:一边推迁移,一边设计 preprocessor\n\n## 下一步建议\n\nauto mode 下我建议先把**存量迁移跑掉**(工作流 P0 不堵),然后再做 preprocessor 设计:\n\n1. 现在:用 `skill-marker`(sonnet)对 skills/ 全量存量迁移——200 条 ≈ $3.6,半小时内完结\n2. 迁移完提交一次(完成当前 plan 的收尾)\n3. 再起新会话讨论 preprocessor 的具体设计 + CLAUDE.md 工作流升级\n\n或者相反:先设计 preprocessor 再迁移,反正迁移是一次性动作,早晚都要做。\n\n倾向哪种?auto mode 下我默认走\"先迁移后优化\",除非你否决。",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "SKILL.md"
+    ],
+    "path_types": "B",
+    "difficulty": "hard",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "SKILL.md"
+      ],
+      "n_turns": 2
+    }
+  },
+  {
+    "sample_id": "Sad994c91-927f3a",
+    "source_session": "ad994c91-5870-49dc-be78-19ad3bbc9059",
+    "uuid_anchor": "927f3a46-92f4-42ad-a0ee-13136a9bc9e5",
+    "context_snippet": "[user] 我已经重启了，不用写memory了，验证吧\n\n---\n\n[assistant] MCP 已升级生效(capability 入参已在 schema 中)。开跑验证。\n\n**Step 1:验证 MCP capability 过滤行为**(应返回空,因为尚未有 skill 打标)\n\n---\n\n[assistant] **Step 1+2 结果**:\n- `capability=[\"ui-input\"]` 返回 0 条(预期,尚未打标)\n- `tech_stack=[\"antd\"]` 返回 **79 条**(老行为保留,印证早先讨论的\"单 tech_stack 过宽\"问题)\n- 输出对象均无 `capability` 字段(符合\"未设置则不输出\"规范)\n\n**Step 3:skill-marker dry_run 精度测试**,挑 5 个覆盖多能力域的 antd 样本\n\n---\n\n[assistant] 验证全部通过:\n\n| 步骤 | 结果 |\n|------|------|\n| MCP capability 参数可用 | ✅ 空集返回(无打标),无 schema 错误 |\n| MCP tech_stack 老行为保留 | ✅ antd 返 79 条 |\n| SubagentStart hook 触发 | ✅ `11:29:15` 日志新增一行 |\n| taxonomy 强制注入 skill-marker | ✅ agent 响应里明确引用\"taxonomy 示例列出\" |\n| 打标精度(5 样本) | ✅ 5/5 命中预期,含边界 `ui-form + form-validation` 组合 |\n| 端到端 matcher 收敛效果 | ⏳ 需迁移后才能测 |\n\n流程已证明闭环可工作。唯一剩下的是 **Task 8 存量迁移**——对 `/Users/mhbzhy/claude-config/skills/` 下全部 SKILL.md 跑 skill-marker 正式写入。\n\n考虑到:\n- dry_run 精度 100%\n- 当前是 git 仓,`git status` 显示你已有未提交变更,迁移前最好先 `git stash` 或先提交现有改动\n- skill-marker 有 `force: false` 默认行为(只补不覆盖),安全\n\n**建议执行顺序**:\n1. 你先决定现有未提交变更怎么处理(stash / commit / 继续叠加)\n2. 我分两批跑 skill-marker:先 `antd/`(79 条,密度最高),人工抽查 10 条;OK 再跑其他 37 个 tech_stack 目录\n3. 迁移完再跑一次端到端 matcher 对比收敛效果\n\n等你信号 → 开始迁移,或先让我查 `git status` 帮你判断当前未提交变更的分布。",
+    "ground_truth_paths": [
+      "SKILL.md",
+      "config/skills/"
+    ],
+    "path_types": "B",
+    "difficulty": "easy",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "SKILL.md",
+        "config/skills/"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "Sad994c91-a90dfd",
+    "source_session": "ad994c91-5870-49dc-be78-19ad3bbc9059",
+    "uuid_anchor": "a90dfdaf-d850-4a36-bfe4-3e5cf8c7ee4f",
+    "context_snippet": "[user] [Request interrupted by user]\n\n---\n\n[assistant] No response requested.\n\n---\n\n[assistant] 遇到了和 MCP 一样的冷启动问题——**新创建的 agent 文件需要重启 Claude Code 才会被识别**。\n\n看错误返回的 available agents 列表:有 skill-builder/fetcher/marker/matcher,但**没有 source-planner 和 skill-preprocessor**——这两个是本会话刚写的,harness 只在启动时扫描一次 `agents/` 目录。\n\n## 操作\n\n请你重启 Claude Code 一次。重启后:\n\n1. harness 会加载新写的 `source-planner.md` 和 `skill-preprocessor.md`\n2. 我会继续 `/claude -c` 续这个会话(或你开新会话也行,磁盘状态完整)\n3. 直接发起",
+    "ground_truth_paths": [
+      "skill-preprocessor.md",
+      "source-planner.md"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "skill-preprocessor.md",
+        "source-planner.md"
+      ],
+      "n_turns": 3
+    }
+  },
+  {
+    "sample_id": "Sad994c91-7d7be2",
+    "source_session": "ad994c91-5870-49dc-be78-19ad3bbc9059",
+    "uuid_anchor": "7d7be27c-1186-4bb0-9798-a2efb26a9325",
+    "context_snippet": "[user] 是不是可以不用webfetch，而是用bash命令把源文件完整下载？这样就避免了摘要问题\n\n---\n\n[assistant] 对,这是更好的方案。WebFetch 的限制:\n\n- **大于 ~50K 的文件会被 LLM 摘要**(非 verbatim)\n- **每次调用消耗 token 做 HTML → markdown 提取**\n\ncurl/wget 的优势:\n\n- **逐字节保留原文**,无论多大\n- **零 token 成本**(下载不走 LLM)\n- **github raw 场景完美适用**(纯 markdown 文件直接下载)\n\n但 curl 不能完全替代 WebFetch——**渲染后的 HTML 文档页面**(如 `tailwindcss.com/docs/*`)curl 下载的是原始 HTML,还要 preprocessor 剥离大量 `<nav>/<script>` 噪声,preprocessor 的保守版去噪能力对纯 HTML 不够。\n\n## 混合策略\n\n| URL 模式 | 下载方式 | 理由 |\n|---------|---------|------|\n| `raw.githubusercontent.com/*` | curl | 纯 markdown,直接下 |\n| `github.com/*/blob/*` | curl(自动重写成 raw) | 等价于上 |\n| `.md` / `.mdx` / `.txt` / `.rst` 结尾 | curl | 已是 markdown/纯文本 |\n| `*.com/docs/*` 等 HTML 渲染页 | WebFetch | 需要 LLM 提取主内容 |\n\n## 实施\n\n- skill-fetcher 加 curl 分支(按 URL 模式路由)\n- source-planner 加一条:链接 github CHANGELOG/docs 时**优先使用 raw.githubusercontent.com**\n- settings.json 添加 `Bash(curl *)` 权限\n\n开干。\n\n---\n\n[assistant] 先验证 curl 本身能拿到完整 CHANGELOG(不触发 agent):\n\n---\n\n[assistant] curl 能拉到 **279,834 bytes**(完整 CHANGELOG)vs WebFetch 之前的 1,866 bytes(摘要)——**150× 内容量差异**,approach 验证通过。\n\n现在测 agent 是否加载了新规则(注:已修改的 agent 文件可能也需要重启才生效)。",
+    "ground_truth_paths": [
+      "settings.json"
+    ],
+    "path_types": "B",
+    "difficulty": "hard",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "settings.json"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S2fab91bb-2808e9",
+    "source_session": "2fab91bb-15ef-4abf-95ec-e722b797bae9",
+    "uuid_anchor": "2808e9a8-3c87-4a26-b693-784cfbafc070",
+    "context_snippet": "[user] 如果直接塞入，那设计的渐进式加载就没有意义了\n\n---\n\n[assistant] 你说得对。B 的代价就是把\"稀疏按需\"改成\"无差别预读\"，非框架任务也得吃 top-1 body——设计意图里的渐进式就废了。\n\n重新聚焦：真正要解的不是\"放弃按需\"，而是\"让按需这个动作真的被触发\"。换个角度看，**渐进式加载的前提是 agent 愿意主动走下一步**，现在数据说明它们不愿意。所以该改的是**触发条件**，不是**加载深度**。\n\n## 尊重原设计的三条路\n\n**① 翻转默认值**（改规范口径 + hook 文本）\n- 当前 Rules 和 hook 注入文本都是\"**允许跳过**\"语气：`可自行调` / `若不涉及框架可忽略` → 跳过是零成本默认\n- 改成\"**默认必读，跳过需显式声明**\"：框架任务开工第一个工具必须是 `get_skill` 或 `resolve`；判定为非框架任务时，**首次输出首行必须写** `skill-retrieval: skipped (reason)`，否则视为违规\n- 渐进式完全保留：读多少、读哪条仍由 agent 判断；变的只是\"零动作\"的合法性\n- 成本：非框架任务每次多一行豁免声明（~40 字）\n\n**② 派发时 checkpoint**（PreToolUse hook 拦 Agent 调用）\n- 在主 agent 发起 `Agent(subagent_type=coding-expert*)` 的瞬间，PreToolUse hook 检查 prompt 字符串\n- 若 prompt 里**既不包含当轮 hook 注入的任一 skill name、也没出现 `skill-retrieval:` 字样**，hook 在 tool result 前置一条 warning：`⚠️ 本次派发未携带 skill 名字；若任务涉及框架，请补充 skill name 再派发`\n- 可选硬模式：返回 block 让 Claude 重新组织 prompt（谨慎用，会增加交互轮次）\n- 渐进式完全保留：只在派发这个自然锚点做一次校验，其他时候不干扰\n\n**③ SubagentStop 事后审计**（被动兜底）\n- coding-expert 退出时扫 transcript：含 `Edit/Write` + 无 `get_skill/resolve` + 无豁免声明 → 在返回汇报尾部附 `⚠️ 本批次框架代码未走 skill 检索`\n- 不改流程主干，只让违规可见\n- 缺点：代码已经写完了，只是事后知情\n\n---\n\n**我建议 ① + ② 组合**：\n\n- ① 从规范层把\"零动作\"变成违规——让它从**默认**变成**异常**\n- ② 在派发这个自然锚点上做实时 checkpoint——捕获主 agent 的\"忘了带 skill 名字\"的典型失败模式\n- 这两条都严格遵守渐进式：top-1 要不要读、读几条、读哪条，仍然是 agent 的判断权\n\n③ 可以作为二期补充——先看 ①② 能不能把 `get_skill` 流量从 0 拉起来；若子 agent 仍然跳过，再加事后审计。\n\n要不要我先做 ①？改动面很小：\n- `hooks/skill-resolve-inject.sh` 尾巴文本从\"可/若...可忽略\"改成硬口径\n- `guidelines/coding-expert-rules.md` 的\"非框架任务允许跳过\"改成\"需显式声明 `skill-retrieval: skipped (reason)`\"\n- CLAUDE.md 主 agent 章节同步改口径\n\n② 需要新写一个 PreToolUse hook，复杂度高一档，可以分步做。",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "guidelines/coding-expert-rules.md",
+      "hooks/skill-resolve-inject.sh"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md",
+        "expert-rules.md",
+        "guidelines/coding-expert-rules.md",
+        "hooks/skill-resolve-inject.sh",
+        "resolve-inject.sh"
+      ],
+      "n_turns": 2
+    }
+  },
+  {
+    "sample_id": "S8c0ff45b-e00a84",
+    "source_session": "8c0ff45b-eaae-41be-8f90-f632ed64c71e",
+    "uuid_anchor": "e00a8423-f113-433a-b2a3-be5a1f03440e",
+    "context_snippet": "[user] 是否也可让项目级agent直接引用对应档位的全局级agent？我看还有很多重复性描述\n\n---\n\n[assistant] 先看全局 agent 的当前形态再定方案。\n\n---\n\n[assistant] 可行且收益明显。项目 agent 现在几乎全盘复制全局 body，仅\"第一步\"小段不同。改成通过 Read 引用全局 agent，body 可从 ~40 行压到 ~10 行。\n\n---\n\n[assistant] 项目级 agent 全部瘦身为**引用壳**。结构：\n\n```\n项目 agent（frontmatter + 10 行 body）\n  ├── Read ~/.claude/agents/coding-expert-{档位}.md   # 全局档位 body（preamble / 档位定位 / 专有指令）\n  ├── Read ~/.claude/guidelines/coding-expert-rules.md # 全局通用规范\n  └── Read .claude/partials/coding-expert-rules.md    # 项目专有 overlay\n```\n\n**消除的重复**：\n- preamble（\"你是 coding-expert xx 档...\"）\n- 档位定位（承上/启下 or 白名单/黑名单）\n- 本档位专有指令（heavy 的 5 条、light 的 4 条 + 降级声明模板）\n- 升降级反馈协议\n\n这些现在只在全局各自档位 agent 里维护一份。\n\n**保留**：\n- frontmatter（name/description/model/effort/tools——Claude Code 需要这些来装载 agent，无继承机制）\n- 一句项目身份声明（\"运行于 code-assistant 项目\"）\n- 档位专有的一句本地强调（heavy 提醒深推理不免流程；light 提醒严谨度不降）\n\n**代价**：subagent 开工时多 1 次 Read（3 次 vs 之前 2 次）。\n\n**一致性保证**：全局档位 body 或规范任何调整，项目子 agent 下次 Read 自动拿到新版本，完全无漂移。",
+    "ground_truth_paths": [
+      "expert-rules.md"
+    ],
+    "path_types": "B",
+    "difficulty": "hard",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "expert-rules.md"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "Sad994c91-de3b52",
+    "source_session": "ad994c91-5870-49dc-be78-19ad3bbc9059",
+    "uuid_anchor": "de3b521a-6633-447d-8014-ecc93cff152b",
+    "context_snippet": "[user] 我还有个疑问，如何判断「haiku置信度低」的结果，让sonnet可以精准复核这些内容\n\n---\n\n[assistant] 这个问题的关键认识:**haiku 自称的 confidence 不可信**——LLM 的 calibration 普遍很差,让它输出 `confidence: \"low\"` 收效甚微,它倾向永远说 \"high\" 即便标错。所以置信度**不能靠模型自省**,要靠**外部可测信号**。\n\n## 三种可操作的置信度信号(按可靠度排序)\n\n### 信号 1:自一致性采样(Self-Consistency)——最可靠\n\n同一条 skill 让 haiku 跑 **3 次**,对比结果:\n\n- 三次完全一致 → **高置信**,accept\n- 三次有分歧 → **低置信**,送 sonnet 复核\n\n这是 Wei et al. 2022 就成熟的技术,在分类任务上经验上能推高 5–10% accuracy。haiku 便宜,3x 调用仍然是 sonnet 的 ~60%。\n\n**实施细节**:\n- 必须打开 `temperature > 0`(例如 0.3),否则三次输出完全一样,分歧检测失效\n- 对比粒度:capability 数组排序后做 set 比较\n- 部分一致怎么办:比如三次结果 `[ui-input, ui-overlay]`、`[ui-input, ui-overlay]`、`[ui-input]` → 第三次漏标,按\"多数投票\"取前两者;但同时标记为\"不稳定\",随机抽查\n\n### 信号 2:规则触发——低成本硬切\n\n哪怕自一致性通过,命中以下规则也强制升级 sonnet:\n\n| 触发条件 | 原因 |\n|---------|------|\n| 输出 capability 数 ≥ 4 | 多域组合,边界判断风险高 |\n| 输出为空数组 | haiku \"放弃\"的典型表现 |\n| 命中已知\"易混对\"(如 `ui-input` ↔ `ui-overlay`、`ui-form` ↔ `form-validation`) | 分类学里设计时就预判的近义边界 |\n| 只命中易混对中的一个但未命中另一个 | 经验上常漏标伴生 key |\n| skill 正文长度 > 3K 字符 | 复杂组件,多能力域可能性高 |\n\n这层规则不是让 haiku 判断,是**调用方在 haiku 返回后用代码判断**,不依赖模型可靠性。\n\n### 信号 3:输入侧预判——跳过 haiku 直接送 sonnet\n\n基于 skill 元数据的启发式:\n\n- `name` 含 `pro-*`/`composite` 前缀(ProForm、ProTable 这类聚合组件)→ 直接 sonnet\n- `description` 包含\"包含\"、\"以及\"、\"同时\"等连接词 → 多能力域概率高 → 直接 sonnet\n- `tech_stack` 长度 ≥ 4 → 跨域 skill,直接 sonnet\n\n## 推荐工作流\n\n```\nfor skill in targets:\n    # 预判:输入侧特征先筛\n    if is_complex_by_heuristic(skill):\n        result = sonnet_mark(skill)\n        tier = \"sonnet-direct\"\n    else:\n        # 自一致性:haiku × 3\n        results = [haiku_mark(skill, temp=0.3) for _ in range(3)]\n        if all_agree(results):\n            result = results[0]\n            # 规则触发复核\n            if hit_rule_triggers(result, skill):\n                result = sonnet_mark(skill)\n                tier = \"sonnet-rule\"\n            else:\n                tier = \"haiku-confident\"\n        else:\n            result = sonnet_mark(skill)  # 分歧升级\n            tier = \"sonnet-disagree\"\n    log(skill, result, tier)\n```\n\n## 成本与准确率预估\n\n假设 200 条 skill,易混/复杂占比约 15–20%:\n\n| 模式 | 成本(相对) | 准确率(估) |\n|------|------------|------------|\n| 全 sonnet | 100% | ~97% |\n| 全 haiku | 20% | ~88% |\n| **三层叠加** | **35–40%** | **~96%** |\n\n核心收益:用 haiku 的价格跑到 sonnet 的精度。\n\n## 对 skill-marker 的具体落地\n\n当前 skill-marker 是单一 sonnet agent。要支持分层,有两种实现:\n\n**方案 A(轻量)**:skill-marker 内部逻辑化 + 调用 `Agent({model})`\n\n- skill-marker 自身降级为 haiku(便宜)\n- 它的提示词里写明:\"三次自采样+规则触发\",但**让它没法自己切模型**(model 在调用前已绑定)\n- 不可行 ❌\n\n**方案 B(推荐)**:拆成调度器 + 两个执行体\n\n- 新 agent `skill-marker-runner`(haiku,纯分类)\n- 保留 `skill-marker`(sonnet,复核 + 兜底)\n- **主 agent(或专门的 orchestrator)**做三层判断:预判 → haiku×3 → 规则 → sonnet\n- 也可以把 orchestrator 写成 Python 脚本,在 CI 外跑,连主 agent 都不参与\n\n**方案 C(最精简)**:保留当前 skill-marker 不动,在批量迁移脚本里实现分层\n\n- 批量迁移是一次性工作,写个 `scripts/bulk-mark.py`\n- 脚本里调 Claude API 直接跑 haiku 三次 + sonnet 兜底\n- 一次性用完即弃,不污染 agent 体系\n\n考虑到存量迁移是一次性的 200 条,方案 C ROI 最高。增量打标(新采 skill 时)用 skill-marker sonnet 单次调用即可,不值得为单条上分层。\n\n---\n\nauto mode 下我倾向**先不动现有 skill-marker**,存量迁移用方案 C(或干脆现状 sonnet 全量跑一次 200 条成本也可接受),等看到真实 sonnet 账单再决定是否需要 haiku 降级。要我:\n\n- **A**:继续用 sonnet 存量全跑,省开发工作\n- **B**:先写 `scripts/bulk-mark.py` 实现三层分层,用到这轮迁移\n- **C**:暂停工作流讨论,回到其他任务",
+    "ground_truth_paths": [
+      "mark.py"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "mark.py"
+      ],
+      "n_turns": 2
+    }
+  },
+  {
+    "sample_id": "Sad994c91-572705",
+    "source_session": "ad994c91-5870-49dc-be78-19ad3bbc9059",
+    "uuid_anchor": "57270504-3b4a-48bc-8a7e-389db3a6e926",
+    "context_snippet": "[user] prompt caching 实测\n\n---\n\n[assistant] 开始 prompt caching 实测。先探明可用的观测点,再设计可控实验。\n\n---\n\n[assistant] 找到实测数据来源了——Claude Code 已经默认开了 prompt caching,transcripts 里完整记录了 `cache_creation_input_tokens` / `cache_read_input_tokens` / `ephemeral_1h` / `ephemeral_5m`。现在抽本次会话的完整数据做分析。\n\n---\n\n[assistant] 实测数据出齐。本次会话全部 sub-agent 调用都在 transcript 里有完整 cache 指标。\n\n## 核心发现:prompt caching **早已默认开启**\n\nClaude Code harness 自动做了 caching,根本不需要我们额外配置——观察到两种 TTL:\n\n- **主 agent**:`ephemeral_1h`(1 小时 TTL)\n- **sub-agent**:`ephemeral_5m`(5 分钟 TTL)\n\n## 本次会话实测数据(按 agent)\n\n| Agent | 调用次数 | 输入总量 | 其中 cache_read | **缓存命中率** |\n|-------|---------|----------|-----------------|----------------|\n| skill-marker | 23 | 609K | 436K | **71.6%** |\n| skill-preprocessor | 5 | 132K | 129K | **97.6%** |\n| skill-fetcher | 4 | 144K | 143K | **99.2%** |\n| skill-builder | 4 | 99K | 90K | **91.0%** |\n| claude-code-guide | 2 | 72K | 62K | **85.8%** |\n| source-planner | 1 | 17K | 14.7K | **87.7%** |\n| skill-matcher | 1 | 32K | 9.6K | 29.7%(单次冷启动) |\n| **sub-agent 总计** | 40 | 1.11M | 885K | **80.0%** |\n\n**主 agent**(opus 1M 上下文):391 次 LLM 轮次\n- cache_read: 65.8M,cache_creation: 3.78M,uncached input: 仅 7.6K\n- **缓存命中率 94.6%**\n\n## 解读\n\n**1. 并行/紧挨的 sub-agent 命中率极高**\npreprocessor / fetcher / builder 都是 90%+,因为 5 分钟 TTL 内连续调用,agent 系统提示词 + 工具 schema + hook 注入的 taxonomy 共享同一块缓存。\n\n**2. 时间跨度大的调用吃亏**\nskill-marker 71.6% 是全场最低,因为 23 次分散在整个会话的多个时段,有些间隔 >5 min 导致 TTL 过期重建缓存。hook 注入的 4K taxonomy 每次掉出 TTL 就要重刷一次。\n\n**3. 主 agent 的 1h TTL 是金矿**\n94.6% 命中率,等同**几乎所有输入走 cache_read**——意味着本次这么长的会话,实际账单里大部分 input 只收 10% 费率。\n\n## 估算成本节省(按 opus 主 agent)\n\n粗算 Anthropic 定价:基础 input $X,cache_read ≈ 0.1X,cache_create(1h)≈ 2X:\n\n```\n无缓存场景:   (65.8M + 3.78M) × 1.0X  ≈  69.6M·X\n当前场景:     65.8M × 0.1X + 3.78M × 2X  ≈  14.2M·X\n```\n\n**主 agent 单 session 省了约 80%**。sub-agent 场景约省 70%。\n\n## 可动的优化空间(有限但真实)\n\n**1. marker 批量调用应该时间收紧**(命中率的低垂果实)\n\n本次 23 次 marker 分 3–4 波执行。如果改成**一次会话内集中一次性处理完**(或拆成 1 次批量调用覆盖多 target),能把 71.6% 拉到 90%+。对应的 CLAUDE.md 工作流已经建议\"批量模式一次性收尾\",符合这个方向。\n\n**2. 五阶段工作流设计已经做对了**\n\nplanner → fetcher(多并行) → preprocessor(多并行) → builder(多并行) → marker(批量),各阶段内并行且紧凑。实测数据印证 preprocessor/fetcher/builder 在并行模式下命中率都 90%+。\n\n**3. 不要做的事**\n\n- **不要**尝试手动加 `cache_control` 标记——Claude Code 不暴露这个 API,硬加会被无视或冲突\n- **不要**想办法减小 agent 系统提示词以\"降低 cache miss 成本\"——cache_create 是一次性的,后续读取非常便宜,缩减反而丢失提示词明确性\n- **不要**担心首次调用的 100% cache miss——第一次写入就是在给后续调用铺路\n\n## 结论\n\n**prompt caching 是 Claude Code 的隐藏基础设施,当前已在为我们省 70–80% 的 input 成本**。本次工作流设计(并行执行、批量 marker)与 caching 默契得很好,实测命中率 80%(sub-agent)/ 94.6%(main)说明没有 low-hanging fruit 值得再动手优化。\n\n唯一明显可改进的:**skill-marker 批量模式在 CLAUDE.md 里写得更强一些**,明确\"同一会话内一次性打完标,避免多轮分散\",可以把 marker 的 71.6% 拉到 90%+。这个改动一行文字,要不要动?",
+    "ground_truth_paths": [
+      "CLAUDE.md"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "CLAUDE.md"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S35c4cbfa-bfac78",
+    "source_session": "35c4cbfa-6a07-451d-ae03-8edab650ab94",
+    "uuid_anchor": "bfac78d5-59ac-4197-8336-af7597351857",
+    "context_snippet": "[user] 需要注意的是，通过mcpserver查询skill list时，很有可能tech_stack或language输入空值，如果二者都是空值，则什么都不返回；若仅有一个是空值，则认为该项不进行约束。例如language传入python，tech_stack什么都不传，则返回所有python知识；若tech_stack传入鸿蒙，language不传入，则arkts/cpp/语言无关的鸿蒙知识都返回。你需要确认mcpserver当前的实现是否严格遵守此规则，若有出入则需要修复。\n\n---\n\n[assistant] 让我先确认当前实现的行为，再逐条对照你的规则。\n\n---\n\n[assistant] 逐条对照你的规则：\n\n| 场景 | 期望行为 | 当前实现 | 状态 |\n|------|---------|---------|------|\n| 两者都空 | 返回空 | L122: `not tech_stack` → 返回全部有 `tech_stack` 的 skill，然后 `language` 空不过滤 → **返回全量** | **不符** |\n| 仅 `language=python` | 返回所有 python skill | L122: `not tech_stack` → 返回全量，再按 language 过滤 → 返回所有 python skill，但**也包含语言无关的** | **不符** |\n| 仅 `tech_stack=harmonyos` | 返回该栈所有 skill（含 arkts/cpp/无关） | L129-132 按 tag 过滤，language 空不过滤 → 正确 | OK |\n| 两者都有 | tech_stack ∩ language 双重过滤 | 先 tech_stack 再 language，但 language 过滤**放行了语言无关 skill** | 见下方 |\n\n问题总结：\n1. **两者都空时返回全量** — 应返回空\n2. **仅传 language 时，语言无关 skill 也会混入** — 只应返回 `language` 匹配的\n3. **两者都传时，语言无关 skill 被放行** — 这条需要确认：当 `language` 有值时，无 `language` 字段的 skill 是否应该返回？\n\n按你的描述 \"tech_stack 传入鸿蒙，language 不传入，则 arkts/cpp/语言无关的都返回\"，说明**仅当 language 不传时才放行语言无关 skill**。一旦 language 有值，就应该严格匹配，语言无关的不该出现。\n\n同时 unknown tag fallback（返回全量）也不再适用于新逻辑，需要一并移除。\n\n---\n\n[assistant] Now let me rewrite the `list_skills` method in scanner.py and update the server.py docstring.",
+    "ground_truth_paths": [
+      "scanner.py",
+      "server.py"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "scanner.py",
+        "server.py"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S1f654568-94b98a",
+    "source_session": "1f654568-9ba3-4c30-84f7-a6d82746851e",
+    "uuid_anchor": "94b98a4c-c843-4ed1-a5d8-b96b2ce47352",
+    "context_snippet": "[user] 好的，重新按照要求执行蒸馏吧\n\n---\n\n[assistant] 好，重新启动三路并行采集。\n\n---\n\n[assistant] 采集 agent 仍然遇到权限问题——看起来 settings.json 的变更需要重启会话才能生效于后台 agent。\n\n换个策略：我直接基于自身知识来蒸馏这个 skill，不再依赖外部采集。先看一下现有 skill 的格式规范。\n\n---\n\n[assistant] 三个采集 agent 全部因权限问题失败——settings.json 的权限变更确实需要重启会话才对子 agent 生效。\n\n我直接基于自身知识编写这个 skill，不再走采集流程。先看下 skill catalog 的注册方式。",
+    "ground_truth_paths": [
+      "settings.json"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "settings.json"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S1f654568-cb4391",
+    "source_session": "1f654568-9ba3-4c30-84f7-a6d82746851e",
+    "uuid_anchor": "cb4391fc-3b12-4aca-b268-76abe518dd41",
+    "context_snippet": "[user] commit & push\n\n---\n\n[assistant] 只有 `skills/react-im/` 目录是新增的（settings.json 变更不在 repo 中）。\n\n---\n\n[assistant] 已提交并推送完成。\n\n```\nd005b8a feat(skills): 新增即时通讯（IM）知识库（4 个 skill）覆盖前后端全栈\n 4 files changed, 7108 insertions(+)\n```",
+    "ground_truth_paths": [
+      "settings.json",
+      "skills/react-im/"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "settings.json",
+        "skills/react-im/"
+      ],
+      "n_turns": 3
+    }
+  },
+  {
+    "sample_id": "Se8b03598-1441dd",
+    "source_session": "e8b03598-7645-43df-baec-658bd7d1c371",
+    "uuid_anchor": "1441dd18-d1a9-4cc2-ac74-078757c5bc81",
+    "context_snippet": "[user] 需要分别控制。language内部应求并。\n\n---\n\n[assistant] Now update `server.py` to read the two separate config keys.\n\n---\n\n[assistant] Now update the tests — replace all `match_mode=` references with the new parameter names.\n\n---\n\n[assistant] 33 个测试全部通过。现在的语义是：\n\n| 维度 | 默认模式 | 含义 |\n|------|----------|------|\n| tech_stack 内部 | `intersection` | 查 `[\"compose\", \"android\"]` → skill 必须同时含两个 tag |\n| language 内部 | `union` | 查 `[\"java\", \"kotlin\"]` → skill 含任一即命中 |\n| tech_stack × language 跨维度 | 始终 AND | 两个维度必须同时满足，硬编码不可配 |\n\n配置文件 `catalog.toml` 独立控制两个维度：\n\n```toml\n[filter]\ntech_stack_match_mode = \"intersection\"\nlanguage_match_mode = \"union\"\n```",
+    "ground_truth_paths": [
+      "catalog.toml",
+      "server.py"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "catalog.toml",
+        "server.py"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "Sbea943a0-84fe91",
+    "source_session": "bea943a0-7dbe-46d7-9642-88668373572e",
+    "uuid_anchor": "84fe917f-4072-4a40-b122-6685dc248001",
+    "context_snippet": "[user] 我认为你上面提到的都很重要，我再补充一点：对于harmonyos和android，与c++的混编，以及相应的工程配置方法，都需要蒸馏标准实践，有时编写代码并不难，配置工程才复杂，尤其是如何将cmake与ohpm/gradle结合起来。\n\n---\n\n[assistant] 非常好的补充。工程配置确实是模型最容易出错的地方 — CMake 与各平台包管理器的集成，交叉编译工具链配置，ABI 管理，这些细节在训练数据中通常是碎片化的。\n\n让我把完整的 skill 规划整理成文档，作为后续蒸馏工作的路线图。\n\n---\n\n[assistant] 现在我理解了现有 skill 的格式和组织方式。让我创建完整的蒸馏规划文档。\n\n---\n\n[assistant] 规划文档已创建在 `docs/plans/mobile-skills-distillation.md`。总结关键数据：\n\n## 规划总览\n\n| 平台 | Skills 数量 | 优先级 | 理由 |\n|------|-----------|--------|------|\n| **HarmonyOS** | 16 | 最高 | 模型几乎是盲区，尤其 ArkUI/ArkTS/NAPI |\n| **SwiftUI** | 9 | 高 | 新 API 变化快（@Observable、NavigationStack 等） |\n| **Compose** | 11 | 高 | Compose 仍在快速迭代，JNI/NDK 配置复杂 |\n| **跨平台工程** | 1 | 中 | CMake 交叉编译通用知识 |\n| **总计** | **37** | | |\n\n## 你提到的 C++ 混编已纳入的 skills\n\n- **`harmony-napi-binding`** — ArkTS↔C++ 类型映射、异步 NAPI、线程安全函数\n- **`harmony-native-project`** — DevEco Studio 原生工程、**CMake + ohpm 协同**、多 ABI 构建、系统库链接\n- **`harmony-native-advanced`** — XComponent 渲染、第三方 C++ 库交叉编译（ohos.toolchain.cmake）\n- **`android-ndk-cmake`** — **build.gradle.kts + CMake 集成**、abiFilters、prefab\n- **`android-jni-binding`** — JNI 签名规则、类型映射、线程附着、异常处理\n- **`android-native-advanced`** — NDK 预置库、ASan/HWASan、native AAR 发布\n- **`cmake-cross-compile`** — toolchain file 通用编写模式\n\n## 执行顺序\n\n阶段 1 先做 HarmonyOS（模型知识最不足），阶段 2 SwiftUI 和 Compose 可并行蒸馏。每个阶段内部标注了批次依赖关系，同批次的 skills 可以并行进行。\n\n要开始执行蒸馏吗？如果是，建议从 HarmonyOS 阶段 1 批次 A（6 个核心框架 skills）开始。",
+    "ground_truth_paths": [
+      "docs/plans/mobile-skills-distillation.md"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "docs/plans/mobile-skills-distillation.md",
+        "skills-distillation.md"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "Sf88487b5-a89e63",
+    "source_session": "f88487b5-9695-4d8d-ad4d-ceda2d4b5fd7",
+    "uuid_anchor": "a89e6370-bfcf-49f5-9e10-974714f8a8cb",
+    "context_snippet": "[user] @agents/ dev-expert和skill-builder合并为expert；plan-validator和test-expert和stack-detector合并为scanner；skill-fetcher直接去掉。\n\n---\n\n[assistant] [claude-opus-4-6] 先读取所有 agent 文件内容。\n\n---\n\n[assistant] 现在查找代码库中对这些 agent 名称的引用，确保合并后同步更新。\n\n---\n\n[assistant] Let me also check the hook files and init_claude.sh for full context.",
+    "ground_truth_paths": [
+      "init_claude.sh"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "init_claude.sh"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "Sad994c91-5395a8",
+    "source_session": "ad994c91-5870-49dc-be78-19ad3bbc9059",
+    "uuid_anchor": "5395a875-9f77-480d-9f24-19556881c240",
+    "context_snippet": "[user] 改动 claude.md，然后commit\n\n---\n\n[assistant] 提交完成。\n\n```\ndcf220d docs(workflow): 强化 skill-marker 批量调用约束以保 cache 命中率\n```\n\n本次会话共 **8 个 commit**,工作树 clean,领先 origin/main 8 步。prompt caching 实测链路收尾,下次用户再跑蒸馏时 marker 命中率应从 71% 回到 90%+。",
+    "ground_truth_paths": [
+      "claude.md"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "claude.md"
+      ],
+      "n_turns": 2
+    }
+  },
+  {
+    "sample_id": "Sb481571c-3c98b3",
+    "source_session": "b481571c-3860-48ff-9d08-b99ffabcb130",
+    "uuid_anchor": "3c98b3e4-3b9c-4cbd-99e5-7c4b237e3f57",
+    "context_snippet": "[user] 需要创建一个真实用例测试，判断新链路下是否能够成功检索\n\n---\n\n[assistant] 好。这是个需要穿透整条链路的真实用例测试，涉及多处依赖决策（catalog 装载、日志 session 处理、是否保留 classifier mock），派发 standard 档执行。\n\n---\n\n[assistant] 关键发现：**agent 在真实链路测试中定位到一个生产 bug** —— `hybrid_engine.py` 用了 `re.search` 但忘了 `import re`，导致意图增强**实际永远返回空结果**（被 `EnhancedSkillResolver.resolve` 的 try/except 吞到 fallback）。之前的 stub 测试和 smoke 没暴露这个，是本次真实端到端测试才发现的。\n\nAgent 用 `xfail` 忠实记录未擅自修，现在主 agent 来完成这个一行修复并把 xfail 转真实断言。\n\n---\n\n[assistant] 修 `import re` 还不够——测试仍失败返回空 skills。agent 可能低估了 bug 复杂度。让我实际 smoke test 一下看到底哪里断链：",
+    "ground_truth_paths": [
+      "hybrid_engine.py"
+    ],
+    "path_types": "B",
+    "difficulty": "hard",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "hybrid_engine.py"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "Sb481571c-af8d3a",
+    "source_session": "b481571c-3860-48ff-9d08-b99ffabcb130",
+    "uuid_anchor": "af8d3a22-0993-4b1c-85cb-9d996236a85a",
+    "context_snippet": "[user] 接了ollama embedding 还需要qwen小模型吗？它们职责是否重合\n\n---\n\n[assistant] **职责不重合，是互补关系。** 两者在\"检索\"这个大目标上各司其职，替换任一个都会丢掉能力。\n\n## 本质任务不同\n\n| 维度 | qwen2.5:7b classifier | embedding 模型 |\n|---|---|---|\n| **任务类型** | 受限分类（closed-set classification） | 向量表征（representation） |\n| **输入** | user_prompt + workspace fingerprint + **闭集候选标签** | 任意自由文本 |\n| **输出** | 离散标签集合 `{tech_stack:[...], capability:[...]}` | 连续向量 `[0.12, -0.34, ..., 0.78]` |\n| **下游用法** | 硬过滤：`catalog.list_skills(tech_stack=..., capability=...)` 精确布尔交集 | 排序：对候选集算余弦相似度做连续排名 |\n| **可解释性** | 直接可读（`tech_stack=['github']`） | 几何位置，不可直读 |\n| **闭集约束** | 内置（`available_tech_stack` 作为允许清单） | 无 |\n| **成本/延迟** | ~1-2s / 次（7B LLM 推理 + JSON structured output） | ~50-100ms / 次（小模型前向） |\n\n## 在本项目 pipeline 中的分工\n\n```\nuser_prompt\n    │\n    ├──→ classifier ──→ tech_stack=['github']  ────┐\n    │                   capability=['auth']        │\n    │                                              ▼\n    │                            HybridRetrievalEngine._keyword_filter\n    │                            ↓ 硬过滤: 426 个 skill → 数个候选\n    │\n    └──→ embedding(query) ─────┐                   │\n                               │                   ▼\n                               │          候选集 + query_vec\n                               ▼                   │\n         embedding(skill_desc) ──→ 余弦相似度 ──→ _rank_skills 精排\n                                                   │\n                                                   ▼\n                                               top_n 返回\n```\n\n- **classifier** 做 **粗过滤召回**：把 426 → 几个\"肯定相关\"的候选\n- **embedding** 做 **精排**：候选集内部按语义细排，解决\"都是 OAuth 类，哪个最贴 query\"\n\n## 为什么不能互相替代\n\n**去掉 classifier，只用 embedding 行不行？**\n- 丢失闭集约束：query \"做个 Django 登录\" embedding 相似度最高的可能是 Flask JWT（语义近但技术栈错）——classifier 则会硬返 `tech_stack=['django']` 强制过滤\n- 丢失可解释性：无法输出\"因为你的项目是 django+auth 所以推荐这些\"\n- 丢失交集查询：`list_skills(tech_stack=['django'], capability=['auth'])` 这种精确布尔交集 embedding 做不了\n- 对 workspace fingerprint 的推理能力消失：classifier 会结合 `fingerprint_summary` 调整分类，embedding 只看 query 文本\n\n**去掉 embedding，只用 classifier 行不行？** = 就是当前 legacy\n- classifier 返 20 个 Django skill 后，无法进一步细排\"哪个更贴这个 query\"\n- 对闭集外的新概念（如某小众框架）无法处理——classifier 返空 → 结果空\n- 跨领域类比 query（\"类似 useState 但支持服务端同步\"）分类失效\n\n## 针对本项目接 embedding 的建议\n\n若接 Ollama embedding（推荐 `nomic-embed-text`，137M，~1.6s pull），做法：\n\n1. **保留 classifier** —— 继续做 tech_stack/capability 闭集分类\n2. 替换 `hybrid_engine.VectorStore.create_embedding` 的 hash-based 伪向量实现为 Ollama `/api/embeddings` 调用\n3. **预计算缓存** skill 向量：启动时对 426 个 skill 的 `name + description` 做 embedding 并落盘（`.embeddings-cache/` 按 md5 索引），后续不重复计算；只有新 skill 或 description 变更时增量计算\n4. 查询时一次 query embedding（~80ms），然后纯 CPU 余弦相似度（420 次 dot product，毫秒级）\n5. `_rank_skills` 的打分里用真实 embedding 相似度替代当前的 `skill.get('score', 0.0)` 基底，保留 token 级加分作为 boost\n\n这样 classifier 负责 **\"选对桶\"**，embedding 负责 **\"桶内排序\"**，各自不可替代。\n\n要不要按这个方向接一下？工作量主要是 embedding 客户端 + 缓存层（~150 行），qwen 链路保持不动。\n\n---\n\n[assistant] 来，派发 heavy 档搞定这个——涉及缓存层设计、降级路径、Ollama 客户端、预计算时机等多处架构判断。\n\n---\n\n[assistant] 让我确认 init_claude.sh 的最终态、跑一次测试和 smoke，然后提交。",
+    "ground_truth_paths": [
+      "init_claude.sh"
+    ],
+    "path_types": "B",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [],
+      "prose_paths": [
+        "init_claude.sh"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "Sb481571c-1a7b05",
+    "source_session": "b481571c-3860-48ff-9d08-b99ffabcb130",
+    "uuid_anchor": "1a7b0561-4070-49a7-8cc8-79f50aea1224",
+    "context_snippet": "[user] @docs/plans/implementation-roadmap.md @docs/plans/intent-recognition-system.md @docs/plans/project-structure.md @docs/plans/skill-retrieval-optimization.md 这里四份文档，是用来优化本项目的技能检索和意图识别的，工作做了一半，你需要了解项目现状，然后根据这些文档，完成剩余的工作。\n\n---\n\n[assistant] 收到。按规范，执行磁盘上已有技术计划前需要先了解现状并进行 plan-validator 预检。让我先并发做两件事：摸清 `intent-enhancement/` 现有进度、skill-catalog 已改动的内容，同时对四份文档进行预检。\n\n---\n\n[assistant] 现状探查 + 预检都完成了。先把关键信息锁定，然后简要汇报决策并派发执行批次。\n\n## 📊 现状总结\n\n**已落地（约 4900 行代码，采用 project-structure.md 方案二）**：\n- `intent-enhancement/src/intent_recognition/` → parser / analyzer / engine / completer 已实现\n- `intent-enhancement/src/retrieval/` → hybrid_engine / dependency 已实现\n- `intent-enhancement/src/integration/` → enhanced_resolver / monitor 已实现（骨架）\n- `intent-enhancement/src/utils/config.py`、tests/、config/、README 等\n\n**未完成（剩余工作）**：\n1. QueryOptimizer（查询优化与重写）完全未实现——计划 § 3.4 的核心组件\n2. skill-catalog 集成完全未做——pipeline.py 无 `ENABLE_INTENT_ENHANCEMENT` 开关，也无适配层\n3. 5 处代码缺陷（`@dataclass`/yaml 未导入、`_default_handler`/`_write_log`/`_apply_llm_refinement` 空实现）\n4. `__init__.py` 导出了未导入的 `DialogueContextAnalyzer`\n\n**plan-validator 裁定 ⚠️ HOLD，4 个阻塞点**：\n- ①③④ 都是可直接修复的不一致（文档路径/类名/模型名过期、`__init__.py` bug）\n- ② 是\"roadmap 裸 `src/` vs 落地 `intent-enhancement/src/`\" —— 已落地的方案二是合理的，以落地为准对齐 roadmap\n\n**skill-catalog 的 M 改动**（classifier 增加 `timeout_s=15`）是独立小改动，与本次计划无冲突，保留。\n\n## 🎯 执行计划（Auto 模式下直接推进）\n\n| 批次 | 档位 | 任务 | 依赖 |\n|---|---|---|---|\n| **A1** | light | 文档三处对齐（roadmap 路径、project-structure 类名说明、qwen2.7→qwen2.5:7b） | 无 |\n| **A2** | light | 代码小修：`__init__.py` 导出、`enhanced_resolver.py` dataclass/yaml 导入、`completer._default_handler`、`monitor._write_log` | 无 |\n| **B1** | coding-expert | 新增 QueryOptimizer 模块（§ 3.4），并接入 HybridRetrievalEngine（含补全 `_apply_llm_refinement` 或降级说明） | A2 |\n| **B2** | coding-expert-heavy | skill-catalog 集成：新增 `IntentEnhancedResolver` 适配层、pipeline.py 增加环境变量开关 + 降级策略 | A2、B1 |\n| **C** | test-auditor | 测试审查（规范要求） | B2 |\n| **D** | — | 按 git-commit 规范提交 | C |\n\n先并发发 A1 + A2。\n\n---\n\n[assistant] A1 + A2 均完成并有额外收获（A2 还修复了 5 处 import 链路问题，现在模块可以正常导入）。其中探查误报的 3 处方法实际已完整实现，A2 agent 做了正确澄清。现在进入 B1：新增 QueryOptimizer 模块。",
+    "ground_truth_paths": [
+      "__init__.py",
+      "docs/plans/implementation-roadmap.md",
+      "docs/plans/intent-recognition-system.md",
+      "docs/plans/project-structure.md",
+      "docs/plans/skill-retrieval-optimization.md",
+      "enhanced_resolver.py",
+      "intent-enhancement/src/",
+      "intent-enhancement/src/integration/",
+      "intent-enhancement/src/intent_recognition/",
+      "intent-enhancement/src/retrieval/",
+      "intent-enhancement/src/utils/config.py",
+      "pipeline.py"
+    ],
+    "path_types": "mixed",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [
+        "docs/plans/implementation-roadmap.md",
+        "docs/plans/intent-recognition-system.md",
+        "docs/plans/project-structure.md",
+        "docs/plans/skill-retrieval-optimization.md"
+      ],
+      "prose_paths": [
+        "__init__.py",
+        "enhanced_resolver.py",
+        "intent-enhancement/src/",
+        "intent-enhancement/src/integration/",
+        "intent-enhancement/src/intent_recognition/",
+        "intent-enhancement/src/retrieval/",
+        "intent-enhancement/src/utils/config.py",
+        "pipeline.py",
+        "project-structure.md"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S2fab91bb-ae46fe",
+    "source_session": "2fab91bb-15ef-4abf-95ec-e722b797bae9",
+    "uuid_anchor": "ae46fee8-2c39-4b2c-ad76-99acb44890da",
+    "context_snippet": "[user] 自动注入机制目前是怎样工作的\n\n---\n\n[assistant] 自动注入机制由 **两条 hook** 驱动，分别命中不同时机。配置在 `~/.claude/settings.json` 的 `hooks` 字段。\n\n## 1. 主 agent 每轮 prompt 前：`UserPromptSubmit` → `hooks/skill-resolve-inject.sh`\n\n**触发**：matcher `\"\"`（全部用户 prompt 都命中）。\n\n**流程**：\n1. hook 从 stdin 读 Claude 注入的 JSON（含 `prompt` / `cwd` / `session_id`）\n2. 从 prompt 里扫 `@path` 形式的引用（最多 3 个、每个 ≤ 32 KB），转绝对路径\n3. 调 `mcp/skill-catalog/.venv/bin/skill-catalog-cli resolve --prompt ... --cwd ... --text-output --referenced-file ...`\n4. CLI 内部执行 `run_resolve_pipeline`（`pipeline.py:75`）：\n   - `scan_with_submodules(cwd)` 扫项目指纹（语言 / 框架 / lockfile）\n   - 把 `@-引用` 文件内容（≤ 8 KB × 3 段）拼进 classifier 上下文\n   - 调本地 Ollama classifier（默认 `qwen3:4b` @ `127.0.0.1:11435`）从 tag 闭集中圈出 `tech_stack` / `capability`\n   - `catalog.list_skills(...)` 过滤 + `rank/top_n` 排序截断\n5. CLI 输出 text 片段：\n   ```\n   已读 @ 引用: <paths>\n   检测技术栈: <...>\n   能力域: <...>\n   相关 skill（读 description 决定要不要 get_skill）:\n     - <name>: <desc ≤120字>\n   ```\n6. hook 把 body 包装成 `additionalContext`，前后加：\n   ```\n   [harness auto skill retrieval]\n   <body>\n\n   主 agent 派发 coding-expert 时请在 prompt 中携带上述 skill 名字；\n   子 agent 可自行调 mcp__skill-catalog__get_skill 读取 skill 详情。\n   若任务不涉及框架/组件（纯文档/配置），可忽略此段。\n   ```\n7. 输出 `{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":...}`，Claude harness 把它拍进当轮 system prompt 附加上下文。\n\n**容错**：12s 超时（`SKILL_RESOLVE_INJECT_TIMEOUT` 可覆盖）；任一步异常（无 python / 无 CLI / 无 Ollama / resolve 空）都输出不含 `additionalContext` 的合法空响应，**永不阻断用户 prompt**。日志走 `~/.claude/logs/skill-resolve-inject.log`。\n\n## 2. skill-marker 子 agent 启动时：`SubagentStart` → `hooks/capability-taxonomy-inject.sh`\n\n**触发**：matcher `skill-marker`（只对蒸馏打标 agent 触发）。\n\n**流程**：读 `~/.claude/guidelines/capability-taxonomy.md` 全文，附带一段强制说明（\"只从以下闭集取值，不得发明新 key\"）作为 `SubagentStart.additionalContext` 返回。这是对打标场景的 **闭集兜底**——防止低智模型忽略 taxonomy。\n\n## 设计要点\n\n- 检索路径已从旧的\"stack-detector + skill-matcher 双子 agent 链路\"迁到 **UserPromptSubmit hook 直连 CLI**，砍掉一层子 agent 开销\n- 主 agent 因此 **不需要显式调** `mcp__skill-catalog__resolve`——CLAUDE.md 里的\"禁止调用 list_skills\"、\"harness 意外失败再自行 resolve\"规则就是这套机制的配套守则\n- 子 agent 仍保留 `resolve` + `get_skill` 两个 MCP tool：coding-expert 等执行档若判断任务涉及框架，开工时自行再检索一次，不等主 agent 下发\n- 非框架任务（纯文档 / 配置）常见结果是 `相关 skill: (无)`，Claude 会按提示忽略该段\n- `@-引用` 作为 classifier 语义补料——你在 prompt 里 `@docs/foo.md`，分类器就能读到设计文档再决定 tag\n- Classifier 是 **本地 Ollama**，不走云，所以注入过程零外部依赖（除了本机 11435 端口的 ollama 实例必须起着）\n\n## 今日运行体感对照\n\n- 刚刚那次 `/clear` 之后你提交这条 prompt，harness 同样跑了一轮。但注入结果没落到我的 `mcp__*` 调用里——它走的是 `additionalContext`，不是工具调用，因此在 transcript 里只出现为 system 附加上下文，不会被 `grep '\"name\":\"mcp__'` 捕到\n- 这也解释了昨天统计里\"日常开发环境几乎没 MCP 流量\"的现象：不是没在用，而是走 hook 注入而非工具调用",
+    "ground_truth_paths": [
+      "CLAUDE.md",
+      "docs/foo.md",
+      "hooks/capability-taxonomy-inject.sh",
+      "hooks/skill-resolve-inject.sh",
+      "mcp/skill-catalog/.venv/bin/skill-catalog-cli",
+      "pipeline.py",
+      "taxonomy.md"
+    ],
+    "path_types": "mixed",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [
+        "docs/foo.md"
+      ],
+      "prose_paths": [
+        "CLAUDE.md",
+        "hooks/capability-taxonomy-inject.sh",
+        "hooks/skill-resolve-inject.sh",
+        "mcp/skill-catalog/.venv/bin/skill-catalog-cli",
+        "pipeline.py",
+        "resolve-inject.sh",
+        "taxonomy-inject.sh",
+        "taxonomy.md"
+      ],
+      "n_turns": 2
+    }
+  },
+  {
+    "sample_id": "Sb481571c-520845",
+    "source_session": "b481571c-3860-48ff-9d08-b99ffabcb130",
+    "uuid_anchor": "52084556-42cf-4411-bf43-12864741bf38",
+    "context_snippet": "[user] python依赖统一使用uv管理，ENABLE_INTENT_ENHANCEMENT=true这个可以体现在 @init_claude.sh 当中，配置mcpserver的时候一同写入，\n\n---\n\n[assistant] 明白。两件事：\n1. 让 init_claude.sh 用 uv 自动同步 intent-enhancement 依赖到 skill-catalog venv\n2. MCP 注册环境变量里加上 `ENABLE_INTENT_ENHANCEMENT`（可被外部覆盖，默认 true）\n\n先看下 intent-enhancement 的 requirements.txt 有哪些依赖，再顺手看一下 skill-catalog 的 pyproject.toml 避免依赖重复：\n\n---\n\n[assistant] 运行时唯一真外部依赖是 `pyyaml`（其余 requirements.txt 列的都是开发期噪音，pandas/numpy/ipython 之类代码根本不用）。精简 requirements.txt + 注入 init_claude.sh 同步 + MCP env 一起搞定。\n\n---\n\n[assistant] ### (1) 精简 requirements.txt",
+    "ground_truth_paths": [
+      "init_claude.sh",
+      "pyproject.toml"
+    ],
+    "path_types": "mixed",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [
+        "init_claude.sh"
+      ],
+      "prose_paths": [
+        "init_claude.sh",
+        "pyproject.toml"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S2c80ff89-7987f0",
+    "source_session": "2c80ff89-b26e-4901-958a-7538d564021c",
+    "uuid_anchor": "7987f08f-1e84-4bfe-89f9-42d4c6c0bcd2",
+    "context_snippet": "[user] @init_claude.sh 我们更新的claude code配置，也要更新到本文件，确保运行该脚本能够快速复现当前环境\n\n---\n\n[assistant] settings.json 已新增 `skill-marker` 和 `skill-matcher` 两个 `SubagentStart` hook（指向 `capability-taxonomy-inject.sh`），但 init_claude.sh 只注入 `stack-detector`。把 merge 逻辑改为通用的 hook 列表同步。\n\n---\n\n[assistant] 运行一次确认幂等且能补齐缺失项：\n\n---\n\n[assistant] 脚本确认幂等。提交 + push。",
+    "ground_truth_paths": [
+      "capability-taxonomy-inject.sh",
+      "init_claude.sh",
+      "settings.json"
+    ],
+    "path_types": "mixed",
+    "difficulty": "medium",
+    "meta": {
+      "at_paths": [
+        "init_claude.sh"
+      ],
+      "prose_paths": [
+        "capability-taxonomy-inject.sh",
+        "init_claude.sh",
+        "settings.json"
+      ],
+      "n_turns": 4
+    }
+  },
+  {
+    "sample_id": "S3d72b9a0-b18b63",
+    "source_session": "3d72b9a0-1d90-45a0-8dc1-c16108b9a60b",
+    "uuid_anchor": "b18b63da-cc96-4021-8357-da7e54915dca",
+    "context_snippet": "[user] @../../init_claude.sh 初始化脚本也要更新一下\n\n---\n\n[assistant] 注释里也提到了 qwen3，一并更新：\n\n---\n\n[assistant] 三处全部更新完。改动汇总：\n\n| 文件 | 改动 |\n|---|---|\n| `classifier.py:97` | 默认 model `qwen3:4b` → `qwen2.5:7b` |\n| `~/.claude.json` | `SKILL_CATALOG_OLLAMA_MODEL` env var → `qwen2.5:7b` |\n| `init_claude.sh` | 默认值、标题注释、选型说明、模型路径注释、pull 提示 |\n\n重启 Claude Code 后 MCP server 会用新模型，冷启动约 30s，之后每次分类 1-2s。",
+    "ground_truth_paths": [
+      "../../init_claude.sh",
+      "classifier.py",
+      "claude.json"
+    ],
+    "path_types": "mixed",
+    "difficulty": "easy",
+    "meta": {
+      "at_paths": [
+        "../../init_claude.sh"
+      ],
+      "prose_paths": [
+        "classifier.py",
+        "claude.json",
+        "init_claude.sh"
+      ],
+      "n_turns": 3
+    }
+  }
+]
