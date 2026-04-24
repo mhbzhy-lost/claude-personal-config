@@ -328,9 +328,10 @@ def test_enabled_real_adapter_end_to_end_returns_enhancement_shape(
     # 且 minimal shape（仅 name / description）
     for s in result["skills"]:
         assert set(s.keys()) == {"name", "description"}
-    # enhancement 分支绝不走 classifier
-    assert clf.call_count == 0
-    # enhancement 路径不产生 classifier_error
+    # enhancement 路径复用 classifier 做 tech_stack/capability 硬过滤；
+    # caller 未预传时应触发一次分类
+    assert clf.call_count == 1
+    # 分类成功则 classifier_error 透传为 None
     assert result["classifier_error"] is None
     # original_intent 必须回传原始 prompt
     assert result["original_intent"] == "写一个 antd 表单组件并添加字段校验"
@@ -378,8 +379,8 @@ def test_enabled_real_adapter_with_missing_session_does_not_crash(
     assert isinstance(result, dict)
     assert result["intent_enhancement_used"] is True
     assert isinstance(result["skills"], list)
-    # 缺 session 不应引起 classifier 回退
-    assert clf.call_count == 0
+    # enhancement 路径复用 classifier；即便 session log 缺失也应正常调分类
+    assert clf.call_count == 1
     # 无 session 分支下 original_intent 应回显
     assert result["original_intent"] == "django jwt 登录接口怎么写"
     # adapter 不应抛 classifier_error

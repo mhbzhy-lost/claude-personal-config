@@ -72,6 +72,33 @@ class IntentEnhancedResolver:
         fingerprint_payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         cwd_path = Path(cwd)
+
+        # Reuse qwen classifier whenever caller did not pre-fill tech_stack /
+        # capability. Without this, EnhancedSkillResolver ranks over the full
+        # catalog (hundreds of skills) and noisy hash-based embeddings dominate
+        # the result. On any classifier failure we record the error but keep
+        # walking the enhancement path (tech_stack/capability stay None/[]).
+        classifier_error: str | None = None
+        if self._classifier is not None and (tech_stack is None or capability is None):
+            try:
+                tags = self._catalog.available_tags()
+                fp_summary = ""
+                if fingerprint_payload:
+                    fp_summary = fingerprint_payload.get("summary", "") or ""
+                cls_result = self._classifier.classify(
+                    user_prompt=user_prompt,
+                    fingerprint_summary=fp_summary,
+                    available_tech_stack=tags["tech_stack"],
+                    available_capability=tags["capability"],
+                )
+                classifier_error = cls_result.error
+                if tech_stack is None:
+                    tech_stack = list(cls_result.tech_stack or [])
+                if capability is None:
+                    capability = list(cls_result.capability or [])
+            except Exception as e:  # noqa: BLE001 — fail-soft; keep enhancement path
+                classifier_error = f"{type(e).__name__}: {e}"
+
         enhanced = self._resolver.resolve(
             user_prompt=user_prompt,
             cwd=str(cwd_path),
@@ -99,7 +126,7 @@ class IntentEnhancedResolver:
             "fingerprint": fingerprint_payload or {},
             "tech_stack": tech_stack or [],
             "capability": capability or [],
-            "classifier_error": None,
+            "classifier_error": classifier_error,
             "skills": minimal_skills,
             # Enhancement-only fields:
             "intent_enhancement_used": True,

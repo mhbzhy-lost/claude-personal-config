@@ -487,28 +487,46 @@ class HybridRetrievalEngine:
                     context: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """技能排序"""
         
+        query_lower = query.lower()
+        # Token-level matching: 对 CJK 长词 split() 输出的整块也能作为 substring
+        # 匹配命中；过滤掉长度 <2 的碎屑（"a"、"的"之类），降低误伤。
+        query_tokens = [
+            t for t in (tok.lower() for tok in query.split() if tok.strip())
+            if len(t) >= 2
+        ]
+
         def calculate_score(skill: Dict[str, Any]) -> float:
             score = skill.get('score', 0.0)
-            
-            # 名称匹配加分
-            if query.lower() in skill.get('name', '').lower():
-                score += 0.3
-            
-            # 描述匹配加分
-            if query.lower() in skill.get('description', '').lower():
-                score += 0.2
-            
+            name_lower = skill.get('name', '').lower()
+            desc_lower = skill.get('description', '').lower()
+
+            # 整串匹配加分（强信号）
+            if query_lower and query_lower in name_lower:
+                score += 0.4
+            if query_lower and query_lower in desc_lower:
+                score += 0.25
+
+            # Token 级匹配加分：对长 query（尤其中英混合）而言，整串几乎不会
+            # 出现在 skill 文本里，必须退化到单 token 匹配才能让真实相关的
+            # skill 浮到前面。token 出现在 name 视为强信号，出现在 description
+            # 视为弱信号。
+            for tok in query_tokens:
+                if tok in name_lower:
+                    score += 0.2
+                elif tok in desc_lower:
+                    score += 0.08
+
             # 技术栈匹配加分
             if context and 'technical_stack' in context:
                 matching_techs = len(set(skill.get('tech_stack', [])) & set(context['technical_stack']))
                 score += matching_techs * 0.1
-            
+
             # 上下文相关性加分
             if context and 'requirements' in context:
                 for req in context['requirements']:
                     if req.lower() in skill.get('description', '').lower():
                         score += 0.05
-            
+
             return score
         
         # 计算分数并排序
