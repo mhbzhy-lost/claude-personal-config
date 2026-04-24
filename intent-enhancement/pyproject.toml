@@ -1,0 +1,23 @@
+[project]
+name = "intent-enhancement"
+version = "0.1.0"
+description = "基于 Claude Code 日志的意图识别与混合检索增强模块"
+readme = "README.md"
+requires-python = ">=3.11"
+
+# 运行时真实依赖：仅 pyyaml（enhanced_resolver.py 用于解析 SKILL.md frontmatter）。
+# 开发工具（pytest/black/mypy）、未来可能引入的向量库（sentence-transformers、torch）
+# 与分布式缓存（redis）均不在此列——需要时再作为 optional-dependencies 或 dev 组引入。
+dependencies = [
+    "pyyaml>=6",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

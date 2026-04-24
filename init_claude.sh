@@ -292,6 +292,24 @@ if [ -f "$SKILL_CATALOG_VENV/bin/python" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 同步 intent-enhancement 运行时依赖到 skill-catalog 的 venv
+#   两个子项目各自维护独立的 pyproject.toml 声明依赖，由 uv 的 resolver 在
+#   装入同一 venv 时自动去重。两者在同进程共用 —— pipeline.py 通过 sys.path
+#   注入加载 intent-enhancement —— 因此装到 skill-catalog venv 即可。
+#   （后续若依赖规模扩大再升级到 uv workspace 统一管理）
+# ---------------------------------------------------------------------------
+INTENT_ENHANCEMENT_DIR="$SRC/intent-enhancement"
+if [ -f "$INTENT_ENHANCEMENT_DIR/pyproject.toml" ] && [ -f "$SKILL_CATALOG_VENV/bin/python" ]; then
+  echo "[venv] 同步 intent-enhancement 依赖（pyproject.toml）..."
+  if command -v uv >/dev/null 2>&1; then
+    uv pip install --python "$SKILL_CATALOG_VENV/bin/python" -e "$INTENT_ENHANCEMENT_DIR" >/dev/null
+  else
+    "$SKILL_CATALOG_VENV/bin/pip" install -e "$INTENT_ENHANCEMENT_DIR" >/dev/null
+  fi
+  echo "[venv] intent-enhancement 依赖就绪"
+fi
+
+# ---------------------------------------------------------------------------
 # 初始化本地 LLM 后端：ollama + Qwen2.5 7B（项目内完全自包含部署）
 #
 #   设计哲学：像 .venv/ 一样，ollama binary + 模型数据 + 运行时状态都落在
@@ -318,6 +336,9 @@ OLLAMA_VERSION="${OLLAMA_VERSION:-v0.21.0}"
 OLLAMA_MODEL="${SKILL_CATALOG_OLLAMA_MODEL:-qwen2.5:7b}"
 OLLAMA_PORT="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
 OLLAMA_HOST_URL="http://127.0.0.1:$OLLAMA_PORT"
+
+# 意图增强开关：默认启用，允许外部 `ENABLE_INTENT_ENHANCEMENT=false bash init_claude.sh` 覆盖
+ENABLE_INTENT_ENHANCEMENT="${ENABLE_INTENT_ENHANCEMENT:-true}"
 
 OLLAMA_DIR="$SRC/mcp/skill-catalog/vendor/ollama"
 OLLAMA_BIN="$OLLAMA_DIR/ollama"
@@ -451,7 +472,8 @@ if command -v claude >/dev/null 2>&1; then
       && echo "$CURRENT" | grep -q "$MCP_CMD" \
       && echo "$CURRENT" | grep -q "SKILL_LIBRARY_PATH=$SRC/skills" \
       && echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_MODEL=$OLLAMA_MODEL" \
-      && echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL"; then
+      && echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL" \
+      && echo "$CURRENT" | grep -q "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT"; then
     echo "[mcp] skill-catalog 已注册且配置一致"
   else
     # 先移除旧注册（如有），再重新注册
@@ -460,8 +482,9 @@ if command -v claude >/dev/null 2>&1; then
       -e "SKILL_LIBRARY_PATH=$SRC/skills" \
       -e "SKILL_CATALOG_OLLAMA_MODEL=$OLLAMA_MODEL" \
       -e "SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL" \
+      -e "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT" \
       -- skill-catalog "$MCP_CMD" -m skill_catalog.server
-    echo "[mcp] skill-catalog 已注册到 user scope（model=${OLLAMA_MODEL}）"
+    echo "[mcp] skill-catalog 已注册到 user scope（model=${OLLAMA_MODEL}, intent_enhancement=${ENABLE_INTENT_ENHANCEMENT}）"
   fi
 else
   echo "[warn] claude CLI 不可用，跳过 MCP server 注册。请手动执行："
@@ -469,6 +492,7 @@ else
   echo "    -e SKILL_LIBRARY_PATH=$SRC/skills \\"
   echo "    -e SKILL_CATALOG_OLLAMA_MODEL=$OLLAMA_MODEL \\"
   echo "    -e SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL \\"
+  echo "    -e ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT \\"
   echo "    -- skill-catalog $SKILL_CATALOG_VENV/bin/python -m skill_catalog.server"
 fi
 
