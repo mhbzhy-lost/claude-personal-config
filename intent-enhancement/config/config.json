@@ -1,0 +1,31 @@
+{
+  "cache": {
+    "enabled": true,
+    "ttl": 3600,
+    "max_size": 1000,
+    "strategy": "memory"
+  },
+  "intent": {
+    "cache_enabled": true,
+    "min_confidence": 0.5,
+    "enable_pattern_matching": true,
+    "enable_context_enhancement": true,
+    "max_processing_time": 5.0
+  },
+  "retrieval": {
+    "cache_enabled": true,
+    "top_n": 10,
+    "enable_keyword_filter": true,
+    "enable_rule_matching": true,
+    "enable_vector_search": true,
+    "enable_dependency_analysis": true,
+    "min_similarity": 0.3
+  },
+  "claude_code": {
+    "log_directory": null,
+    "auto_detect": true,
+    "max_session_age": 86400
+  },
+  "debug_mode": false,
+  "log_level": "INFO"
+}
