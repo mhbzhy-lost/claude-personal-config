@@ -2,6 +2,7 @@
 name: tailwindcss-variants
 description: Tailwind CSS variant 修饰符体系——通过类名前缀条件式应用工具类，覆盖伪类、伪元素、媒体查询、属性选择器和子选择器
 tech_stack: [tailwindcss]
+language: [html]
 version: "tailwindcss unversioned"
 collected_at: 2026-04-18
 capability: [theming]

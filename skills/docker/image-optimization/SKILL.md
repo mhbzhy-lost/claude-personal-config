@@ -1,7 +1,7 @@
 ---
 name: docker-image-optimization
 description: 通过多阶段构建、缓存优化与构建密钥管理打造更小更安全的 Docker 镜像
-tech_stack: [docker, buildkit]
+tech_stack: [docker]
 capability: [container]
 version: "docker unversioned"
 collected_at: 2026-04-18

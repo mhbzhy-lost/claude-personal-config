@@ -1,7 +1,7 @@
 ---
 name: fastapi-caching
 description: FastAPI 端点缓存方案——fastapi-cache2 装饰器模式与手动 Redis 缓存模式
-tech_stack: [fastapi, redis, fastapi-cache2]
+tech_stack: [fastapi, redis]
 language: [python]
 capability: [key-value-store]
 version: "fastapi-cache2 0.2.2"

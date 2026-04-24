@@ -2,6 +2,7 @@
 name: x-twitter-oauth2
 description: X（Twitter）OAuth 2.0 Authorization Code + PKCE 登录接入指南，覆盖授权 URL 构造、token 兑换、刷新与 v2 用户资料获取
 tech_stack: [x-twitter, oauth2]
+language: [javascript]
 capability: [auth, http-client]
 version: "x-api v2 unversioned"
 collected_at: 2026-04-19

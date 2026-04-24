@@ -1,7 +1,7 @@
 ---
 name: douyin-mp-request-storage-state
 description: 抖音小程序 tt.request / tt.setStorage / tt.getStorage 的网络与本地缓存骨架
-tech_stack: [douyin-mp]
+tech_stack: [douyin-miniprogram]
 language: [javascript]
 capability: [http-client, local-storage]
 version: "douyin-miniapp 基础库 1.0.0 (tt.setStorage / tt.getStorage)"

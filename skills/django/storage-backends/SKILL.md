@@ -1,7 +1,7 @@
 ---
 name: django-storage-backends
 description: Django 文件存储 API、自定义 Storage 类实现与 django-storages S3 后端配置
-tech_stack: [django, django-storages]
+tech_stack: [django]
 language: [python]
 capability: [object-storage, file-upload]
 version: "Django stable (4.2+ STORAGES API); django-storages unversioned"

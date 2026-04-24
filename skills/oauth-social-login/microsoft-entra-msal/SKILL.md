@@ -1,7 +1,7 @@
 ---
 name: microsoft-entra-msal
 description: Microsoft Entra ID（原 Azure AD）身份平台统一认证库 MSAL——SPA/Web/Mobile/Daemon 场景下获取 ID token / access token / refresh token
-tech_stack: [microsoft-entra, azure-ad, oauth2, oidc]
+tech_stack: [microsoft-entra, oauth2, oidc]
 language: [javascript, typescript]
 capability: [auth, http-client]
 version: "msal-browser 5.4.0; msal-node 5.0.6; msal-react 5.0.6; msal-angular 5.1.1"

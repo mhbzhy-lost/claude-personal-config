@@ -1,7 +1,7 @@
 ---
 name: alipay-mp-request-storage-state
 description: 支付宝小程序网络请求、本地存储与全局状态（getApp）的最小工程骨架
-tech_stack: [alipay-mp]
+tech_stack: [alipay-miniprogram]
 language: [javascript]
 capability: [http-client, local-storage]
 version: "alipay-miniprogram my.request 需基础库 >=1.11.0"

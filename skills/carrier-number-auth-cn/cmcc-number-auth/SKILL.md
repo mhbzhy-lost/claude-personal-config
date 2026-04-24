@@ -2,7 +2,7 @@
 name: cmcc-number-auth
 description: 中国移动"移动认证"一键登录与本机号码校验接入指南（Android/iOS SDK + 服务端换号/校验接口）
 tech_stack: [android, ios, backend]
-language: [java, kotlin, objective-c, swift]
+language: [java, kotlin, objc, swift]
 capability: [auth, native-device, http-client]
 version: "cmcc-android-sdk 5.8.1; cmcc-ios-sdk 5.8.3; loginTokenValidate 2.0; tokenValidate 1.0"
 collected_at: 2026-04-18

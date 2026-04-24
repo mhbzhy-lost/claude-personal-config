@@ -1,7 +1,7 @@
 ---
 name: jd-mp-request-storage-state
 description: 京东小程序 jd.request / jd.setStorage 与 getApp 全局状态的工程骨架
-tech_stack: [jd-mp]
+tech_stack: [jd-miniprogram]
 language: [javascript]
 capability: [http-client, local-storage]
 version: "jd-miniprogram unversioned (docs mp-jd-20200423)"

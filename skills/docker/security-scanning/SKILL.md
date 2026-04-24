@@ -1,7 +1,7 @@
 ---
 name: docker-security-scanning
 description: 使用 Docker Scout 与 Trivy 扫描容器镜像中的 CVE、密钥与配置错误
-tech_stack: [docker, trivy, docker-scout]
+tech_stack: [docker, trivy]
 capability: [container]
 version: "docker-scout unversioned; trivy unversioned"
 collected_at: 2026-04-18

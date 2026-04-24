@@ -2,6 +2,7 @@
 name: tailwindcss-utility-classes
 description: Tailwind CSS 工具类（utility-first）样式范式，涵盖 variants、响应式、暗黑模式、任意值与冲突处理
 tech_stack: [tailwindcss]
+language: [html]
 version: "tailwindcss unversioned"
 collected_at: 2026-04-18
 capability: [ui-layout, theming]

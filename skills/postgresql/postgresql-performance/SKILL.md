@@ -2,6 +2,7 @@
 name: postgresql-performance
 description: "PostgreSQL 性能调优：EXPLAIN ANALYZE 解读、索引策略、连接池、VACUUM/ANALYZE、内存参数、慢查询排查。"
 tech_stack: [postgresql, backend]
+language: [sql]
 capability: [relational-db, observability]
 ---
 

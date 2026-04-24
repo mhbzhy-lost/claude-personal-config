@@ -2,6 +2,7 @@
 name: redis-pubsub
 description: "Redis Pub/Sub 发布订阅、Streams 消费者组与消息队列选型对比"
 tech_stack: [redis, backend]
+language: [python]
 capability: [message-queue, realtime-messaging]
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: kafka-schema-registry
 description: Confluent Schema Registry 管理 Avro/JSON/Protobuf schema 注册、演进与兼容性校验
-tech_stack: [kafka, confluent]
+tech_stack: [kafka]
 capability: [message-queue]
 version: "Confluent Schema Registry unversioned"
 collected_at: 2026-04-18

@@ -1,7 +1,7 @@
 ---
 name: claude-agent-sdk-python
 description: "Claude Agent SDK (Python) 编程式驱动 Claude Code：query() 无状态一次性查询 vs ClaudeSDKClient 有状态会话，覆盖权限系统、自定义 MCP 工具、hooks、子 agent 与会话管理。"
-tech_stack: [claude-agent-sdk, agent, mcp]
+tech_stack: [claude-code, agent, mcp]
 language: [python]
 capability: [llm-client, agent-orchestration, tool-calling]
 version: "claude-agent-sdk 0.1.61; claude-code-cli 2.1.112"

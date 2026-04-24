@@ -1,7 +1,7 @@
 ---
 name: fastapi-rate-limiting
 description: 使用 SlowAPI 为 FastAPI 添加路由级 / 全局限流，支持 Redis / Memcached / 内存后端
-tech_stack: [fastapi, slowapi, starlette]
+tech_stack: [fastapi]
 language: [python]
 capability: [web-framework]
 version: "slowapi unversioned (alpha)"

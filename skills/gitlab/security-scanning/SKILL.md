@@ -1,7 +1,7 @@
 ---
 name: gitlab-security-scanning
 description: GitLab SAST、Pipeline Secret Detection 与漏洞报告的启用与配置实践
-tech_stack: [gitlab, gitlab-ci]
+tech_stack: [gitlab]
 capability: [ci-cd]
 version: "gitlab unversioned"
 collected_at: 2026-04-18

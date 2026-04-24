@@ -2,6 +2,7 @@
 name: tailwindcss-functions-directives
 description: Tailwind CSS v4 在 CSS 中提供的自定义 at-rules（@theme/@utility/@apply/@reference 等）与内置函数（--alpha()/--spacing()）参考
 tech_stack: [tailwindcss]
+language: [css]
 version: "tailwindcss v4 unversioned"
 collected_at: 2026-04-18
 capability: [theming]

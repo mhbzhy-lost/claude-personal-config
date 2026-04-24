@@ -1,7 +1,7 @@
 ---
 name: wechat-mp-request-storage-state
 description: 微信小程序网络请求、本地存储、登录态与 MobX 状态管理的工程化骨架
-tech_stack: [wechat-mp]
+tech_stack: [wechat-miniprogram]
 language: [javascript, typescript]
 capability: [http-client, local-storage, state-management]
 version: "wechat-miniprogram unversioned; mobx-miniprogram-bindings 需基础库 >=2.11.0"

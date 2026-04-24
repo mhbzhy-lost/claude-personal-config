@@ -1,7 +1,7 @@
 ---
 name: gitlab-runner-management
 description: GitLab Runner 注册、执行器选型、自动伸缩与多级作用域管理实践
-tech_stack: [gitlab, gitlab-runner]
+tech_stack: [gitlab]
 capability: [ci-cd]
 version: "gitlab-runner unversioned"
 collected_at: 2026-04-18

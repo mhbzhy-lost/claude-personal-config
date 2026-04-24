@@ -2,6 +2,7 @@
 name: xiaomi-account-oauth
 description: 小米帐号开放平台 OAuth 2.0 登录授权与开放 API 调用指南
 tech_stack: [xiaomi-account, oauth2, android, ios]
+language: [javascript]
 version: "xiaomi-account-oauth unversioned"
 collected_at: 2026-04-19
 capability: [auth, native-device, http-client]

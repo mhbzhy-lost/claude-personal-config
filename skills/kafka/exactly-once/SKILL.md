@@ -2,6 +2,7 @@
 name: kafka-exactly-once
 description: Kafka 幂等生产者与事务实现 exactly-once 语义（EOS）的配置与使用
 tech_stack: [kafka]
+language: [java]
 capability: [message-queue]
 version: "Apache Kafka 4.1"
 collected_at: 2026-04-18

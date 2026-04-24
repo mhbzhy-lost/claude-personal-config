@@ -2,6 +2,7 @@
 name: tailwindcss-ui-integration
 description: 基于 Tailwind CSS 的主流组件/排版生态接入（shadcn/ui、Headless UI、daisyUI、@tailwindcss/typography）
 tech_stack: [tailwindcss, shadcn-ui, headlessui, daisyui]
+language: [css, html]
 capability: [ui-layout, theming]
 version: "shadcn-ui unversioned; headlessui 2.1; daisyui unversioned; tailwindcss-typography unversioned; tailwindcss 4"
 collected_at: 2026-04-18

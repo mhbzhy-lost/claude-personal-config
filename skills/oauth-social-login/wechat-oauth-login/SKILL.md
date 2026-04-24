@@ -1,7 +1,8 @@
 ---
 name: wechat-oauth-login
 description: 微信第三方登录（网站扫码 / 移动 SDK / 公众号 H5 授权 / 小程序登录）接入要点与 UnionID 机制
-tech_stack: [wechat-open-platform, wechat-mp, wechat-official-account]
+tech_stack: [wechat, wechat-miniprogram]
+language: [java, javascript, objc]
 capability: [auth, http-client]
 version: "wechat-open-platform unversioned"
 collected_at: 2026-04-19
