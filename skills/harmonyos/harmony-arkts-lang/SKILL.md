@@ -3,6 +3,7 @@ name: harmony-arkts-lang
 description: "ArkTS 语言特性：与 TypeScript 的差异、静态约束、装饰器、模块系统。"
 tech_stack: [harmonyos, mobile-native]
 language: [arkts]
+capability: [native-lifecycle]
 ---
 
 # ArkTS 语言特性
