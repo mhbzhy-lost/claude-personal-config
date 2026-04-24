@@ -21,13 +21,19 @@ agent 在处理用户任务时必须遵循以下知识检索流程：
 ```json
 {
   "user_prompt": "<用户任务核心描述>",
-  "cwd": "<当前工作目录>"
+  "cwd": "<当前工作目录>",
+  "tech_stack": ["<意图识别出的技术栈标签>"],
+  "language": ["<意图识别出的编程语言标签，可选>"],
+  "capability": ["<意图识别出的能力标签>"]
 }
 ```
 
 **输入要求**：
 - `user_prompt`：传入用户任务的核心描述（若内容很长，取能代表意图的一两句即可）
 - `cwd`：传入当前工作目录，用于更好地识别项目上下文
+- `tech_stack` / `language` / `capability`：**三者至少一个必须为非空字符串数组**。subagent 需要在调用前自行基于 user_prompt 与 workspace 背景做一次意图识别，分别判断涉及的技术栈、编程语言（混编要多选）、能力域，挑若干标签填入。`language` 对 skill 的 `language` 字段做硬过滤（language-agnostic skill 会被排除），只在有强语言约束时填。
+
+> **硬约束（PreToolUse hook 强制）**：若 `tech_stack` / `language` / `capability` 三者同时留空或缺失，本次 `resolve` 调用会被 hook block（返回 `permissionDecision: deny`），必须重新发起。意图识别由 subagent 自己完成——合法 tag 闭集以当前 catalog 的 `available_tags()` 为准（在 SubagentStart 注入环节已下发三维度闭集）。当前暂无闭集注入时，subagent 应根据任务类型、CLAUDE.md 中声明的技术栈背景经验性填入若干常见 tag，即使并非最优也比留空导致 block 更可接受。严禁通过 `mcp__skill-catalog__list_skills` 反查闭集（见本规范第 4 节）。
 
 **返回格式**：
 ```json
@@ -94,5 +100,7 @@ agent 在处理用户任务时必须遵循以下知识检索流程：
 - **明确说明**：如果没有匹配到相关技能，必须在输出中明确说明
 
 ---
+
+> 注：本规范由 SubagentStart hook 注入时，末尾会同时附上 skill-catalog 当前的合法 tag 闭集（`tech_stack` / `language` / `capability` 三维度），subagent 从该闭集中挑至少一项非空值再调 resolve。若未见闭集（hook 拉取失败），subagent 应保守地根据 CLAUDE.md 声明的技术栈语境经验性填一个最可能的 tag，避免被 PreToolUse block。
 
 **规范结束**。agent 应根据上述流程进行知识检索，确保任务符合项目规范。
