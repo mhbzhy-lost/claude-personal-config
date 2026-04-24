@@ -91,7 +91,7 @@ settings_path = Path(sys.argv[2])
 #   coding-expert-heavy → 注入 coding-expert-rules 共享规范（heavy 档）
 #
 # 已废弃（迁移到 UserPromptSubmit hook → skill-catalog resolve）：
-#   stack-detector / skill-matcher —— 由 skill-resolve-inject.sh 端到端替代
+#   stack-detector / skill-matcher —— 由 skill-intent-inject.sh 端到端替代
 desired_sub_start_hooks = [
     {
         "matcher": "skill-marker",
@@ -164,15 +164,30 @@ desired_subagent_stop_hooks = [
     },
 ]
 
-# UserPromptSubmit hook：每次用户提交 prompt 前跑 skill-catalog resolve，
-# 把 stack + skill 检索结果作为 additionalContext 注入主 agent。
+# UserPromptSubmit hook：检测 %skill 触发词后，注入主-agent 版知识检索规范 +
+# skill-catalog 合法 tag 闭集，由主 agent 自行完成意图识别并调 resolve。
 desired_user_prompt_hooks = [
     {
         "matcher": "",
         "hooks": [
             {
                 "type": "command",
-                "command": f"{src_root}/hooks/skill-resolve-inject.sh",
+                "command": f"{src_root}/hooks/skill-intent-inject.sh",
+            }
+        ],
+    },
+]
+
+# PreToolUse hook：拦截 mcp__skill-catalog__resolve 调用，硬约束调用方必须
+# 在 tool_input 里携带 tech_stack / capability 至少一个非空，避免 resolve
+# 在无意图信号的情况下退化成全量检索。
+desired_pretooluse_hooks = [
+    {
+        "matcher": "mcp__skill-catalog__resolve",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/hooks/skill-resolve-preflight.sh",
             }
         ],
     },
@@ -245,6 +260,24 @@ for desired in desired_user_prompt_hooks:
         changed = True
         print(f"[settings] 更新 hooks.UserPromptSubmit[matcher={matcher!r}]")
 
+# 合并 hooks.PreToolUse：按 matcher upsert
+pretool_use = hooks.setdefault("PreToolUse", [])
+for desired in desired_pretooluse_hooks:
+    matcher = desired["matcher"]
+    found_idx = None
+    for i, entry in enumerate(pretool_use):
+        if isinstance(entry, dict) and entry.get("matcher") == matcher:
+            found_idx = i
+            break
+    if found_idx is None:
+        pretool_use.append(desired)
+        changed = True
+        print(f"[settings] 新增 hooks.PreToolUse[matcher={matcher!r}]")
+    elif pretool_use[found_idx] != desired:
+        pretool_use[found_idx] = desired
+        changed = True
+        print(f"[settings] 更新 hooks.PreToolUse[matcher={matcher!r}]")
+
 if changed:
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
     print(f"[settings] 已写入 {settings_path}")
@@ -310,20 +343,20 @@ if [ -f "$INTENT_ENHANCEMENT_DIR/pyproject.toml" ] && [ -f "$SKILL_CATALOG_VENV/
 fi
 
 # ---------------------------------------------------------------------------
-# 初始化本地 LLM 后端：ollama + Qwen2.5 7B（项目内完全自包含部署）
+# 初始化本地 LLM 后端：ollama + bge-m3 embedding（项目内完全自包含部署）
 #
 #   设计哲学：像 .venv/ 一样，ollama binary + 模型数据 + 运行时状态都落在
 #   mcp/skill-catalog/ 目录内，不干涉用户系统环境，不占 brew services，
 #   不写 ~/.ollama/。默认端口 11435 避免与用户可能自行安装的系统 ollama
 #   (11434) 冲突。
 #
-#   选型：Qwen2.5 7B（Apache 2.0、Q4_K_M ~4.7GB、中文开源 SOTA、原生 JSON
-#   structured output），M 级 Mac 热推理 1-2s；非思考型模型，format 约束下
-#   表现稳定（qwen3 思考型模型 think=False+format 会输出空数组）。
+#   仅需 bge-m3 embedding（~568MB），用于 IntentFallback（规则+embedding 双层）
+#   的语义检索。历史上的 qwen2.5:7b classifier 已由 IntentFallback 全面替代
+#   （见 intent-enhancement/tests/intent_fallback_regression.md），不再拉取。
 #
 #   目录布局（均在 .gitignore）：
 #     vendor/ollama/      binary + MLX/GGML 后端 (~170MB)
-#     .ollama-models/     qwen2.5:7b 权重 (~4.7GB)
+#     .ollama-models/     bge-m3 权重 (~568MB)
 #     .ollama-runtime/    ollama.pid / ollama.log
 #
 #   幂等策略：
@@ -333,7 +366,6 @@ fi
 #     - 任一步失败告警但不退出，后续 MCP 注册仍能完成，LLM 能力 lazy 启用
 # ---------------------------------------------------------------------------
 OLLAMA_VERSION="${OLLAMA_VERSION:-v0.21.0}"
-OLLAMA_MODEL="${SKILL_CATALOG_OLLAMA_MODEL:-qwen2.5:7b}"
 EMBEDDING_MODEL="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
 OLLAMA_PORT="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
 OLLAMA_HOST_URL="http://127.0.0.1:$OLLAMA_PORT"
@@ -406,19 +438,24 @@ else
 fi
 
 # 2. 确保模型就绪：manifest 目录存在即视为已 pull（无需 daemon 介入判断）。
-#    两类模型分别用于：
-#      OLLAMA_MODEL      — classifier（tech_stack / capability 分类），~4.7GB
-#      EMBEDDING_MODEL   — 语义检索 embedding（HybridRetrievalEngine 的基底分数），~568MB
-#    未就绪时，临时拉起 daemon → 批量 pull → 关闭；多模型复用同一次 daemon 启动。
+#    仅需一类模型：
+#      EMBEDDING_MODEL   — IntentFallback 语义检索 embedding（bge-m3，~568MB）
+#    未就绪时，临时拉起 daemon → pull → 关闭。
 manifest_path_for() {
   local model="$1"
-  local name="${model%%:*}"
-  local tag="${model##*:}"
+  local name tag
+  if [[ "$model" == *:* ]]; then
+    name="${model%%:*}"
+    tag="${model##*:}"
+  else
+    name="$model"
+    tag="latest"
+  fi
   echo "$OLLAMA_MODELS_DIR/manifests/registry.ollama.ai/library/$name/$tag"
 }
 
 MODELS_TO_PULL=()
-for M in "$OLLAMA_MODEL" "$EMBEDDING_MODEL"; do
+for M in "$EMBEDDING_MODEL"; do
   MANIFEST=$(manifest_path_for "$M")
   if [ -e "$MANIFEST" ]; then
     echo "[ok] ollama 模型 ${M} 已就绪（manifest: ${MANIFEST}）"
@@ -486,36 +523,41 @@ if command -v claude >/dev/null 2>&1; then
   MCP_CMD="$SKILL_CATALOG_VENV/bin/python"
 
   # 检查是否已注册且配置一致（所有 env 变量必须全部匹配）
+  # 历史曾注入 SKILL_CATALOG_OLLAMA_MODEL（qwen classifier），现已下线；
+  # 旧 state 若仍带该 env 视为配置不一致，触发一次性 re-register。
   CURRENT=$(claude mcp get skill-catalog 2>&1 || true)
   if echo "$CURRENT" | grep -q "Connected" \
       && echo "$CURRENT" | grep -q "$MCP_CMD" \
       && echo "$CURRENT" | grep -q "SKILL_LIBRARY_PATH=$SRC/skills" \
-      && echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_MODEL=$OLLAMA_MODEL" \
       && echo "$CURRENT" | grep -q "SKILL_CATALOG_EMBEDDING_MODEL=$EMBEDDING_MODEL" \
       && echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL" \
-      && echo "$CURRENT" | grep -q "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT"; then
+      && echo "$CURRENT" | grep -q "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT" \
+      && ! echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_MODEL="; then
     echo "[mcp] skill-catalog 已注册且配置一致"
   else
     # 先移除旧注册（如有），再重新注册
     claude mcp remove skill-catalog -s user 2>/dev/null || true
     claude mcp add -s user \
       -e "SKILL_LIBRARY_PATH=$SRC/skills" \
-      -e "SKILL_CATALOG_OLLAMA_MODEL=$OLLAMA_MODEL" \
       -e "SKILL_CATALOG_EMBEDDING_MODEL=$EMBEDDING_MODEL" \
       -e "SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL" \
       -e "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT" \
       -- skill-catalog "$MCP_CMD" -m skill_catalog.server
-    echo "[mcp] skill-catalog 已注册到 user scope（classifier=${OLLAMA_MODEL}, embedding=${EMBEDDING_MODEL}, intent_enhancement=${ENABLE_INTENT_ENHANCEMENT}）"
+    echo "[mcp] skill-catalog 已注册到 user scope（embedding=${EMBEDDING_MODEL}, intent_enhancement=${ENABLE_INTENT_ENHANCEMENT}）"
   fi
 else
   echo "[warn] claude CLI 不可用，跳过 MCP server 注册。请手动执行："
   echo "  claude mcp add -s user \\"
   echo "    -e SKILL_LIBRARY_PATH=$SRC/skills \\"
-  echo "    -e SKILL_CATALOG_OLLAMA_MODEL=$OLLAMA_MODEL \\"
   echo "    -e SKILL_CATALOG_EMBEDDING_MODEL=$EMBEDDING_MODEL \\"
   echo "    -e SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL \\"
   echo "    -e ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT \\"
   echo "    -- skill-catalog $SKILL_CATALOG_VENV/bin/python -m skill_catalog.server"
+fi
+
+# 提示：已不再使用的 qwen2.5:7b 模型可手动清理（留给用户自决）
+if [ -x "$OLLAMA_BIN" ] && [ -e "$(manifest_path_for "qwen2.5:7b")" ]; then
+  echo "[hint] qwen2.5:7b 模型已不再使用，可用 'OLLAMA_HOST=$OLLAMA_HOST_URL OLLAMA_MODELS=$OLLAMA_MODELS_DIR $OLLAMA_BIN rm qwen2.5:7b' 手动清理（~4.7GB）"
 fi
 
 # ---------------------------------------------------------------------------

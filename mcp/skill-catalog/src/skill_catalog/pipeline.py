@@ -10,11 +10,14 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from .classifier import Classifier
 from .fingerprint import scan_with_submodules
 from .ranking import rank, top_n
 from .scanner import SkillCatalog
+
+if TYPE_CHECKING:
+    from .intent_fallback import IntentFallback
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +55,7 @@ def _try_import_intent_enhanced_resolver():
 
 def run_resolve_pipeline(
     catalog: SkillCatalog,
-    classifier: Classifier,
+    classifier: "IntentFallback",
     user_prompt: str,
     cwd: str | Path,
     tech_stack: list[str] | None = None,
@@ -94,30 +97,49 @@ def run_resolve_pipeline(
             )
 
     classifier_error: str | None = None
-    if tech_stack is None or capability is None:
+    # 若调用方（主 agent 经 MCP tool）已传入任一非空 tag 维度，完全信任入参，
+    # 跳过本地 classifier；否则（subagent / CLI 无预置等场景）降级走 fallback 分类。
+    caller_provided_tags = bool(tech_stack) or bool(capability) or bool(language)
+    if caller_provided_tags:
+        tech_stack = tech_stack or []
+        capability = capability or []
+        language = language or []
+        logger.debug(
+            "pipeline: trusting caller tags, skipping classifier "
+            "(tech_stack=%s, language=%s, capability=%s)",
+            tech_stack,
+            language,
+            capability,
+        )
+    else:
         tags = catalog.available_tags()
         result = classifier.classify(
             user_prompt=user_prompt,
             fingerprint_summary=fp.to_text_summary(),
             available_tech_stack=tags["tech_stack"],
             available_capability=tags["capability"],
+            available_language=tags.get("language", []),
         )
-        if tech_stack is None:
-            tech_stack = result.tech_stack
-        if capability is None:
-            capability = result.capability
+        tech_stack = result.tech_stack or []
+        capability = result.capability or []
+        language = list(result.language or [])
         classifier_error = result.error
+        logger.debug(
+            "pipeline: classifier fallback used "
+            "(tech_stack=%s, language=%s, capability=%s, err=%s)",
+            tech_stack,
+            language,
+            capability,
+            classifier_error,
+        )
 
-    tech_stack = tech_stack or []
-    capability = capability or []
-
-    if not tech_stack and not capability:
+    if not tech_stack and not capability and not language:
         filtered = {"skills": []}
     else:
         filtered = catalog.list_skills(
             tech_stack=tech_stack or None,
             capability=capability or None,
-            language=language,
+            language=language or None,
         )
 
     ranked = rank(filtered["skills"], tech_stack, capability, user_prompt)
@@ -136,6 +158,7 @@ def run_resolve_pipeline(
             "empty": fp.empty,
         },
         "tech_stack": tech_stack,
+        "language": language,
         "capability": capability,
         "classifier_error": classifier_error,
         "skills": [

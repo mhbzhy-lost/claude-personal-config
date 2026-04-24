@@ -12,7 +12,7 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from .classifier import Classifier, ClassifierConfig
+from .intent_fallback import IntentFallback, IntentFallbackConfig
 from .lifecycle import OllamaConfig, OllamaLifecycleManager, OllamaStartupError
 from .pipeline import run_resolve_pipeline
 from .scanner import SkillCatalog
@@ -96,19 +96,26 @@ def _build_lifecycle() -> OllamaLifecycleManager:
     return OllamaLifecycleManager(config)
 
 
-def _build_classifier() -> Classifier:
+def _build_intent_fallback() -> IntentFallback:
     config = _load_config()
-    classifier_cfg = config.get("classifier", {})
+    # 优先读 [intent_fallback]；兼容历史 [classifier].timeout_s 字段名
+    fb_cfg = config.get("intent_fallback", {}) or config.get("classifier", {})
     host_url = os.environ.get(
         "SKILL_CATALOG_OLLAMA_HOST", "http://127.0.0.1:11435"
     )
-    model = os.environ.get("SKILL_CATALOG_OLLAMA_MODEL", "qwen3:4b")
-    timeout_s = classifier_cfg.get("timeout_s", 15.0)
-    return Classifier(ClassifierConfig(host_url=host_url, model=model, timeout_s=timeout_s))
+    model = os.environ.get("SKILL_CATALOG_EMBEDDING_MODEL", "bge-m3")
+    timeout_s = fb_cfg.get("embedding_timeout_s", fb_cfg.get("timeout_s", 15.0))
+    return IntentFallback(
+        IntentFallbackConfig(
+            embedding_host_url=host_url,
+            embedding_model=model,
+            embedding_timeout_s=timeout_s,
+        )
+    )
 
 
 catalog = _load_catalog()
-classifier = _build_classifier()
+classifier = _build_intent_fallback()
 
 lifecycle = _build_lifecycle()
 try:

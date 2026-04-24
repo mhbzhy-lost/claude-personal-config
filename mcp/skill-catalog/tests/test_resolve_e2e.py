@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 import pytest
 import yaml
 
-from skill_catalog.classifier import Classifier, ClassifierConfig
+from skill_catalog.intent_fallback import IntentFallback, IntentFallbackConfig
 from skill_catalog.pipeline import run_resolve_pipeline
 from skill_catalog.scanner import SkillCatalog
 
@@ -79,9 +79,14 @@ def catalog() -> SkillCatalog:
 
 
 @pytest.fixture(scope="module")
-def classifier() -> Classifier:
-    # 放宽超时：真实 LLM 首次加载模型可能较慢
-    return Classifier(ClassifierConfig(host_url=OLLAMA_HOST, timeout_s=60.0))
+def classifier() -> IntentFallback:
+    # 放宽超时：首次加载 bge-m3 embedding 权重可能较慢
+    return IntentFallback(
+        IntentFallbackConfig(
+            embedding_host_url=OLLAMA_HOST,
+            embedding_timeout_s=60.0,
+        )
+    )
 
 
 def _setup_workspace(tmp: Path, spec: dict) -> Path:
@@ -152,7 +157,7 @@ def _assert_case(result: dict, expected: dict, case_id: str) -> None:
 def test_resolve_golden(
     case: dict,
     catalog: SkillCatalog,
-    classifier: Classifier,
+    classifier: IntentFallback,
     tmp_path: Path,
 ) -> None:
     # 稳定性 case

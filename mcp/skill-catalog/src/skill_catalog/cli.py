@@ -9,8 +9,8 @@ import sys
 import tomllib
 from pathlib import Path
 
-from .classifier import Classifier, ClassifierConfig
 from .fingerprint import scan as fingerprint_scan
+from .intent_fallback import IntentFallback, IntentFallbackConfig
 from .pipeline import run_resolve_pipeline
 from .scanner import SkillCatalog
 
@@ -71,12 +71,17 @@ def cmd_tags(args: argparse.Namespace) -> int:
     return 0
 
 
-def _build_classifier() -> Classifier:
+def _build_intent_fallback() -> IntentFallback:
     host_url = os.environ.get(
         "SKILL_CATALOG_OLLAMA_HOST", "http://127.0.0.1:11435"
     )
-    model = os.environ.get("SKILL_CATALOG_OLLAMA_MODEL", "qwen3:4b")
-    return Classifier(ClassifierConfig(host_url=host_url, model=model))
+    model = os.environ.get("SKILL_CATALOG_EMBEDDING_MODEL", "bge-m3")
+    return IntentFallback(
+        IntentFallbackConfig(
+            embedding_host_url=host_url,
+            embedding_model=model,
+        )
+    )
 
 
 def _format_resolve_text(result: dict) -> str:
@@ -134,7 +139,7 @@ def cmd_get(args: argparse.Namespace) -> int:
 
 def cmd_resolve(args: argparse.Namespace) -> int:
     catalog = _build_catalog()
-    classifier = _build_classifier()
+    fallback = _build_intent_fallback()
 
     tech_stack = args.tech_stack or None
     capability = args.capability or None
@@ -142,7 +147,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
 
     result = run_resolve_pipeline(
         catalog=catalog,
-        classifier=classifier,
+        classifier=fallback,
         user_prompt=args.prompt,
         cwd=args.cwd,
         tech_stack=tech_stack,

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from skill_catalog.classifier import ClassifyResult
+from skill_catalog.intent_fallback import ClassifyResult
 from skill_catalog.pipeline import run_resolve_pipeline
 from skill_catalog.scanner import SkillCatalog
 
@@ -45,13 +45,15 @@ class _FakeClassifier:
         self.calls: list[dict] = []
 
     def classify(self, user_prompt, fingerprint_summary,
-                 available_tech_stack, available_capability):
+                 available_tech_stack, available_capability,
+                 available_language=None):
         self.calls.append(
             {
                 "user_prompt": user_prompt,
                 "fingerprint_summary": fingerprint_summary,
                 "available_tech_stack": available_tech_stack,
                 "available_capability": available_capability,
+                "available_language": available_language,
             }
         )
         return self._result
