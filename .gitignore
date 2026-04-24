@@ -16,3 +16,4 @@ uv.lock
 mcp/skill-catalog/vendor/
 mcp/skill-catalog/.ollama-models/
 mcp/skill-catalog/.ollama-runtime/
+mcp/skill-catalog/.embeddings-cache/

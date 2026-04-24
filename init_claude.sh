@@ -334,6 +334,7 @@ fi
 # ---------------------------------------------------------------------------
 OLLAMA_VERSION="${OLLAMA_VERSION:-v0.21.0}"
 OLLAMA_MODEL="${SKILL_CATALOG_OLLAMA_MODEL:-qwen2.5:7b}"
+EMBEDDING_MODEL="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
 OLLAMA_PORT="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
 OLLAMA_HOST_URL="http://127.0.0.1:$OLLAMA_PORT"
 
@@ -405,13 +406,29 @@ else
 fi
 
 # 2. 确保模型就绪：manifest 目录存在即视为已 pull（无需 daemon 介入判断）。
-#    未就绪时，临时拉起 daemon → pull → 关闭（daemon 长期生命周期交给 MCP server）
-MODEL_NAME="${OLLAMA_MODEL%%:*}"
-MODEL_TAG="${OLLAMA_MODEL##*:}"
-MODEL_MANIFEST="$OLLAMA_MODELS_DIR/manifests/registry.ollama.ai/library/$MODEL_NAME/$MODEL_TAG"
+#    两类模型分别用于：
+#      OLLAMA_MODEL      — classifier（tech_stack / capability 分类），~4.7GB
+#      EMBEDDING_MODEL   — 语义检索 embedding（HybridRetrievalEngine 的基底分数），~568MB
+#    未就绪时，临时拉起 daemon → 批量 pull → 关闭；多模型复用同一次 daemon 启动。
+manifest_path_for() {
+  local model="$1"
+  local name="${model%%:*}"
+  local tag="${model##*:}"
+  echo "$OLLAMA_MODELS_DIR/manifests/registry.ollama.ai/library/$name/$tag"
+}
 
-if [ -e "$MODEL_MANIFEST" ]; then
-  echo "[ok] ollama 模型 ${OLLAMA_MODEL} 已就绪（manifest: ${MODEL_MANIFEST}）"
+MODELS_TO_PULL=()
+for M in "$OLLAMA_MODEL" "$EMBEDDING_MODEL"; do
+  MANIFEST=$(manifest_path_for "$M")
+  if [ -e "$MANIFEST" ]; then
+    echo "[ok] ollama 模型 ${M} 已就绪（manifest: ${MANIFEST}）"
+  else
+    MODELS_TO_PULL+=("$M")
+  fi
+done
+
+if [ ${#MODELS_TO_PULL[@]} -eq 0 ]; then
+  :  # 全部就绪，跳过 daemon 启动
 elif [ ! -x "$OLLAMA_BIN" ]; then
   echo "[warn] ollama binary 未就绪，跳过模型 pull"
 else
@@ -438,12 +455,14 @@ else
     done
   fi
 
-  echo "[ollama] 拉取模型 ${OLLAMA_MODEL}（首次 ~4.7GB，视网络耗时数分钟）..."
-  if OLLAMA_HOST="$OLLAMA_HOST_URL" "$OLLAMA_BIN" pull "$OLLAMA_MODEL"; then
-    echo "[ok] 模型 $OLLAMA_MODEL 拉取完成"
-  else
-    echo "[warn] 模型 $OLLAMA_MODEL 拉取失败，请检查网络后重跑 init_claude.sh"
-  fi
+  for M in "${MODELS_TO_PULL[@]}"; do
+    echo "[ollama] 拉取模型 ${M}（视网络耗时）..."
+    if OLLAMA_HOST="$OLLAMA_HOST_URL" "$OLLAMA_BIN" pull "$M"; then
+      echo "[ok] 模型 $M 拉取完成"
+    else
+      echo "[warn] 模型 $M 拉取失败，请检查网络后重跑 init_claude.sh（不阻断后续流程）"
+    fi
+  done
 
   # 关闭临时 daemon（仅当本脚本起的）
   if [ "$DAEMON_ALREADY_RUNNING" = "false" ] && [ -n "$TEMP_DAEMON_PID" ]; then
@@ -472,6 +491,7 @@ if command -v claude >/dev/null 2>&1; then
       && echo "$CURRENT" | grep -q "$MCP_CMD" \
       && echo "$CURRENT" | grep -q "SKILL_LIBRARY_PATH=$SRC/skills" \
       && echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_MODEL=$OLLAMA_MODEL" \
+      && echo "$CURRENT" | grep -q "SKILL_CATALOG_EMBEDDING_MODEL=$EMBEDDING_MODEL" \
       && echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL" \
       && echo "$CURRENT" | grep -q "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT"; then
     echo "[mcp] skill-catalog 已注册且配置一致"
@@ -481,16 +501,18 @@ if command -v claude >/dev/null 2>&1; then
     claude mcp add -s user \
       -e "SKILL_LIBRARY_PATH=$SRC/skills" \
       -e "SKILL_CATALOG_OLLAMA_MODEL=$OLLAMA_MODEL" \
+      -e "SKILL_CATALOG_EMBEDDING_MODEL=$EMBEDDING_MODEL" \
       -e "SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL" \
       -e "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT" \
       -- skill-catalog "$MCP_CMD" -m skill_catalog.server
-    echo "[mcp] skill-catalog 已注册到 user scope（model=${OLLAMA_MODEL}, intent_enhancement=${ENABLE_INTENT_ENHANCEMENT}）"
+    echo "[mcp] skill-catalog 已注册到 user scope（classifier=${OLLAMA_MODEL}, embedding=${EMBEDDING_MODEL}, intent_enhancement=${ENABLE_INTENT_ENHANCEMENT}）"
   fi
 else
   echo "[warn] claude CLI 不可用，跳过 MCP server 注册。请手动执行："
   echo "  claude mcp add -s user \\"
   echo "    -e SKILL_LIBRARY_PATH=$SRC/skills \\"
   echo "    -e SKILL_CATALOG_OLLAMA_MODEL=$OLLAMA_MODEL \\"
+  echo "    -e SKILL_CATALOG_EMBEDDING_MODEL=$EMBEDDING_MODEL \\"
   echo "    -e SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL \\"
   echo "    -e ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT \\"
   echo "    -- skill-catalog $SKILL_CATALOG_VENV/bin/python -m skill_catalog.server"
