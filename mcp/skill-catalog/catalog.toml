@@ -5,3 +5,6 @@
 
 tech_stack_match_mode = "union"
 language_match_mode = "union"
+
+[classifier]
+timeout_s = 15.0

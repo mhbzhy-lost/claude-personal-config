@@ -97,11 +97,14 @@ def _build_lifecycle() -> OllamaLifecycleManager:
 
 
 def _build_classifier() -> Classifier:
+    config = _load_config()
+    classifier_cfg = config.get("classifier", {})
     host_url = os.environ.get(
         "SKILL_CATALOG_OLLAMA_HOST", "http://127.0.0.1:11435"
     )
     model = os.environ.get("SKILL_CATALOG_OLLAMA_MODEL", "qwen3:4b")
-    return Classifier(ClassifierConfig(host_url=host_url, model=model))
+    timeout_s = classifier_cfg.get("timeout_s", 15.0)
+    return Classifier(ClassifierConfig(host_url=host_url, model=model, timeout_s=timeout_s))
 
 
 catalog = _load_catalog()
