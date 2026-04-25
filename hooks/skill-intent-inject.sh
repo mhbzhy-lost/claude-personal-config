@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# UserPromptSubmit hook: 触发 %skill 时，注入主-agent 版知识检索规范
-# 以及"合法 tag 闭集"（由 skill-catalog CLI tags 子命令产出）。
+# UserPromptSubmit hook: %skill 关键字强制主 agent 执行知识检索流程。
 #
-# 设计：
-# - 意图识别改由主 agent 承担（Opus 级判断），hook 不再预跑 resolve
-# - hook 只拉合法 tag 闭集，供主 agent 调 resolve 时填 tool_input
-# - tags CLI 失败/超时/解析异常 → 回退为注入原版文档 + 降级提示
-# - 永远不阻断 UserPromptSubmit
+# 背景：知识检索流程已常驻 CLAUDE.md，主 agent 始终可见。
+# 本 hook 仅处理 %skill 关键字——注入强制信号 + tag 闭集，
+# 要求 agent 立即调 resolve → get_skill，不得跳过。
 #
 # 环境变量覆盖：
 #   SKILL_CATALOG_CLI         覆盖 CLI 可执行路径（默认走 .venv 的 python -m）
@@ -24,7 +21,6 @@ emit_empty() {
 }
 
 emit_context() {
-  # $1 = context 字符串
   CTX="$1" python3 -c 'import json,os,sys; sys.stdout.write(json.dumps({"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":os.environ["CTX"]}}))'
   echo
 }
@@ -35,7 +31,6 @@ log() {
 
 # 1. 读取输入
 INPUT="$(cat 2>/dev/null || true)"
-
 if [[ -z "$INPUT" ]]; then
   log "empty stdin, skip"
   emit_empty
@@ -63,28 +58,19 @@ if [[ "$CWD" == "$PARSED" ]]; then
   CWD=""
 fi
 
-# 3. 是否触发 %skill
+# 3. 未带 %skill —— 不做任何注入（知识检索流程已在 CLAUDE.md 中常驻）
 if [[ "$PROMPT" != *%skill* ]]; then
   emit_empty
   exit 0
 fi
 
-# 4. 定位文档
+log "detected %skill in prompt"
+
+# 4. 定位项目根
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
-MAIN_DOC="$SRC_ROOT/guidelines/knowledge-retrieval-process-main.md"
-FALLBACK_DOC="$SRC_ROOT/guidelines/knowledge-retrieval-process.md"
 
-read_file() {
-  [[ -f "$1" ]] && cat "$1" 2>/dev/null || true
-}
-
-MAIN_CONTENT="$(read_file "$MAIN_DOC")"
-FALLBACK_CONTENT="$(read_file "$FALLBACK_DOC")"
-
-FOOTER="你必须首先执行知识检索流程，然后再完成接下来的任务。"
-
-# 5. 调 tags CLI 拉合法 tag 闭集
+# 5. 拉取合法 tag 闭集
 SKILL_CATALOG_ROOT="$SRC_ROOT/mcp/skill-catalog"
 DEFAULT_CLI_PATH="$SKILL_CATALOG_ROOT/.venv/bin/python"
 CLI_OVERRIDE="${SKILL_CATALOG_CLI:-}"
@@ -137,10 +123,9 @@ if exit_code == 0 and raw.strip():
         tech = data.get("tech_stack") or []
         lang = data.get("language") or []
         cap = data.get("capability") or []
-        # 闭集至少有一个维度非空才算成功
         if tech or lang or cap:
             lines = [
-                "主 agent 在调 `mcp__skill-catalog__resolve` 时，`tech_stack` / `language` / `capability` 字段**只能**取下列值：",
+                "调 `mcp__skill-catalog__resolve` 时，`tech_stack` / `language` / `capability` 字段**只能**取下列值：",
                 "",
                 f"**tech_stack**: {json.dumps(sorted(tech), ensure_ascii=False)}",
                 "",
@@ -168,25 +153,16 @@ fi
 if [[ -z "$CLI_EXIT" ]]; then
   CLI_EXIT=1
 fi
-PARSE_OK="$PARSE_OK_FLAG"
 
-# 6. 组装最终注入内容
-if [[ "$PARSE_OK" == "1" ]]; then
-  BODY="$MAIN_CONTENT"
-  if [[ -z "$BODY" ]]; then
-    BODY="（警告：未找到主 agent 版知识检索文档，请按下方合法 tag 闭集自行调用 mcp__skill-catalog__resolve。）"
-  fi
-  FULL_CONTENT="$BODY"$'\n\n'"## 合法 tag 闭集（resolve 必填）"$'\n\n'"$FORMATTED"$'\n\n'"$FOOTER"
+# 6. 组装强制检索上下文
+FORCE_HEADER="用户通过 \`%skill\` 关键字**强制要求**你立即执行知识检索流程。你必须**先**调 \`/knowledge-retrieval\` 获取完整检索规范，严格按照规范描述执行检索，**再**处理用户原任务。禁止跳过。"
+
+if [[ "$PARSE_OK_FLAG" == "1" ]]; then
+  FULL_CONTENT="$FORCE_HEADER"$'\n\n## 合法 tag 闭集（resolve 必填）\n\n'"$FORMATTED"
   log "tags ok (exit=$CLI_EXIT, len=${#FORMATTED})"
 else
-  # Fallback：注入原版文档 + 降级提示
-  BODY="$FALLBACK_CONTENT"
-  if [[ -z "$BODY" ]]; then
-    BODY="（警告：知识检索文档缺失，请手动调用 mcp__skill-catalog__resolve。）"
-  fi
-  WARN="> ⚠️ hook 拉取合法 tag 闭集失败（CLI exit=${CLI_EXIT}），已降级为原版流程：主 agent 直接调用 \`mcp__skill-catalog__resolve\`，可不带 tag，由 server 端 classifier 兜底。"
-  FULL_CONTENT="$BODY"$'\n\n'"$WARN"$'\n\n'"$FOOTER"
-  log "tags failed; fallback (exit=$CLI_EXIT, parse_ok=$PARSE_OK)"
+  FULL_CONTENT="$FORCE_HEADER"$'\n\n> ⚠️ 拉取合法 tag 闭集失败（CLI exit='"$CLI_EXIT"'），请根据任务上下文自行推断标签后调 resolve，server 端 classifier 会做 allowlist 过滤。'
+  log "tags failed; bare force injected (exit=$CLI_EXIT)"
 fi
 
 emit_context "$FULL_CONTENT"

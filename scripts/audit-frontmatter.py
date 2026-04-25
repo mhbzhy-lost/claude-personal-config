@@ -19,8 +19,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
-CAPABILITY_TAXONOMY = REPO_ROOT / "guidelines" / "capability-taxonomy.md"
-TECH_STACK_TAXONOMY = REPO_ROOT / "guidelines" / "tech-stack-taxonomy.md"
+CAPABILITY_TAXONOMY = REPO_ROOT / "claude-skills" / "skill-distillation" / "references" / "capability-taxonomy.md"
+TECH_STACK_TAXONOMY = REPO_ROOT / "claude-skills" / "skill-distillation" / "references" / "tech-stack-taxonomy.md"
 
 REQUIRED_FIELDS = ["name", "description", "tech_stack", "capability"]
 

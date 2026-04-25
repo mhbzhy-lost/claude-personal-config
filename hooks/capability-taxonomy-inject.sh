@@ -2,7 +2,7 @@
 # SubagentStart hook: inject capability taxonomy into sub-agent context.
 #
 # Target sub-agents: skill-marker, skill-matcher (via matcher in settings.json).
-# Reads ~/.claude/guidelines/capability-taxonomy.md (or $CAPABILITY_TAXONOMY_PATH)
+# Reads ~/.claude/skills/skill-distillation/references/capability-taxonomy.md (or $CAPABILITY_TAXONOMY_PATH)
 # and returns its body as additionalContext so low-intelligence models cannot
 # skip loading it.
 #
@@ -16,7 +16,7 @@ mkdir -p "$(dirname "$LOG_FILE")"
 printf '[%s] hook fired pid=%s ppid=%s\n' \
   "$(date '+%Y-%m-%d %H:%M:%S')" "$$" "$PPID" >> "$LOG_FILE"
 
-TAXONOMY_PATH="${CAPABILITY_TAXONOMY_PATH:-$HOME/.claude/guidelines/capability-taxonomy.md}"
+TAXONOMY_PATH="${CAPABILITY_TAXONOMY_PATH:-$HOME/.claude/skills/skill-distillation/references/capability-taxonomy.md}"
 
 if [[ ! -f "$TAXONOMY_PATH" ]]; then
   echo "[capability-taxonomy-inject] ERROR: taxonomy not found at $TAXONOMY_PATH" >&2

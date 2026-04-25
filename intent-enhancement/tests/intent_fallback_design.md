@@ -116,7 +116,7 @@ ClassifyResult dataclass **直接复用** `skill_catalog.classifier.ClassifyResu
 
 - 必须覆盖 `catalog.available_tags()` 返回的全部 tech_stack + capability
 - 缺失 tag：fallback 到 tag 本名作为 card（embedding_tag_extractor 已有此逻辑）
-- 新增 tag 流程：贡献者在 distillation 阶段提交新 tag 时，**同步在 tag_cards.json 补卡**（加入 skill-distillation.md checklist）
+- 新增 tag 流程：贡献者在 distillation 阶段提交新 tag 时，**同步在 tag_cards.json 补卡**（加入 skill-distillation skill 文档 checklist）
 
 ### 4.3 资产迁移动作
 
@@ -165,7 +165,7 @@ class IntentFallback:
 - **最脆弱环节**：tag_cards.json 与 catalog tag 集漂移。新 tag 入库但没补卡 → embedding 仍降级到 tag 名本身做 embedding，召回会在该 tag 上偏低
 - **缓解**：
   1. `IntentFallback` 构造期打 warning：log 出所有 "tag 在 catalog 但无 card" 的 tag 名字
-  2. 让 `skill-distillation.md` checklist 里加一条"新 tag 需补 tag_cards.json"
+  2. 让 skill-distillation skill 文档 checklist 里加一条"新 tag 需补 tag_cards.json"
 - **次脆弱**：embedding 缓存 schema 向前兼容——`tags_hash` 方案已自动失效 stale，这一点稳
 
 ## 8. 不做的事（本批次 scope 外）

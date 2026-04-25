@@ -1,3 +1,12 @@
+---
+name: skill-distillation
+description: Claude Code Skill 蒸馏五阶段工作流——通过 source-planner / skill-fetcher / skill-preprocessor / skill-builder / skill-marker 五个子 agent 将原始知识源转化为结构化 SKILL.md 技能包，含 frontmatter 打标规范
+tech_stack: [claude-code]
+language: []
+collected_at: 2026-04-25
+capability: [cc-subagent, prompt-engineering]
+---
+
 # Skill 蒸馏工作流
 
 蒸馏新 skill 时，按以下五阶段**严格顺序**执行：
@@ -25,7 +34,7 @@ skill 的 frontmatter 四个字段（`tech_stack` / `capability` / `language` / 
 
 ### tech_stack
 
-- 必须来自 `guidelines/tech-stack-taxonomy.md` 闭集
+- 必须来自 `references/tech-stack-taxonomy.md` 闭集
 - 新出现的技术栈**先在 taxonomy 新增条目再打标**，禁止先落 SKILL.md 再回补 taxonomy
 - **不要标孤立子品牌 / 扩展 / 插件名**：
   - 遇 `wechat-open-platform` / `wechat-official-account` / `wechat-cloud` → 归 `wechat`
@@ -41,7 +50,7 @@ skill 的 frontmatter 四个字段（`tech_stack` / `capability` / `language` / 
 
 ### capability
 
-- 必须来自 `guidelines/capability-taxonomy.md` 闭集（规则已在该文件声明）
+- 必须来自 `references/capability-taxonomy.md` 闭集（规则已在该文件声明）
 - 单 skill 通常 1–3 个 capability；跨域综合组件可到 5 个
 
 ### language
@@ -69,7 +78,7 @@ skill 的 frontmatter 四个字段（`tech_stack` / `capability` / `language` / 
 
 `skill-marker` 在一次性批量打标时按上述四条逐字段校验：
 
-1. 加载 `capability-taxonomy.md` + `tech_stack-taxonomy.md` 闭集（SubagentStart hook 自动注入）
+1. 加载 `references/capability-taxonomy.md` + `references/tech-stack-taxonomy.md` 闭集（SubagentStart hook 自动注入）
 2. 对每个 SKILL.md 逐项检查：闭集命中、language 判据、description 密度
 3. 若发现闭集外 tech_stack：**中断打标**，回报主 agent 先补 taxonomy
 4. 若发现 description 过短 / 全是 tag 堆砌：回报并建议改写

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "_note": "Tag cards used by IntentFallback embedding layer. Each entry is a 1-3 sentence natural-language expansion of the tag, used to compute tag_card embedding and cosine-match against user_prompt. New catalog tags MUST be added here (see ~/.claude/guidelines/skill-distillation.md).",
+  "_note": "Tag cards used by IntentFallback embedding layer. Each entry is a 1-3 sentence natural-language expansion of the tag, used to compute tag_card embedding and cosine-match against user_prompt. New catalog tags MUST be added here (see ~/.claude/skills/skill-distillation/SKILL.md).",
   "tech_stack": {
     "react": "React 前端框架，组件化 UI，JSX，useState、useEffect、hooks，SPA 单页应用",
     "nextjs": "Next.js 全栈 React 框架，App Router、Pages Router、SSR、SSG、服务器组件",
