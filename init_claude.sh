@@ -10,8 +10,10 @@
 # MCP server 通过 `claude mcp add -s user` 注册到 ~/.claude.json（user scope），
 # 而非写入 settings.json（Claude Code 不从 settings.json 读取 MCP 配置）。
 #
-# skills/ 故意不走软链接 —— MCP 架构下 skill 由 skill-catalog server 服务，
-# ~/.claude/skills/ 不应存在；若仍存在本脚本会告警，由用户自查后手动清理。
+# claude-skills/ 软链为 ~/.claude/skills，承载 Claude Code 原生 user-invocable
+# Skill（如 /git-commit、/knowledge-retrieval）。这与 MCP skill-catalog 知识库
+# 检索系统（索引 claude-config/skills/，由 server 端按 tag 命中后吐 markdown）
+# 是两套完全独立的方案：前者走 Claude Code 内置 skill loader，后者走 MCP tool。
 #
 # 同时保留历史版本中 "claude 会话链式执行包装函数" 的 ~/.zshrc 注入逻辑。
 
@@ -24,8 +26,9 @@ mkdir -p "$DST"
 
 link_item() {
   local item="$1"
+  local dst_name="${2:-$item}"
   local src_path="$SRC/$item"
-  local dst_path="$DST/$item"
+  local dst_path="$DST/$dst_name"
 
   if [ ! -e "$src_path" ] && [ ! -L "$src_path" ]; then
     echo "[skip] source $src_path does not exist"
@@ -52,11 +55,7 @@ link_item() {
 link_item "CLAUDE.md"
 link_item "agents"
 link_item "guidelines"
-
-# skills/ 必须不存在（MCP 架构下禁用原生 skill 加载）
-if [ -e "$DST/skills" ] || [ -L "$DST/skills" ]; then
-  echo "[warn] $DST/skills still exists. MCP architecture disables native skill loading. Check if backup needed, then 'rm -rf $DST/skills'."
-fi
+link_item "claude-skills" "skills"
 
 # ---------------------------------------------------------------------------
 # 合并 settings.json：注入 hooks.SubagentStart（仅 hooks，不含 MCP）
@@ -164,8 +163,9 @@ desired_subagent_stop_hooks = [
     },
 ]
 
-# UserPromptSubmit hook：检测 %skill 触发词后，注入主-agent 版知识检索规范 +
-# skill-catalog 合法 tag 闭集，由主 agent 自行完成意图识别并调 resolve。
+# UserPromptSubmit hook：检测 %skill 触发词后，注入"强制检索"信号 +
+# skill-catalog 合法 tag 闭集，要求主 agent 立即调 resolve → get_skill。
+# 流程文档已迁为 /knowledge-retrieval skill，hook 不再 fallback 注入 md。
 desired_user_prompt_hooks = [
     {
         "matcher": "",
