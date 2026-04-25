@@ -1,10 +1,6 @@
 ---
 name: skill-distillation
 description: Claude Code Skill 蒸馏五阶段工作流——通过 source-planner / skill-fetcher / skill-preprocessor / skill-builder / skill-marker 五个子 agent 将原始知识源转化为结构化 SKILL.md 技能包，含 frontmatter 打标规范
-tech_stack: [claude-code]
-language: []
-collected_at: 2026-04-25
-capability: [cc-subagent, prompt-engineering]
 ---
 
 # Skill 蒸馏工作流

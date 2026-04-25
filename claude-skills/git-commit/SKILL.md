@@ -1,10 +1,6 @@
 ---
 name: git-commit
 description: Git Commit Message 规范——Conventional Commits 轻量化中文版，含 type/scope 枚举、subject/body/footer 约束、完整示例、反例与多 commit 拆分原则
-tech_stack: [git]
-language: []
-collected_at: 2026-04-25
-capability: []
 ---
 
 # Git Commit Message 规范

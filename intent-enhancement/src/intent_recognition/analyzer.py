@@ -262,11 +262,55 @@ class FileReferenceAnalyzer:
         
         return requirements
     
+    def _identify_file_type(self, filename: str, content: str = None) -> str:
+        """识别文件类型"""
+        ext = Path(filename).suffix.lower()
+        type_mapping = {
+            '.md': 'markdown',
+            '.json': 'json',
+            '.py': 'python',
+            '.js': 'javascript',
+            '.ts': 'typescript',
+            '.tsx': 'typescript-react',
+            '.jsx': 'javascript-react',
+            '.yml': 'yaml',
+            '.yaml': 'yaml',
+            '.toml': 'toml',
+            '.ini': 'ini',
+            '.txt': 'text',
+        }
+        return type_mapping.get(ext, 'unknown')
+
     def _extract_dependencies(self, content: str) -> List[str]:
         """提取依赖信息"""
         dependencies = []
-        
-        # JSON依赖提取
+
+        # 尝试作为JSON解析（package.json 内容）
+        try:
+            data = json.loads(content)
+            if isinstance(data, dict):
+                if 'dependencies' in data:
+                    for dep, version in data['dependencies'].items():
+                        dependencies.append(f"{dep}@{version}")
+                if 'devDependencies' in data:
+                    for dep, version in data['devDependencies'].items():
+                        dependencies.append(f"dev:{dep}@{version}")
+                if dependencies:
+                    return dependencies
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # 纯 requirements.txt 内容（无文件名标记）
+        lines = content.strip().split('\n')
+        if lines and any('==' in line or '>=' in line or '<=' in line for line in lines):
+            for line in lines:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    dependencies.append(line)
+            if dependencies:
+                return dependencies
+
+        # JSON依赖提取（原始逻辑，当内容包含文件名标记时）
         if 'package.json' in content:
             try:
                 data = json.loads(content)

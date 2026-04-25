@@ -1,10 +1,6 @@
 ---
 name: knowledge-retrieval
 description: skill-catalog 知识检索工作流——通过 mcp__skill-catalog__resolve → get_skill 两阶段渐进式获取技能知识，含意图识别、标签选取、候选筛选、特殊情况处理及约束规则
-tech_stack: [claude-code]
-language: []
-collected_at: 2026-04-25
-capability: [cc-mcp, prompt-engineering]
 ---
 
 # 知识检索工作流

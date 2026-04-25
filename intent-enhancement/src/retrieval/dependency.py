@@ -158,8 +158,7 @@ class SkillDependencyGraph:
             if skill in self.dependencies:
                 for dep in self.dependencies[skill]:
                     if dep not in selected_skills:
-                        if path:  # 避免重复报告根技能
-                            missing.append(f"{skill} 需要 {dep}")
+                        missing.append(f"{skill} 需要 {dep}")
                     check_deps(dep, path + [skill])
         
         for skill in selected_skills:

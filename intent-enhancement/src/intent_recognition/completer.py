@@ -76,7 +76,7 @@ class IntentCompleter:
             },
             "PLAN_BASED": {
                 "patterns": [
-                    r"按照这个计划执行",
+                    r"按照这个计划.*执行",
                     r"执行计划",
                     r"按照文档执行",
                     r"按方案实施",
@@ -170,7 +170,7 @@ class IntentCompleter:
                         user_text, dialogue_context, project_state, file_context
                     )
                     enhanced_intent.confidence = pattern_info["confidence"]
-                    enhanced_intent.intent_type = intent_type
+                    enhanced_intent.intent_type = intent_type.lower()
                     return enhanced_intent
         
         # 2. 默认处理
@@ -199,6 +199,7 @@ class IntentCompleter:
         if constraints:
             enhanced_intent += f"，约束条件：{', '.join(constraints[:3])}"
         
+        tech_stack = list(project_state.technical_stack) if project_state else []
         return EnhancedIntent(
             original_intent=user_text,
             enhanced_intent=enhanced_intent,
@@ -207,7 +208,7 @@ class IntentCompleter:
             context={
                 "latest_discussion": latest_discussion,
                 "constraints": constraints,
-                "technical_stack": list(project_state.technical_stack)
+                "technical_stack": tech_stack,
             }
         )
     
