@@ -89,8 +89,10 @@ settings_path = Path(sys.argv[2])
 #   coding-expert-light → 注入 coding-expert-rules 共享规范（light 档）
 #   coding-expert-heavy → 注入 coding-expert-rules 共享规范（heavy 档）
 #
-# 已废弃（迁移到 UserPromptSubmit hook → skill-catalog resolve）：
-#   stack-detector / skill-matcher —— 由 skill-intent-inject.sh 端到端替代
+# 已废弃：
+#   stack-detector / skill-matcher  —— 由 skill-intent-inject.sh 端到端替代后又下线
+#   skill-intent-inject (UserPromptSubmit) —— %skill 关键字与 /knowledge-retrieval
+#       skill 功能重合，已下线；用户改用手动调 /knowledge-retrieval 显式触发
 desired_sub_start_hooks = [
     {
         "matcher": "skill-marker",
@@ -125,21 +127,6 @@ desired_sub_start_hooks = [
             {
                 "type": "command",
                 "command": f"{src_root}/hooks/coding-expert-rules-inject.sh",
-            }
-        ],
-    },
-]
-
-# UserPromptSubmit hook：检测 %skill 触发词后，注入"强制检索"信号 +
-# skill-catalog 合法 tag 闭集，要求主 agent 立即调 resolve → get_skill。
-# 流程文档已迁为 /knowledge-retrieval skill，hook 不再 fallback 注入 md。
-desired_user_prompt_hooks = [
-    {
-        "matcher": "",
-        "hooks": [
-            {
-                "type": "command",
-                "command": f"{src_root}/hooks/skill-intent-inject.sh",
             }
         ],
     },
@@ -191,24 +178,6 @@ for desired in desired_sub_start_hooks:
         changed = True
         print(f"[settings] 更新 hooks.SubagentStart[matcher={matcher}]")
 
-# 合并 hooks.UserPromptSubmit：按 matcher upsert
-user_prompt = hooks.setdefault("UserPromptSubmit", [])
-for desired in desired_user_prompt_hooks:
-    matcher = desired["matcher"]
-    found_idx = None
-    for i, entry in enumerate(user_prompt):
-        if isinstance(entry, dict) and entry.get("matcher") == matcher:
-            found_idx = i
-            break
-    if found_idx is None:
-        user_prompt.append(desired)
-        changed = True
-        print(f"[settings] 新增 hooks.UserPromptSubmit[matcher={matcher!r}]")
-    elif user_prompt[found_idx] != desired:
-        user_prompt[found_idx] = desired
-        changed = True
-        print(f"[settings] 更新 hooks.UserPromptSubmit[matcher={matcher!r}]")
-
 # 合并 hooks.PreToolUse：按 matcher upsert
 pretool_use = hooks.setdefault("PreToolUse", [])
 for desired in desired_pretooluse_hooks:
@@ -251,6 +220,29 @@ if isinstance(existing_sub_stop, list):
             hooks.pop("SubagentStop", None)
         changed = True
         print("[settings] 已清理废弃的 SubagentStop hooks（coding-expert-audit）")
+
+# 一次性清理：移除已废弃的 UserPromptSubmit hooks（skill-intent-inject.sh）
+# %skill 关键字与手动调 /knowledge-retrieval skill 功能完全重合，已下线。
+# 仅当条目的 command 指向 skill-intent-inject.sh 才删除，避免误伤用户自定义 hook。
+existing_user_prompt = hooks.get("UserPromptSubmit")
+if isinstance(existing_user_prompt, list):
+    pruned = [
+        entry for entry in existing_user_prompt
+        if not (
+            isinstance(entry, dict)
+            and any(
+                isinstance(h, dict) and h.get("command", "").endswith("/skill-intent-inject.sh")
+                for h in entry.get("hooks", []) if isinstance(h, dict)
+            )
+        )
+    ]
+    if len(pruned) != len(existing_user_prompt):
+        if pruned:
+            hooks["UserPromptSubmit"] = pruned
+        else:
+            hooks.pop("UserPromptSubmit", None)
+        changed = True
+        print("[settings] 已清理废弃的 UserPromptSubmit hooks（skill-intent-inject）")
 
 if changed:
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")

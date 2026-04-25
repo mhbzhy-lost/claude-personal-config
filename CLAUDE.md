@@ -54,9 +54,10 @@
 任何涉及特定框架/库/组件的任务（无论主 agent 或子 agent 执行），开始前必须调用 `/knowledge-retrieval` skill 获取完整检索规范并执行。
 
 触发判断：
-- 用户使用 `%skill` 关键字（最强信号，hook 已强制）
 - prompt 含具体框架/库名（如 antd、fastapi、langchain、django、phaser 等）
 - 任务涉及 src/ 下的业务代码改动
+
+用户也可手动调 `/knowledge-retrieval` skill 显式触发，效果等价。
 
 主 agent 不确定时，调用 skill 而非跳过。
 
