@@ -130,39 +130,6 @@ desired_sub_start_hooks = [
     },
 ]
 
-# SubagentStop 保留：
-#   coding-expert{,-light,-heavy} → coding-expert-audit.sh 事后合规审计
-#     扫 transcript 检测 resolve/list_skills/Edit 前置约束，违规注入警告
-desired_subagent_stop_hooks = [
-    {
-        "matcher": "coding-expert",
-        "hooks": [
-            {
-                "type": "command",
-                "command": f"{src_root}/hooks/coding-expert-audit.sh",
-            }
-        ],
-    },
-    {
-        "matcher": "coding-expert-light",
-        "hooks": [
-            {
-                "type": "command",
-                "command": f"{src_root}/hooks/coding-expert-audit.sh",
-            }
-        ],
-    },
-    {
-        "matcher": "coding-expert-heavy",
-        "hooks": [
-            {
-                "type": "command",
-                "command": f"{src_root}/hooks/coding-expert-audit.sh",
-            }
-        ],
-    },
-]
-
 # UserPromptSubmit hook：检测 %skill 触发词后，注入"强制检索"信号 +
 # skill-catalog 合法 tag 闭集，要求主 agent 立即调 resolve → get_skill。
 # 流程文档已迁为 /knowledge-retrieval skill，hook 不再 fallback 注入 md。
@@ -224,24 +191,6 @@ for desired in desired_sub_start_hooks:
         changed = True
         print(f"[settings] 更新 hooks.SubagentStart[matcher={matcher}]")
 
-# 合并 hooks.SubagentStop：按 matcher upsert
-sub_stop = hooks.setdefault("SubagentStop", [])
-for desired in desired_subagent_stop_hooks:
-    matcher = desired["matcher"]
-    found_idx = None
-    for i, entry in enumerate(sub_stop):
-        if isinstance(entry, dict) and entry.get("matcher") == matcher:
-            found_idx = i
-            break
-    if found_idx is None:
-        sub_stop.append(desired)
-        changed = True
-        print(f"[settings] 新增 hooks.SubagentStop[matcher={matcher}]")
-    elif sub_stop[found_idx] != desired:
-        sub_stop[found_idx] = desired
-        changed = True
-        print(f"[settings] 更新 hooks.SubagentStop[matcher={matcher}]")
-
 # 合并 hooks.UserPromptSubmit：按 matcher upsert
 user_prompt = hooks.setdefault("UserPromptSubmit", [])
 for desired in desired_user_prompt_hooks:
@@ -277,6 +226,31 @@ for desired in desired_pretooluse_hooks:
         pretool_use[found_idx] = desired
         changed = True
         print(f"[settings] 更新 hooks.PreToolUse[matcher={matcher!r}]")
+
+# 一次性清理：移除已废弃的 SubagentStop hooks（coding-expert-audit.sh）
+# 该 hook 只采集日志无消费，已下线。仅当条目同时满足"matcher 在我们曾管理的
+# 列表"+"command 指向 coding-expert-audit.sh"才删除，避免误伤用户自定义 hook。
+deprecated_audit_matchers = {"coding-expert", "coding-expert-light", "coding-expert-heavy"}
+existing_sub_stop = hooks.get("SubagentStop")
+if isinstance(existing_sub_stop, list):
+    pruned = [
+        entry for entry in existing_sub_stop
+        if not (
+            isinstance(entry, dict)
+            and entry.get("matcher") in deprecated_audit_matchers
+            and any(
+                isinstance(h, dict) and h.get("command", "").endswith("/coding-expert-audit.sh")
+                for h in entry.get("hooks", []) if isinstance(h, dict)
+            )
+        )
+    ]
+    if len(pruned) != len(existing_sub_stop):
+        if pruned:
+            hooks["SubagentStop"] = pruned
+        else:
+            hooks.pop("SubagentStop", None)
+        changed = True
+        print("[settings] 已清理废弃的 SubagentStop hooks（coding-expert-audit）")
 
 if changed:
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
@@ -592,27 +566,111 @@ register_http_mcp figma  "https://mcp.figma.com/mcp"
 register_http_mcp sketch "http://localhost:31126/mcp"
 
 # ---------------------------------------------------------------------------
-# 历史逻辑：注入 claude 会话链式执行包装函数到 ~/.zshrc（与本次重构无关，保留）
+# 注入 claude → ccr (claude-code-router) 路由包装函数到 ~/.zshrc
+#
+#   设计哲学（v2）：默认 `claude` 命令直通原生 claude（吃本地 Pro/Max 登录态）。
+#   显式设置 CLAUDE_NO_CCR=0 时走 ccr daemon → DeepSeek（带 enhancetool
+#   transformer 修工具调用协议差异）。日常用原生 Claude，偶尔需要 DeepSeek
+#   时手动 `CLAUDE_NO_CCR=0 claude ...` 临时切。
+#
+#   ccr daemon 端口 3456；本地 APIKEY 写在 ~/.claude-code-router/config.json
+#   的 APIKEY 字段，wrapper 读取该字段注入 ANTHROPIC_AUTH_TOKEN。
+#
+#   迁移：旧版本曾注入 claude_chain_next（v0）和 claude_ccr_wrapper_v1 wrapper，
+#   现已下线，本次注入会自动清理 ~/.zshrc 中遗留的旧块；v2 起反转默认值。
 # ---------------------------------------------------------------------------
 ZSHRC="$HOME/.zshrc"
-CHAIN_MARKER="claude_chain_next"
+NEW_MARKER="claude_ccr_wrapper_v2"
+LEGACY_MARKER="claude_chain_next"
 
-if [ -f "$ZSHRC" ] && grep -q "$CHAIN_MARKER" "$ZSHRC"; then
-  echo "[zshrc] 已有 claude 包装函数，跳过注入"
-else
-  cat >> "$ZSHRC" << 'EOF'
+if [ -f "$ZSHRC" ]; then
+  # 一次性 migration：清理历史 claude_chain_next 块（若存在）
+  if grep -q "$LEGACY_MARKER" "$ZSHRC"; then
+    echo "[zshrc] 检测到历史 claude_chain_next wrapper，自动清理..."
+    # 旧块结构（以注释行起，function 体到首个独立 '}' 结束）：
+    #   # claude 会话链式执行包装函数（由 claude-config/init_claude.sh 注入）
+    #   function claude() { ... }
+    # 用 awk 按行 state machine 删除：从含 "链式执行包装函数" 的注释起，
+    # 跳到首个仅含 '}' 的行（含尾随空格）后停止删除。
+    TMP_ZSHRC="$(mktemp)"
+    awk '
+      BEGIN { skip = 0 }
+      skip == 0 && /链式执行包装函数/ { skip = 1; next }
+      skip == 1 {
+        if ($0 ~ /^\}[[:space:]]*$/) { skip = 0; next }
+        next
+      }
+      { print }
+    ' "$ZSHRC" > "$TMP_ZSHRC"
+    # 同时把残留的 .claude_chain_next 状态文件清理掉（若有）
+    rm -f "$HOME/.claude_chain_next" 2>/dev/null || true
+    mv "$TMP_ZSHRC" "$ZSHRC"
+    echo "[zshrc] 已清理旧 claude_chain_next wrapper 与残留状态文件"
+  fi
 
-# claude 会话链式执行包装函数（由 claude-config/init_claude.sh 注入）
+  # 一次性 migration：清理历史 claude_ccr_wrapper_v1 块（若存在且无 v2）
+  if grep -q "claude_ccr_wrapper_v1" "$ZSHRC" && ! grep -q "claude_ccr_wrapper_v2" "$ZSHRC"; then
+    echo "[zshrc] 检测到历史 claude_ccr_wrapper_v1 wrapper，自动清理..."
+    TMP_ZSHRC="$(mktemp)"
+    awk '
+      BEGIN { skip = 0 }
+      skip == 0 && /claude → ccr 路由包装函数/ { skip = 1; next }
+      skip == 1 {
+        if ($0 ~ /^\}[[:space:]]*$/) { skip = 0; next }
+        next
+      }
+      { print }
+    ' "$ZSHRC" > "$TMP_ZSHRC"
+    mv "$TMP_ZSHRC" "$ZSHRC"
+    echo "[zshrc] 已清理旧 claude_ccr_wrapper_v1 wrapper"
+  fi
+
+  if grep -q "$NEW_MARKER" "$ZSHRC"; then
+    echo "[zshrc] ccr wrapper 已存在，跳过注入"
+  else
+    cat >> "$ZSHRC" << 'EOF'
+
+# claude → ccr 路由包装函数（由 claude-config/init_claude.sh 注入，marker: claude_ccr_wrapper_v2）
 function claude() {
-    command claude "$@"
-    local next_file="${HOME}/.claude_chain_next"
-    if [[ -f "$next_file" ]]; then
-        local next_task
-        next_task=$(cat "$next_file")
-        rm -f "$next_file"
-        exec command claude "$next_task"
+    if [[ "${CLAUDE_NO_CCR:-1}" != "0" ]]; then
+        command claude "$@"
+        return $?
     fi
+    local ccr_host="127.0.0.1"
+    local ccr_port="3456"
+    local ccr_url="http://${ccr_host}:${ccr_port}"
+    if ! curl -sf --max-time 1 -o /dev/null "${ccr_url}/" 2>/dev/null \
+        && ! curl -sf --max-time 1 -o /dev/null "${ccr_url}/api/config" 2>/dev/null; then
+        if command -v ccr >/dev/null 2>&1; then
+            (ccr start >/dev/null 2>&1 &)
+            local i
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+                if curl -sf --max-time 1 -o /dev/null "${ccr_url}/" 2>/dev/null \
+                    || curl -sf --max-time 1 -o /dev/null "${ccr_url}/api/config" 2>/dev/null; then
+                    break
+                fi
+                sleep 0.5
+            done
+        else
+            echo "[claude wrapper] CLAUDE_NO_CCR=0 但 ccr 未安装，本次回退到原生 claude" >&2
+            command claude "$@"
+            return $?
+        fi
+    fi
+    local ccr_apikey=""
+    if [[ -f "$HOME/.claude-code-router/config.json" ]]; then
+        ccr_apikey=$(python3 -c 'import json,os,sys
+try:
+    print(json.load(open(os.path.expanduser("~/.claude-code-router/config.json"))).get("APIKEY",""))
+except Exception:
+    pass' 2>/dev/null)
+    fi
+    ANTHROPIC_BASE_URL="${ccr_url}" \
+    ANTHROPIC_AUTH_TOKEN="${ccr_apikey}" \
+    NO_PROXY="127.0.0.1,localhost" \
+        command claude "$@"
 }
 EOF
-  echo "[zshrc] 已注入 claude 包装函数（重新打开终端或 source ~/.zshrc 后生效）"
+    echo "[zshrc] 已注入 claude → ccr wrapper（marker: $NEW_MARKER；source ~/.zshrc 或重开终端生效）"
+  fi
 fi

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .fingerprint import scan_with_submodules
-from .ranking import rank, top_n
+from .ranking import HIGH_MATCH_THRESHOLD, rank, top_n
 from .scanner import SkillCatalog
 
 if TYPE_CHECKING:
@@ -150,7 +150,28 @@ def run_resolve_pipeline(
     except OSError:
         cwd_resolved = str(cwd_path)
 
-    return {
+    # Compute match_quality based on top-1 score.
+    # See ranking.HIGH_MATCH_THRESHOLD for the rationale of the cutoff.
+    if not top:
+        match_quality = "empty"
+        hint: str | None = (
+            "No relevant skill found in catalog. You may proceed without "
+            "skill knowledge."
+        )
+    else:
+        top_score = top[0].score
+        if top_score >= HIGH_MATCH_THRESHOLD:
+            match_quality = "high"
+            hint = None
+        else:
+            match_quality = "low"
+            hint = (
+                f"Top match score {top_score:.2f} is below confidence "
+                f"threshold ({HIGH_MATCH_THRESHOLD:.2f}). Consider whether "
+                f"candidates are actually relevant before calling get_skill."
+            )
+
+    payload: dict = {
         "cwd": cwd_resolved,
         "fingerprint": {
             "detected": fp.detected,
@@ -165,4 +186,8 @@ def run_resolve_pipeline(
             {"name": r.name, "description": r.description}
             for r in top
         ],
+        "match_quality": match_quality,
     }
+    if hint is not None:
+        payload["hint"] = hint
+    return payload

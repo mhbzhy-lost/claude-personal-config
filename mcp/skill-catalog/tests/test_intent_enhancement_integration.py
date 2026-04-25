@@ -79,10 +79,12 @@ def test_disabled_by_default_is_legacy(catalog, tmp_path, monkeypatch):
     assert called["flag"] is False
     assert clf.call_count == 1
     assert "intent_enhancement_used" not in result
-    assert set(result.keys()) == {
+    _expected_core = {
         "cwd", "fingerprint", "tech_stack", "language", "capability",
-        "classifier_error", "skills",
+        "classifier_error", "skills", "match_quality",
     }
+    assert _expected_core.issubset(set(result.keys()))
+    assert set(result.keys()) - _expected_core <= {"hint"}
     assert all({"name", "description"} == set(s.keys()) for s in result["skills"])
 
 
@@ -108,10 +110,12 @@ def test_enabled_but_import_fails_falls_back(catalog, tmp_path, monkeypatch, cap
     assert any("Intent enhancement failed" in rec.message for rec in caplog.records)
     assert "intent_enhancement_used" not in result
     assert clf.call_count == 1  # legacy path ran
-    assert set(result.keys()) == {
+    _expected_core = {
         "cwd", "fingerprint", "tech_stack", "language", "capability",
-        "classifier_error", "skills",
+        "classifier_error", "skills", "match_quality",
     }
+    assert _expected_core.issubset(set(result.keys()))
+    assert set(result.keys()) - _expected_core <= {"hint"}
 
 
 # -- 3. enabled + available -------------------------------------------------
@@ -218,10 +222,12 @@ def test_enabled_resolver_runtime_error_falls_back(
     # legacy classifier ran exactly once
     assert clf.call_count == 1
     # result shape matches legacy contract
-    assert set(result.keys()) == {
+    _expected_core = {
         "cwd", "fingerprint", "tech_stack", "language", "capability",
-        "classifier_error", "skills",
+        "classifier_error", "skills", "match_quality",
     }
+    assert _expected_core.issubset(set(result.keys()))
+    assert set(result.keys()) - _expected_core <= {"hint"}
 
 
 # -- 5. enabled + resolver returns result missing optional enhancement fields --

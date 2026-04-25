@@ -158,6 +158,63 @@ def test_pipeline_monorepo_submodule_detection(catalog, tmp_path):
     assert any(e.startswith("web/") for e in evidence)
 
 
+def test_pipeline_match_quality_high(catalog, tmp_path):
+    # tech_stack tag hit -> top score >= 2.0 -> high; no hint field
+    classifier = _FakeClassifier(
+        ClassifyResult(tech_stack=["antd", "react"], capability=["ui-form"])
+    )
+    result = run_resolve_pipeline(
+        catalog=catalog,
+        classifier=classifier,  # type: ignore[arg-type]
+        user_prompt="antd 表单",
+        cwd=str(tmp_path),
+    )
+    assert result["match_quality"] == "high"
+    assert "hint" not in result
+    assert result["skills"]
+
+
+def test_pipeline_match_quality_empty(catalog, tmp_path):
+    # No tags at all -> skills list empty -> empty + hint
+    classifier = _FakeClassifier(
+        ClassifyResult(tech_stack=[], capability=[])
+    )
+    result = run_resolve_pipeline(
+        catalog=catalog,
+        classifier=classifier,  # type: ignore[arg-type]
+        user_prompt="x",
+        cwd=str(tmp_path),
+    )
+    assert result["skills"] == []
+    assert result["match_quality"] == "empty"
+    assert "hint" in result
+    assert "No relevant skill" in result["hint"]
+
+
+def test_pipeline_match_quality_low(tmp_path):
+    # Hand-craft a catalog whose top-1 only matches via capability (1.5 < 2.0)
+    # and via keyword fuzz, so top score stays below the high threshold.
+    lib = tmp_path / "skills_low"
+    lib.mkdir()
+    _write_skill(lib, "lonely-cap", "some description",
+                 tech_stack=["unrelated-stack"], capability=["ui-form"])
+    cat = SkillCatalog(str(lib))
+    classifier = _FakeClassifier(
+        ClassifyResult(tech_stack=[], capability=["ui-form"])
+    )
+    result = run_resolve_pipeline(
+        catalog=cat,
+        classifier=classifier,  # type: ignore[arg-type]
+        user_prompt="anything",
+        cwd=str(tmp_path),
+        capability=["ui-form"],
+    )
+    assert result["skills"]
+    assert result["match_quality"] == "low"
+    assert "hint" in result
+    assert "below confidence threshold" in result["hint"]
+
+
 def test_pipeline_top_n_override(catalog, tmp_path):
     classifier = _FakeClassifier(
         ClassifyResult(tech_stack=["antd", "react"], capability=["ui-form"])

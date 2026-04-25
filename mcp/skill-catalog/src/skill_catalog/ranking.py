@@ -177,6 +177,24 @@ def rank(
 FULL_RETURN_THRESHOLD = 35
 
 
+# match_quality classification threshold for the resolve pipeline.
+#
+# Score components (see rank() above):
+#   - TECH_WEIGHT       = 2.0  per tech_stack tag overlap
+#   - CAP_WEIGHT        = 1.5  per capability tag overlap
+#   - DESC_KEYWORD_WEIGHT = 0.5 per matched user-prompt keyword
+#
+# Rationale for the high/low boundary at 2.0:
+#   A top-1 score of >= 2.0 means at least one tech_stack tag intersected the
+#   query (the strongest signal in this scheme — workspace fingerprint already
+#   constrains tech_stack, so a matched tech tag indicates real domain
+#   alignment). A single capability hit (1.5) or pure keyword fuzzing
+#   (n * 0.5) can occur incidentally and should be treated as "low" — agent
+#   should skim descriptions but is allowed to skip get_skill if nothing
+#   reads as relevant.
+HIGH_MATCH_THRESHOLD = 2.0
+
+
 def top_n(
     ranked: list[RankedSkill],
     n: int | None = None,
