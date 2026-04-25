@@ -151,6 +151,21 @@ mcp = FastMCP("skill-catalog")
 
 
 @mcp.tool()
+def available_tags() -> dict[str, list[str]]:
+    """Return the closed-set tag universe across all indexed skills.
+
+    Returns a dict with three keys — ``tech_stack``, ``language``, ``capability``
+    — each mapped to a sorted, de-duplicated list of legal tag values present
+    in the library. Use this when you need to know which tags are valid before
+    calling ``resolve`` or ``list_skills``.
+
+    Returns:
+        {"tech_stack": [...], "language": [...], "capability": [...]}
+    """
+    return catalog.available_tags()
+
+
+@mcp.tool()
 def list_skills(
     tech_stack: list[str] | None = None,
     language: list[str] | None = None,
