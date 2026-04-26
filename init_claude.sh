@@ -580,7 +580,7 @@ register_http_mcp sketch "http://localhost:31126/mcp"
 #   迁移：自动清理 ~/.zshrc 中遗留的 v0/v1/v2 wrapper 块。
 # ---------------------------------------------------------------------------
 ZSHRC="$HOME/.zshrc"
-NEW_MARKER="claude_ccr_wrapper_v3"
+NEW_MARKER="claude_ccr_wrapper_v5"
 HELPER_MARKER="_claude_should_autoresume"
 
 # 通用 awk state-machine：删除从 marker_pattern 匹配行起、到首个独立 '}' 行止
@@ -613,25 +613,34 @@ if [ -f "$ZSHRC" ]; then
 
   # v1 → 清理（仅当未升到更新版本）
   if grep -q "claude_ccr_wrapper_v1" "$ZSHRC" \
-      && ! grep -q "claude_ccr_wrapper_v2\|claude_ccr_wrapper_v3" "$ZSHRC"; then
+      && ! grep -q "claude_ccr_wrapper_v2\|claude_ccr_wrapper_v3\|claude_ccr_wrapper_v4" "$ZSHRC"; then
     echo "[zshrc] 检测到历史 claude_ccr_wrapper_v1 wrapper，自动清理..."
     prune_block "claude_ccr_wrapper_v1" "$ZSHRC"
     echo "[zshrc] 已清理旧 claude_ccr_wrapper_v1 wrapper"
   fi
 
-  # v2 → 清理（仅当未升到 v3）
-  if grep -q "claude_ccr_wrapper_v2" "$ZSHRC" && ! grep -q "$NEW_MARKER" "$ZSHRC"; then
+  # v2 → 清理（仅当未升到 v3/v4）
+  if grep -q "claude_ccr_wrapper_v2" "$ZSHRC" \
+      && ! grep -q "claude_ccr_wrapper_v3\|claude_ccr_wrapper_v4" "$ZSHRC"; then
     echo "[zshrc] 检测到历史 claude_ccr_wrapper_v2 wrapper，自动清理..."
     prune_block "claude_ccr_wrapper_v2" "$ZSHRC"
     echo "[zshrc] 已清理旧 claude_ccr_wrapper_v2 wrapper"
   fi
 
-  # 注入 v3：helper + wrapper 是配套的（wrapper 体内调用 helper）。
+  # v3 → 清理（仅当未升到 v4）
+  if grep -q "claude_ccr_wrapper_v3" "$ZSHRC" \
+      && ! grep -q "claude_ccr_wrapper_v4" "$ZSHRC"; then
+    echo "[zshrc] 检测到历史 claude_ccr_wrapper_v3 wrapper，自动清理..."
+    prune_block "claude_ccr_wrapper_v3" "$ZSHRC"
+    echo "[zshrc] 已清理旧 claude_ccr_wrapper_v3 wrapper"
+  fi
+
+  # 注入 v4：helper + wrapper 是配套的（wrapper 体内调用 helper）。
   # 任一缺失即视为不完整，重新注入完整块；存在时跳过。
   if grep -q "$NEW_MARKER" "$ZSHRC" && grep -q "$HELPER_MARKER" "$ZSHRC"; then
-    echo "[zshrc] ccr wrapper v3 已存在，跳过注入"
+    echo "[zshrc] ccr wrapper v4/v5 已存在，跳过注入"
   else
-    # 若仅 helper 残留（无 v3 wrapper）也清理掉避免重复定义
+    # 若仅 helper 残留（无 v4 wrapper）也清理掉避免重复定义
     if grep -q "$HELPER_MARKER" "$ZSHRC" && ! grep -q "$NEW_MARKER" "$ZSHRC"; then
       prune_block "_claude_should_autoresume\\(\\)" "$ZSHRC"
     fi
@@ -641,6 +650,11 @@ if [ -f "$ZSHRC" ]; then
 # 跳过：含会话/打印相关标志，或首个参数是子命令
 function _claude_should_autoresume() {
     if [[ $# -eq 0 ]]; then
+        # 仅当当前目录有历史会话时才自动续聊
+        if ! [[ -f "$HOME/.claude/history.jsonl" ]] \
+            || ! grep -q --fixed-strings "\"project\":\"${PWD}\"" "$HOME/.claude/history.jsonl" 2>/dev/null; then
+            return 1
+        fi
         return 0
     fi
     case "$1" in
@@ -659,7 +673,8 @@ function _claude_should_autoresume() {
     return 0
 }
 
-# claude → ccr 路由包装函数（由 claude-config/init_claude.sh 注入，marker: claude_ccr_wrapper_v3）
+# claude → ccr 路由包装函数（由 claude-config/init_claude.sh 注入，marker: claude_ccr_wrapper_v5）
+# v5 相对于 v4: _claude_should_autoresume 检查 history.jsonl，新目录不续聊
 # 语义：默认走原生 claude；显式 export CLAUDE_USE_CCR=1 才路由到本地 ccr。
 function claude() {
     if _claude_should_autoresume "$@"; then
@@ -669,6 +684,32 @@ function claude() {
         command claude "$@"
         return $?
     fi
+
+    # 启动 cache 命中率监控代理（幂等：端口已占用则跳过）
+    local ccm="$HOME/claude-config/monitor-cache-hit.py"
+    local ccm_log="$HOME/.claude-code-router/cache-monitor.log"
+    if [[ -f "$ccm" ]]; then
+        python3 "$ccm" >> "$ccm_log" 2>&1 &
+        local ccm_up=0
+        local j
+        for j in 1 2 3 4 5 6 7 8; do
+            if command python3 -c "
+import socket
+try:
+    s=socket.socket(); s.settimeout(0.3); s.connect(('127.0.0.1',8787)); s.close()
+    print('ready')
+except: pass
+" 2>/dev/null | grep -q ready; then
+                ccm_up=1
+                break
+            fi
+            sleep 0.3
+        done
+        if (( ! ccm_up )); then
+            echo "[claude wrapper] cache monitor proxy 未就绪（日志: $ccm_log），继续启动" >&2
+        fi
+    fi
+
     local ccr_host="127.0.0.1"
     local ccr_port="3456"
     local ccr_url="http://${ccr_host}:${ccr_port}"
