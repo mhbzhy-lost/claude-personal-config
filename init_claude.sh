@@ -221,9 +221,15 @@ if isinstance(existing_sub_stop, list):
         changed = True
         print("[settings] 已清理废弃的 SubagentStop hooks（coding-expert-audit）")
 
-# 一次性清理：移除已废弃的 UserPromptSubmit hooks（skill-intent-inject.sh）
-# %skill 关键字与手动调 /knowledge-retrieval skill 功能完全重合，已下线。
-# 仅当条目的 command 指向 skill-intent-inject.sh 才删除，避免误伤用户自定义 hook。
+# 一次性清理：移除已废弃的 UserPromptSubmit hooks
+#   skill-intent-inject.sh  —— %skill 关键字开关，与 /knowledge-retrieval 重合后下线
+#   skill-resolve-inject.sh —— 早期知识检索注入器，被 PreToolUse + skill-resolve-preflight
+#                              替代后随 533a684 一并删除文件，但 settings.json 残留死引用
+# 仅当条目的 command 指向上述脚本才删除，避免误伤用户自定义 hook。
+deprecated_user_prompt_scripts = (
+    "/skill-intent-inject.sh",
+    "/skill-resolve-inject.sh",
+)
 existing_user_prompt = hooks.get("UserPromptSubmit")
 if isinstance(existing_user_prompt, list):
     pruned = [
@@ -231,7 +237,8 @@ if isinstance(existing_user_prompt, list):
         if not (
             isinstance(entry, dict)
             and any(
-                isinstance(h, dict) and h.get("command", "").endswith("/skill-intent-inject.sh")
+                isinstance(h, dict)
+                and h.get("command", "").endswith(deprecated_user_prompt_scripts)
                 for h in entry.get("hooks", []) if isinstance(h, dict)
             )
         )
@@ -242,7 +249,10 @@ if isinstance(existing_user_prompt, list):
         else:
             hooks.pop("UserPromptSubmit", None)
         changed = True
-        print("[settings] 已清理废弃的 UserPromptSubmit hooks（skill-intent-inject）")
+        print(
+            "[settings] 已清理废弃的 UserPromptSubmit hooks"
+            f"（{', '.join(s.lstrip('/') for s in deprecated_user_prompt_scripts)}）"
+        )
 
 if changed:
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
