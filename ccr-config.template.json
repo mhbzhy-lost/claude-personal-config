@@ -1,0 +1,29 @@
+{
+  "APIKEY": "ccr-local-REPLACE_ME",
+  "HOST": "127.0.0.1",
+  "LOG": true,
+  "LOG_LEVEL": "info",
+  "Providers": [
+    {
+      "name": "deepseek",
+      "api_base_url": "https://api.deepseek.com/anthropic/v1/messages",
+      "api_key": "YOUR_DEEPSEEK_API_KEY",
+      "models": [
+        "deepseek-v4-pro",
+        "deepseek-v4-pro[1m]",
+        "deepseek-v4-flash"
+      ],
+      "transformer": {
+        "use": ["Anthropic"]
+      }
+    }
+  ],
+  "Router": {
+    "default": "deepseek,deepseek-v4-pro[1m]",
+    "background": "deepseek,deepseek-v4-flash",
+    "think": "deepseek,deepseek-v4-pro[1m]",
+    "longContext": "deepseek,deepseek-v4-pro[1m]",
+    "longContextThreshold": 60000,
+    "webSearch": "deepseek,deepseek-v4-pro[1m]"
+  }
+}
