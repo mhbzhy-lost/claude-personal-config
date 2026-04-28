@@ -1,0 +1,231 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
+    "ANTHROPIC_MODEL": "deepseek-v4-pro[1m]",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-pro[1m]",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-pro[1m]",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-flash",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-v4-pro",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": "1",
+    "CLAUDE_CODE_EFFORT_LEVEL": "max"
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "TodoWrite",
+      "Agent",
+      "Bash(ls*)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(less *)",
+      "Bash(more *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(find *)",
+      "Bash(fd *)",
+      "Bash(wc *)",
+      "Bash(awk *)",
+      "Bash(sed *)",
+      "Bash(cut *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(tr *)",
+      "Bash(xargs *)",
+      "Bash(echo *)",
+      "Bash(printf *)",
+      "Bash(pwd)",
+      "Bash(cd *)",
+      "Bash(mkdir *)",
+      "Bash(touch *)",
+      "Bash(mv *)",
+      "Bash(cp *)",
+      "Bash(rm *)",
+      "Bash(rmdir *)",
+      "Bash(ln *)",
+      "Bash(chmod *)",
+      "Bash(diff *)",
+      "Bash(tree *)",
+      "Bash(which *)",
+      "Bash(type *)",
+      "Bash(env)",
+      "Bash(env *)",
+      "Bash(date)",
+      "Bash(date *)",
+      "Bash(whoami)",
+      "Bash(uname *)",
+      "Bash(ps *)",
+      "Bash(df *)",
+      "Bash(du *)",
+      "Bash(open *)",
+      "Bash(pbcopy)",
+      "Bash(pbpaste)",
+      "Bash(jq *)",
+      "Bash(yq *)",
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(node *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(pnpm *)",
+      "Bash(yarn *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(pip *)",
+      "Bash(pip3 *)",
+      "Bash(uv *)",
+      "Bash(uvx *)",
+      "Bash(poetry *)",
+      "Bash(pipenv *)",
+      "Bash(go *)",
+      "Bash(cargo *)",
+      "Bash(rustc *)",
+      "Bash(make *)",
+      "Bash(cmake *)",
+      "Bash(gcc *)",
+      "Bash(clang *)",
+      "Bash(docker *)",
+      "Bash(brew *)",
+      "Bash(curl *)",
+      "Bash(wget *)"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(eval *)",
+      "Bash(* | sh)",
+      "Bash(* | bash)",
+      "Bash(* |sh *)",
+      "Bash(* |bash *)",
+      "Bash(curl * | *sh*)",
+      "Bash(wget * | *sh*)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(rsync *:*)",
+      "Bash(reboot)",
+      "Bash(shutdown *)",
+      "Bash(killall *)",
+      "Bash(launchctl *)",
+      "Bash(security *)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(rm -rf $HOME*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git push -f)",
+      "Bash(npm publish*)",
+      "Bash(pnpm publish*)",
+      "Bash(yarn publish*)"
+    ]
+  },
+  "hooks": {
+    "SubagentStart": [
+      {
+        "matcher": "skill-marker",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/mhbzhy/claude-config/hooks/capability-taxonomy-inject.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "coding-expert",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-rules-inject.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "coding-expert-light",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-rules-inject.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "coding-expert-heavy",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-rules-inject.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__skill-catalog__resolve",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/mhbzhy/claude-config/hooks/skill-resolve-preflight.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/mhbzhy/claude-config/hooks/skill-intent-inject.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "coding-expert",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-audit.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "coding-expert-light",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-audit.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "coding-expert-heavy",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-audit.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {},
+  "extraKnownMarketplaces": {
+    "pua-skills": {
+      "source": {
+        "source": "github",
+        "repo": "tanweai/pua"
+      }
+    }
+  },
+  "skipAutoPermissionPrompt": true,
+  "verbose": true
+}
