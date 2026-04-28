@@ -17,7 +17,7 @@ Verifies:
   * fetch logger writes log.jsonl + stats.json without LLM
   * build per-step slices populate step_slices
 
-Run with: ``uv run python tests/smoke_test.py`` from scripts/distill/.
+Run with: ``uv run python tests/smoke_test.py`` from distill/.
 """
 
 from __future__ import annotations
@@ -74,6 +74,91 @@ class _Response:
             completion_tokens=10,
             prompt_tokens_details=SimpleNamespace(cached_tokens=0),
         )
+
+
+class _PlanWriteAdapter:
+    """Fake adapter that, on first call, emits a write_file tool call to
+    persist a plan.json containing the new schema fields, then on the
+    second call returns a final-text JSON status string. Used to drive
+    ``run_plan`` end-to-end without hitting any real provider.
+    """
+
+    name = "fake-plan"
+    model = "fake-plan-model"
+
+    def __init__(self, plan_path: str):
+        self._plan_path = plan_path
+        self._call_count = 0
+
+    def serialize_assistant_message(self, message):
+        from adapter import serialize_assistant_message
+        return serialize_assistant_message(message)
+
+    def build_system(self, system_prompt):
+        return [{"role": "system", "content": "FAKE\n\n" + system_prompt}]
+
+    def create_message(self, messages, tools=None, max_tokens=4096):
+        self._call_count += 1
+        if self._call_count == 1:
+            plan_payload = {
+                "intent": "distill lodash array ops",
+                "intent_summary": "lodash array operations",
+                "tech_stack": "lodash",
+                "constraints": [
+                    "focus:array-operations",
+                    "skip:other-domains",
+                ],
+                "skills": [
+                    {
+                        "name": "lodash-array",
+                        "primary": "https://lodash.com/docs",
+                        "complements": [],
+                        "estimated_tokens": 12000,
+                        "rationale": "covers map/filter/reduce/groupBy",
+                    }
+                ],
+                "build_batch_size": 1,
+                "build_batch_rationale": "single-skill plan, batch_size MUST be 1",
+            }
+            args = json.dumps({
+                "path": self._plan_path,
+                "content": json.dumps(plan_payload, indent=2),
+            })
+            tc = SimpleNamespace(
+                id="call_write",
+                type="function",
+                function=SimpleNamespace(name="write_file", arguments=args),
+            )
+            msg = SimpleNamespace(
+                content=None,
+                tool_calls=[tc],
+                reasoning_content="(fake reasoning)",
+            )
+            choice = SimpleNamespace(message=msg, finish_reason="tool_calls")
+        else:
+            msg = SimpleNamespace(
+                content='{"status":"ok","plan_path":"' + self._plan_path + '","tech_stack":"lodash","skill_count":1}',
+                tool_calls=None,
+                reasoning_content=None,
+            )
+            choice = SimpleNamespace(message=msg, finish_reason="stop")
+
+        return SimpleNamespace(
+            choices=[choice],
+            usage=SimpleNamespace(
+                prompt_tokens=200,
+                completion_tokens=20,
+                prompt_tokens_details=SimpleNamespace(cached_tokens=50),
+            ),
+        )
+
+    def extract_usage(self, response):
+        return {
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+            "cached_tokens": response.usage.prompt_tokens_details.cached_tokens,
+            "cache_write_tokens": 0,
+        }
 
 
 class FakeAbortAdapter:
@@ -286,6 +371,58 @@ def test_dir_layout(rec: RunRecorder):
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
+def test_plan_intent_schema(rec: RunRecorder):
+    """Drive run_plan with a fake adapter that writes a plan.json with
+    the intent-driven schema, then verify the new fields surface
+    correctly in the loaded plan_dict.
+    """
+    print("\n[test 5] run_plan emits intent / intent_summary / constraints")
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        plan_dir = Path(td)
+        plan_path = plan_dir / "plan.json"
+        adapter = _PlanWriteAdapter(plan_path=str(plan_path))
+        stage_rec = rec.stage("plan")
+
+        stats, plan_dict = pipeline.run_plan(
+            adapter,
+            intent="distill lodash array ops",
+            plan_dir=plan_dir,
+            skills_base=str(plan_dir / "_skills"),
+            recorder=stage_rec,
+            tool_budget=5,
+            max_iterations=4,
+        )
+
+    assert plan_dict.get("intent") == "distill lodash array ops", plan_dict
+    assert plan_dict.get("intent_summary"), plan_dict
+    assert plan_dict.get("tech_stack") == "lodash"
+    assert "focus:array-operations" in plan_dict.get("constraints", [])
+    assert plan_dict.get("skills") and plan_dict["skills"][0]["name"] == "lodash-array"
+    assert plan_dict.get("build_batch_size") == 1, plan_dict
+    assert plan_dict.get("build_batch_rationale"), plan_dict
+    print(f"  plan_dict has intent / intent_summary / constraints / tech_stack=lodash: OK")
+    print(f"  plan_dict.build_batch_size=1, build_batch_rationale present: OK")
+    print(f"  stats.requests={stats.requests} tool_calls={stats.tool_calls}")
+
+
+def test_normalize_tech_slug():
+    print("\n[test 6] _normalize_tech_slug filesystem-safety")
+    cases = {
+        "antd": "antd",
+        "Shadcn UI": "shadcn-ui",
+        "FastAPI": "fastapi",
+        "foo/bar": "foo-bar",
+        "  weird stuff!  ": "weird-stuff",
+        "": "unknown",
+        None: "unknown",
+    }
+    for raw, expected in cases.items():
+        got = pipeline._normalize_tech_slug(raw)
+        assert got == expected, f"{raw!r} -> {got!r} (expected {expected!r})"
+    print(f"  {len(cases)} slug cases all OK")
+
+
 def main() -> int:
     runs_dir = ROOT / "runs"
 
@@ -293,6 +430,8 @@ def main() -> int:
     test_fetch_logger(RunRecorder(runs_dir))
     test_summary_schema(RunRecorder(runs_dir))
     test_dir_layout(RunRecorder(runs_dir))
+    test_plan_intent_schema(RunRecorder(runs_dir))
+    test_normalize_tech_slug()
 
     print("\nSMOKE TEST PASSED")
     return 0

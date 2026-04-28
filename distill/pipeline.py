@@ -19,12 +19,22 @@ which keeps prompt_tokens flat regardless of source size.
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import os
 import re
+import sys
 import time
 from pathlib import Path
 from urllib.parse import urlparse
+
+# Load .env from this script's directory BEFORE importing adapter (which reads
+# DEEPSEEK_API_KEY / DASHSCOPE_API_KEY from os.environ at construction time).
+# Silent if .env is absent — env-var validation happens in main().
+from dotenv import load_dotenv
+
+_ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(_ENV_PATH)
 
 from adapter import DeepSeekAdapter, PipelineStats, QwenAdapter, StageStats
 from persistence import FetchLogger, RunRecorder, StageRecorder
@@ -53,17 +63,17 @@ def compute_step_budget(
 ) -> int:
     """Per-step budget that scales with batch size.
 
-    Empirical formula (calibrated against DeepSeek smoke runs — step 1
-    needs list+3-5 reads+2 writes per skill, so ~6-8 calls/skill):
-      step_1 (preprocess):     5 + 7*N   (1 skill=12, 3 skill=26)
-      step_2 (build SKILL.md): 4 + 4*N   (1 skill=8,  3 skill=16)
-      step_3 (mark capability):3 + 3*N   (1 skill=6,  3 skill=12)
+    Empirical formula (recalibrated 2026-04 — single-skill case needs
+    extra slack for list_files + 2-3 read_file + 2 writes + spillover):
+      step_1 (preprocess):     8 + 7*N   (N=1→15, N=3→29, N=5→43)
+      step_2 (build SKILL.md): 5 + 4*N   (N=1→9,  N=3→17, N=5→25)
+      step_3 (mark capability):4 + 3*N   (N=1→7,  N=3→13, N=5→19)
     """
     n = max(1, int(n_skills_in_batch))
     base = {
-        "build_step_1": 5 + 7 * n,
-        "build_step_2": 4 + 4 * n,
-        "build_step_3": 3 + 3 * n,
+        "build_step_1": 8 + 7 * n,
+        "build_step_2": 5 + 4 * n,
+        "build_step_3": 4 + 3 * n,
     }
     if step_name not in base:
         raise KeyError(f"unknown step: {step_name}")
@@ -84,45 +94,117 @@ TOOL_BUDGETS: dict[str, int] = {
 # System prompts
 # ---------------------------------------------------------------------------
 PLAN_PROMPT = """\
-You are a *source-planner* for a skill distillation pipeline. Your sole
-job is to discover authoritative documentation sources for the requested
-tech stack and emit a structured plan that downstream tooling will then
-fetch.
+You are an *intent-aware source-planner* for a skill distillation
+pipeline. Your sole job is to (a) interpret the user's natural-language
+intent, (b) discover authoritative documentation sources, and (c) emit a
+structured plan that honors every constraint expressed in the intent.
 
 You DO NOT distill, fetch, or write SKILL.md. You only plan.
 
-## Workflow
+## Inputs you will receive (in the user message)
 
-1. Call `list_skills(tech_stack="<target>")` to see existing skills (so
-   you can deduplicate against the catalog).
-2. Optionally call `web_search(query="...")` once or twice to find the
-   official docs domain. STOP searching once you've located it.
-3. Call `web_fetch(url="<docs landing page>")` to inspect structure.
-   You may fetch up to 3-4 pages to map the doc tree, but no more — you
-   are planning, not collecting full content.
-4. Compose a `plan.json` and persist it via `write_file` to the
-   workspace path provided in the user message (the path will be like
-   `/tmp/skill-src/<tech>/plan.json`).
-5. After write_file succeeds, return a short JSON summary as your final
-   reply (no markdown fences):
-   `{"status":"ok","plan_path":"...","skill_count":N}`
+- `intent`           — the user's natural-language request, verbatim.
+- `existing_skills`  — JSON list of skill names already present under
+                       the skills_base catalog. Use this for dedup.
+- `plan_path`        — absolute path where you must persist plan.json.
+- `skills_base`      — root dir for SKILL.md outputs (FYI only).
 
-## plan.json schema (MUST follow exactly)
+## Step 1: interpret the intent
+
+Parse the intent to extract these facets (some may be implicit / absent):
+
+- **tech_stack**: the library / framework / domain. Infer if not spelled
+  out. MUST be a clean filesystem slug (lowercase, no spaces, no
+  slashes, hyphens OK). Examples: "antd", "fastapi", "shadcn-ui",
+  "lodash".
+- **focus_constraints**: which areas / components / patterns to cover.
+  Encode as `focus:<topic>` strings.
+- **skip_constraints**: areas / topics / already-existing skills the
+  user wants excluded. Encode as `skip:<topic>` strings. ALWAYS add a
+  `skip:<name>` entry for any name in `existing_skills` that matches
+  the user's "skip already-existing" intent.
+- **granularity_hint**: e.g. `granularity:per-component`,
+  `granularity:single-skill`, `granularity:by-feature`.
+- **size_hint**: optional, e.g. `max_size:5kb`, `target_tokens:18000`.
+
+If the intent is vague (e.g. just "distill httpx"), emit an empty
+constraints array — never invent restrictions the user did not request.
+
+## Step 2: discover sources
+
+1. `list_skills(tech_stack="<inferred>")` — confirm dedup view (the
+   user message already provides existing_skills, but a fresh call is
+   cheap and authoritative).
+2. `web_search(query="...")` — at most 1-2 calls to locate official
+   docs domain. STOP once found.
+3. `web_fetch(url="<landing>")` — inspect doc structure. Up to 3-4
+   pages to map the tree, no more.
+
+## Step 3: compose plan.json
+
+Persist via `write_file(path=plan_path, content=...)`. Returning the
+plan inline in your reply without write_file is a protocol violation —
+the next stage reads from disk only.
 
 ```json
 {
-  "tech_stack": "<target>",
+  "intent": "<verbatim intent string>",
+  "intent_summary": "<one-line distilled goal>",
+  "tech_stack": "<inferred slug>",
+  "constraints": [
+    "focus:form-components",
+    "skip:antd-table",
+    "granularity:per-component",
+    "max_size:5kb"
+  ],
   "skills": [
     {
-      "name": "<techstack>-<component>",
+      "name": "<tech>-<component>",
       "primary": "https://<official-docs-url>",
-      "complements": ["https://...", "..."],
+      "complements": ["https://..."],
       "estimated_tokens": 18000,
-      "rationale": "one sentence: why this is one skill"
+      "rationale": "Why this skill, why this scope (refs constraints)"
     }
-  ]
+  ],
+  "build_batch_size": 3,
+  "build_batch_rationale": "<one-line reasoning per Step 4>"
 }
 ```
+
+## Step 4: recommend build_batch_size
+
+After you've decided the skills list, recommend a build_batch_size based on:
+
+- N = number of skills you plan to produce (length of skills array)
+- avg estimated_tokens per skill (from your skills[].estimated_tokens)
+- Provider context window (~256K for both DeepSeek and Qwen)
+- Empirical observation: each skill in build adds ~80-100K to conversation prompt
+  due to system prompt + reasoning_content + tool_results accumulation
+
+Heuristic:
+- If avg_tokens < 10K → batch_size 4-5 (skills are small, can pack more per batch)
+- If avg_tokens 10-25K → batch_size 3 (default)
+- If avg_tokens > 25K → batch_size 1-2 (large skills accumulate fast)
+- Hard cap: skills_in_batch × 100K ≤ 200K (leave 56K buffer for system + reasoning + tool overhead)
+
+For N=1 (single skill plan), batch_size MUST be 1.
+For N=2, prefer batch_size=2 (single batch, max cache reuse) unless skills are huge.
+
+Output build_batch_size as a positive integer + a one-line rationale
+in `build_batch_rationale`.
+
+## Skill-list rules (HARD)
+
+- The skills list MUST honor every constraint:
+  * Every focus:<topic> should appear (or be subsumed) in at least one
+    skill's scope.
+  * No skill may overlap a skip:<topic> entry.
+- If `existing_skills` already covers a topic that the intent does not
+  explicitly override, prefer NOT to redistill — leave it out and add a
+  `skip:already-distilled-<name>` constraint to make the decision
+  auditable.
+- Aim for 1-5 skills total at component / module granularity (unless
+  granularity hint says otherwise).
 
 ## Source rules
 
@@ -130,17 +212,11 @@ You DO NOT distill, fetch, or write SKILL.md. You only plan.
 - NEVER include: community blogs, Medium, Stack Overflow, translated docs.
 - Each skill: 1 primary URL + 0..3 complements.
 - For GitHub markdown, prefer raw.githubusercontent.com URLs.
-- Aim for 1-5 skills total per tech_stack — granularity at the component
-  / module level, not page level.
 
-## Hard constraints
+## Final reply
 
-- Call list_skills before planning — never skip dedup.
-- Once you've located the official docs domain, do NOT issue more
-  web_search calls.
-- The plan.json file MUST be persisted via write_file. Returning the
-  plan inline in your reply without write_file is a protocol violation —
-  the next stage reads from disk only.
+After write_file succeeds, return a short JSON status (no fences):
+`{"status":"ok","plan_path":"...","tech_stack":"...","skill_count":N}`
 """
 
 BUILD_PROMPT = """\
@@ -237,6 +313,21 @@ KEEP: high-frequency usage, edge behavior, breaking changes, minimal
 examples. DROP: marketing text, full API reference, internal impl,
 rarely-used features. Do NOT include capability field — that's step 3.
 
+tech_stack taxonomy — closed enumeration (use ONLY canonical names from
+this enumeration when filling frontmatter `tech_stack:`):
+
+```
+__TECH_STACK_TAXONOMY__
+```
+
+Selection rules for `tech_stack:`:
+- Pick 1-3 canonical tech_stack names per skill (cross-stack综合 up to 5)
+- Values MUST be from the enumeration above; aliases listed under
+  "合并别名" must be normalized to the canonical name — DO NOT invent
+  new tech_stack values
+- For `language:` use the actual programming language slug (lowercase),
+  omit when language-agnostic
+
 ### Step 3: mark capability
 
 For each SKILL.md you wrote in step 2, read it, decide 1-3 capability
@@ -244,24 +335,18 @@ keys from the closed taxonomy below, then read+write the file to insert
 `capability: [key1, key2]` into the frontmatter (right after `language`
 or `tech_stack` if no `language`). Keep the array on a single line.
 
-Capability taxonomy (use ONLY these values):
+Capability taxonomy — closed enumeration (use ONLY values defined here):
 
 ```
-ui-input ui-form ui-layout ui-navigation ui-feedback ui-overlay
-ui-data-display ui-chart ui-theme ui-animation
-auth oauth sso permissions user-management
-data-fetching data-mutation data-validation form-validation
-data-serialization data-persistence caching state-management
-database search file-upload
-http-client http-server websocket api-gateway rate-limiting
-logging monitoring metrics tracing error-handling
-cicd containerization orchestration config-management
-secret-management feature-flags
-ios android web desktop cli browser-extension
-cc-hook cc-mcp cc-skill cc-agent cc-config cc-tool
-testing documentation internationalization accessibility
-performance security migration
+__CAPABILITY_TAXONOMY__
 ```
+
+Selection rules:
+- Pick 1-3 capability keys per skill (cross-domain components up to 5)
+- Values MUST be from the enumeration above; if no key fits exactly,
+  pick the closest available — DO NOT invent new keys
+- Each key is documented with "包含/不包含/示例" — read the descriptions
+  carefully before picking
 
 ## Tool usage rules
 
@@ -282,6 +367,184 @@ the plan. After persisting, send a short JSON status reply (no fences),
 e.g. `{"status":"ok","step":"preprocess","skills_done":["foo","bar"]}`,
 then await the next user nudge.
 """
+
+# ---------------------------------------------------------------------------
+# Tag catalog: authoritative closed-set source of truth
+# ---------------------------------------------------------------------------
+# Lives at ``<skills_base>/_tag_catalog.json``. Both the mcp/skill-catalog
+# server (for available_tags) and this distill pipeline (for BUILD_PROMPT
+# closed-set injection) read from it. After build, any new tag values that
+# appeared in produced SKILL.md but weren't in the catalog are
+# auto-appended with ``null`` description for later manual fill-in.
+TAG_CATALOG_FILENAME = "_tag_catalog.json"
+
+
+def load_tag_catalog(skills_base: str | Path) -> dict:
+    """Load <skills_base>/_tag_catalog.json. Hard-fail on missing/invalid.
+
+    The closed-set catalog is mandatory for distillation — without it the
+    BUILD_PROMPT would let the LLM invent arbitrary tag values, defeating
+    the whole point of having a curated taxonomy.
+    """
+    path = Path(skills_base) / TAG_CATALOG_FILENAME
+    if not path.exists():
+        raise RuntimeError(
+            f"tag catalog missing: {path}. The distill pipeline requires "
+            f"an authoritative closed-set tag catalog. Create the JSON "
+            f"file before running."
+        )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"tag catalog at {path} is invalid JSON: {e}") from e
+    if not isinstance(data, dict):
+        raise RuntimeError(f"tag catalog at {path} must be a JSON object")
+    return data
+
+
+def _render_dict_taxonomy(field: dict | list, header: str) -> str:
+    """Render capability or tech_stack section as a markdown bullet list."""
+    lines = [header, ""]
+    if isinstance(field, dict):
+        for key in sorted(field.keys()):
+            desc = field[key]
+            if desc:
+                lines.append(f"- **{key}**: {desc}")
+            else:
+                lines.append(f"- **{key}**")
+    elif isinstance(field, list):
+        for key in sorted(field):
+            lines.append(f"- **{key}**")
+    return "\n".join(lines)
+
+
+def render_tag_catalog_for_prompt(catalog: dict) -> tuple[str, str]:
+    """Return (capability_block, tech_stack_block) markdown strings."""
+    cap_block = _render_dict_taxonomy(
+        catalog.get("capability", {}),
+        "Capability taxonomy (closed set, pick ONLY from these keys):",
+    )
+    tech_block = _render_dict_taxonomy(
+        catalog.get("tech_stack", {}),
+        "tech_stack taxonomy (closed set, pick ONLY from these canonical names):",
+    )
+    return cap_block, tech_block
+
+
+def build_prompt_with_catalog(catalog: dict) -> str:
+    """Inject closed-set taxonomies into the BUILD_PROMPT template."""
+    cap_block, tech_block = render_tag_catalog_for_prompt(catalog)
+    return BUILD_PROMPT.replace(
+        "__CAPABILITY_TAXONOMY__", cap_block
+    ).replace(
+        "__TECH_STACK_TAXONOMY__", tech_block
+    )
+
+
+def _parse_skill_frontmatter(skill_md_path: Path) -> dict:
+    """Read SKILL.md frontmatter (between leading ``---`` fences) as dict."""
+    if not skill_md_path.exists():
+        return {}
+    text = skill_md_path.read_text(encoding="utf-8", errors="replace")
+    if not text.startswith("---"):
+        return {}
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {}
+    fm_text = parts[1]
+    out: dict = {}
+    for line in fm_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        key = key.strip()
+        val = val.strip()
+        if val.startswith("[") and val.endswith("]"):
+            inner = val[1:-1].strip()
+            items = [x.strip().strip("'\"") for x in inner.split(",") if x.strip()]
+            out[key] = items
+        else:
+            out[key] = val.strip("'\"")
+    return out
+
+
+def auto_append_new_tags(
+    skills_base: str | Path,
+    skill_outputs: list[dict],
+) -> dict:
+    """Detect new capability/tech_stack values from produced SKILL.md and
+    append them to the catalog json with ``null`` description.
+
+    Returns a dict ``{"capability": [...], "tech_stack": [...]}`` listing
+    what was newly appended (empty lists when nothing new).
+    """
+    appended = {"capability": [], "tech_stack": []}
+    base = Path(skills_base)
+    catalog_path = base / TAG_CATALOG_FILENAME
+    if not catalog_path.exists():
+        return appended
+    try:
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return appended
+
+    cap_field = catalog.get("capability")
+    tech_field = catalog.get("tech_stack")
+    cap_keys = set(cap_field.keys() if isinstance(cap_field, dict) else (cap_field or []))
+    tech_keys = set(tech_field.keys() if isinstance(tech_field, dict) else (tech_field or []))
+
+    new_caps: set[str] = set()
+    new_techs: set[str] = set()
+    for so in skill_outputs:
+        if not so.get("exists"):
+            continue
+        fm = _parse_skill_frontmatter(Path(so["path"]))
+        for cap in fm.get("capability", []) or []:
+            if cap and cap not in cap_keys:
+                new_caps.add(cap)
+        for tech in fm.get("tech_stack", []) or []:
+            if tech and tech not in tech_keys:
+                new_techs.add(tech)
+
+    if not new_caps and not new_techs:
+        return appended
+
+    # Append (preserve dict shape if present, else upgrade list→dict so we
+    # can store null descriptions consistently).
+    if isinstance(cap_field, dict):
+        for k in new_caps:
+            cap_field[k] = None
+    else:
+        upgraded = {k: None for k in (cap_field or [])}
+        for k in new_caps:
+            upgraded[k] = None
+        catalog["capability"] = upgraded
+    if isinstance(tech_field, dict):
+        for k in new_techs:
+            tech_field[k] = None
+    else:
+        upgraded = {k: None for k in (tech_field or [])}
+        for k in new_techs:
+            upgraded[k] = None
+        catalog["tech_stack"] = upgraded
+
+    catalog["updated_at"] = _dt.date.today().isoformat()
+    catalog_path.write_text(
+        json.dumps(catalog, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    appended["capability"] = sorted(new_caps)
+    appended["tech_stack"] = sorted(new_techs)
+    print(
+        f"[catalog] appended new tags: "
+        f"capability={appended['capability']} "
+        f"tech_stack={appended['tech_stack']}",
+        file=sys.stderr,
+    )
+    return appended
+
 
 STEP_1_NUDGE = """\
 Begin **Step 1/3: preprocess** for THIS BATCH.
@@ -577,9 +840,36 @@ def run_tool_loop(
 # ---------------------------------------------------------------------------
 # Stage 1: plan
 # ---------------------------------------------------------------------------
+def _list_existing_skills(skills_base: str) -> list[str]:
+    """Enumerate existing top-level skill dirs under skills_base.
+
+    Returns a flat list of "<tech>/<skill>" identifiers (when nested) or
+    just "<skill>" (when not). Quiet on missing path.
+    """
+    base = Path(skills_base)
+    if not base.exists():
+        return []
+    out: list[str] = []
+    try:
+        for tech_dir in sorted(base.iterdir()):
+            if not tech_dir.is_dir() or tech_dir.name.startswith("."):
+                continue
+            # Direct SKILL.md (flat layout)
+            if (tech_dir / "SKILL.md").exists():
+                out.append(tech_dir.name)
+                continue
+            # Nested: <tech>/<skill>/SKILL.md
+            for sub in sorted(tech_dir.iterdir()):
+                if sub.is_dir() and (sub / "SKILL.md").exists():
+                    out.append(f"{tech_dir.name}/{sub.name}")
+    except OSError:
+        pass
+    return out
+
+
 def run_plan(
     adapter,
-    tech_stack: str,
+    intent: str,
     plan_dir: Path,
     skills_base: str,
     recorder: StageRecorder,
@@ -588,22 +878,32 @@ def run_plan(
     max_iterations: int = 25,
     max_tokens: int = 8192,
 ) -> tuple[StageStats, dict]:
-    """Run the plan conversation. Returns (stats, plan_dict)."""
+    """Run the plan conversation. Returns (stats, plan_dict).
+
+    The plan stage now interprets a natural-language ``intent`` instead
+    of a bare tech_stack slug. The LLM is responsible for inferring a
+    clean ``tech_stack`` slug from the intent and emitting it in
+    plan.json — downstream stages read it from there.
+    """
     stats = StageStats(stage="plan")
     plan_path = plan_dir / "plan.json"
     plan_dir.mkdir(parents=True, exist_ok=True)
 
+    existing_skills = _list_existing_skills(skills_base)
+
     system_messages = adapter.build_system(PLAN_PROMPT)
     user_msg = json.dumps({
-        "tech_stack": tech_stack,
+        "intent": intent,
+        "existing_skills": existing_skills,
         "plan_path": str(plan_path),
         "skills_base": skills_base,
         "instructions": (
-            "Discover authoritative sources for the tech_stack and "
-            f"persist plan.json to {plan_path} via write_file. Then "
-            "reply with a short status JSON."
+            "Interpret the intent (extract tech_stack slug + "
+            "constraints), discover authoritative sources honoring "
+            f"every constraint, and persist plan.json to {plan_path} "
+            "via write_file. Then reply with a short status JSON."
         ),
-    }, indent=2)
+    }, indent=2, ensure_ascii=False)
 
     messages = [*system_messages, {"role": "user", "content": user_msg}]
 
@@ -758,6 +1058,7 @@ def run_build(
     tool_budget_multiplier: float = 1.0,
     max_iterations_per_step: int = 30,
     max_tokens: int = 8192,
+    build_prompt: str | None = None,
 ) -> tuple[StageStats, list[dict]]:
     """Run a single build conversation for ONE BATCH of skills.
 
@@ -771,7 +1072,10 @@ def run_build(
     cleaned_dir.mkdir(parents=True, exist_ok=True)
 
     stats = StageStats(stage=f"build_batch_{batch_idx}")
-    system_messages = adapter.build_system(BUILD_PROMPT)
+    # Use injected, catalog-rendered BUILD_PROMPT if provided; else fall
+    # back to the unrendered template (only smoke-tests hit this path).
+    effective_prompt = build_prompt if build_prompt is not None else BUILD_PROMPT
+    system_messages = adapter.build_system(effective_prompt)
     messages = list(system_messages)
 
     # Transcript seed
@@ -889,54 +1193,78 @@ def run_build(
 DEFAULT_RUNS_DIR = str(Path(__file__).resolve().parent / "runs")
 
 
+_TECH_SLUG_RE = re.compile(r"[^a-z0-9-]+")
+
+
+def _normalize_tech_slug(raw: str | None) -> str:
+    """Force a tech_stack value into a safe filesystem slug."""
+    if not raw:
+        return "unknown"
+    s = str(raw).strip().lower().replace(" ", "-").replace("/", "-")
+    s = _TECH_SLUG_RE.sub("-", s).strip("-")
+    return s or "unknown"
+
+
 def run_pipeline(
     adapter: DeepSeekAdapter | QwenAdapter,
-    tech_stack: str,
+    intent: str,
     output_dir: str = "/tmp/skill-src",
     skills_base: str | None = None,
     runs_dir: str | None = None,
     tool_budget_multiplier: float = 1.0,
     max_skills: int = 0,
-    build_batch_size: int = 3,
 ) -> PipelineStats:
-    """Run the full 3-stage distillation pipeline."""
+    """Run the full 3-stage distillation pipeline.
+
+    ``intent`` is a natural-language request. The plan stage extracts a
+    filesystem-safe tech_stack slug from the intent; downstream stages
+    use that slug for workspace + skills_base path layout.
+    """
     if skills_base is None:
-        skills_base = os.environ.get(
-            "SKILL_LIBRARY_PATH",
-            os.path.expanduser("~/.claude/skills"),
+        skills_base = os.environ.get("SKILL_LIBRARY_PATH")
+    if not skills_base:
+        raise RuntimeError(
+            "skills_base unset: pass --skills-base or export "
+            "SKILL_LIBRARY_PATH. Recommended: "
+            "/Users/mhbzhy/claude-config/skills (the technical knowledge "
+            "library indexed by mcp/skill-catalog). The legacy default "
+            "~/.claude/skills is no longer auto-applied."
         )
+
+    # Load authoritative tag catalog. Hard-fail if missing — distillation
+    # without a closed-set taxonomy would let the LLM invent tags.
+    tag_catalog = load_tag_catalog(skills_base)
+    rendered_build_prompt = build_prompt_with_catalog(tag_catalog)
 
     runs_root = runs_dir or DEFAULT_RUNS_DIR
     recorder = RunRecorder(runs_root)
     print(f"  Run dir:  {recorder.root}")
 
-    # Workspace dirs (under output_dir/<tech>/)
-    work_root = Path(output_dir) / tech_stack
-    work_root.mkdir(parents=True, exist_ok=True)
-    plan_dir = work_root            # plan.json lives at work_root/plan.json
-    raw_dir = work_root / "raw"
-    cleaned_dir = work_root / "cleaned"
-    plan_path = plan_dir / "plan.json"
+    # The tech_stack slug isn't known until the plan stage finishes. We
+    # write the plan into a staging path keyed by run_id, then move /
+    # mirror into the canonical <output_dir>/<tech>/ once known.
+    staging_root = Path(output_dir) / f"_staging-{recorder.run_id}"
+    staging_root.mkdir(parents=True, exist_ok=True)
 
     plan_budget = max(1, int(round(PLAN_TOOL_BUDGET * tool_budget_multiplier)))
     config_dict = {
         "run_id": recorder.run_id,
         "provider": adapter.name,
         "model": adapter.model,
-        "tech_stack": tech_stack,
+        "intent": intent,
         "output_dir": output_dir,
         "skills_base": skills_base,
         "runs_dir": runs_root,
         "tool_budget_multiplier": tool_budget_multiplier,
         "plan_tool_budget": plan_budget,
         "build_budget_formula": {
-            "step_1": "5 + 7*N",
-            "step_2": "4 + 4*N",
-            "step_3": "3 + 3*N",
+            "step_1": "8 + 7*N",
+            "step_2": "5 + 4*N",
+            "step_3": "4 + 3*N",
             "multiplier": tool_budget_multiplier,
             "note": "N = number of skills in the batch",
         },
-        "build_batch_size": build_batch_size,
+        "build_batch_size": None,  # set after plan stage from plan_dict
         "max_skills": max_skills,
         "schema_version": 2,
     }
@@ -945,7 +1273,7 @@ def run_pipeline(
     stats = PipelineStats(
         provider=adapter.name,
         model=adapter.model,
-        tech_stack=tech_stack,
+        tech_stack="(pending-plan)",
     )
 
     plan_skill_names: list[str] = []
@@ -970,18 +1298,52 @@ def run_pipeline(
 
     # ── Stage 1: plan ─────────────────────────────────────────────
     print(f"\n{'='*60}")
-    print(f"  Stage 1/3: plan — discovering sources for [{tech_stack}]")
+    print(f"  Stage 1/3: plan — interpreting intent + discovering sources")
+    print(f"  Intent: {intent[:120]}{'…' if len(intent) > 120 else ''}")
     print(f"{'='*60}")
     plan_recorder = recorder.stage("plan")
     plan_stats, plan_dict = run_plan(
         adapter,
-        tech_stack,
-        plan_dir,
+        intent,
+        staging_root,
         skills_base,
         plan_recorder,
         tool_budget=plan_budget,
     )
     stats.plan_stats = plan_stats
+
+    # Extract tech_stack slug from plan and relocate workspace.
+    tech_stack = _normalize_tech_slug(plan_dict.get("tech_stack"))
+    plan_dict["tech_stack"] = tech_stack
+    stats.tech_stack = tech_stack
+    config_dict["tech_stack"] = tech_stack
+    config_dict["intent_summary"] = plan_dict.get("intent_summary", "")
+    config_dict["constraints"] = plan_dict.get("constraints", []) or []
+
+    # build_batch_size now comes from the plan LLM (it knows skill count
+    # + avg estimated_tokens). Fallback to 3 if missing for back-compat.
+    raw_bbs = plan_dict.get("build_batch_size")
+    if isinstance(raw_bbs, int) and raw_bbs > 0:
+        build_batch_size = raw_bbs
+    else:
+        import sys as _sys
+        print(
+            f"  WARN: plan.json missing/invalid build_batch_size "
+            f"({raw_bbs!r}); falling back to 3",
+            file=_sys.stderr,
+        )
+        build_batch_size = 3
+    config_dict["build_batch_size"] = build_batch_size
+    config_dict["build_batch_rationale"] = plan_dict.get(
+        "build_batch_rationale", ""
+    )
+
+    work_root = Path(output_dir) / tech_stack
+    work_root.mkdir(parents=True, exist_ok=True)
+    plan_dir = work_root
+    raw_dir = work_root / "raw"
+    cleaned_dir = work_root / "cleaned"
+    plan_path = plan_dir / "plan.json"
 
     # Apply --max-skills truncation
     raw_skills = plan_dict.get("skills", []) or []
@@ -989,10 +1351,13 @@ def run_pipeline(
     if max_skills > 0 and original_count > max_skills:
         plan_dict["skills"] = raw_skills[:max_skills]
         print(f"  --max-skills {max_skills}: truncated from {original_count} skills")
-        # Persist the truncated plan back to disk so build sees the same view
-        plan_path.write_text(
-            json.dumps(plan_dict, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+
+    # Always persist the (possibly enriched / truncated) plan to the
+    # canonical workspace path so the build stage reads from disk.
+    plan_path.write_text(
+        json.dumps(plan_dict, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
     plan_skill_names.extend(s.get("name", "") for s in plan_dict.get("skills", []))
     config_dict["original_skill_count"] = original_count
     config_dict["executed_skill_count"] = len(plan_skill_names)
@@ -1072,6 +1437,7 @@ def run_pipeline(
                 batch_recorder,
                 batch_idx=batch_idx,
                 tool_budget_multiplier=tool_budget_multiplier,
+                build_prompt=rendered_build_prompt,
             )
         except Exception as exc:  # noqa: BLE001
             # Degraded tolerance: a batch failure should not kill the run.
@@ -1155,6 +1521,16 @@ def run_pipeline(
 
     stats.build_stats = merged_build
     stats.skills_created = sum(1 for s in skill_outputs if s.get("exists"))
+
+    # Post-build: auto-append any new tag values to the authoritative catalog.
+    try:
+        appended = auto_append_new_tags(skills_base, skill_outputs)
+    except Exception as e:  # noqa: BLE001
+        print(f"  WARN: auto_append_new_tags failed: {e}", file=sys.stderr)
+        appended = {"capability": [], "tech_stack": []}
+    config_dict["new_tags_appended"] = appended
+    recorder.write_config(config_dict)
+
     print(f"\n  Build TOTAL: SKILL.md created={stats.skills_created}/{len(skill_outputs)} "
           f"prompt={merged_build.prompt_tokens} cached={merged_build.cached_tokens} "
           f"completion={merged_build.completion_tokens} "
@@ -1201,16 +1577,23 @@ def main():
         description="Skill distillation pipeline — 3-stage (plan/fetch/build)"
     )
     parser.add_argument(
-        "tech_stack",
-        help="Target tech stack, e.g. 'antd', 'fastapi'",
+        "--intent",
+        required=True,
+        help=(
+            "Natural-language distillation intent. "
+            "Should describe the target tech stack and any "
+            "focus / skip / granularity / size constraints. "
+            "Example: 'distill antd form components, focus on "
+            "Form/Input/Select, skip Calendar/Charts'."
+        ),
     )
     parser.add_argument(
-        "--provider",
-        choices=["deepseek", "qwen"],
-        default="deepseek",
+        "--model",
+        help=(
+            "Model name override. Falls back to $DISTILL_MODEL, then to "
+            "the provider's built-in default."
+        ),
     )
-    parser.add_argument("--model", help="Model name override")
-    parser.add_argument("--api-key", help="API key (falls back to env var)")
     parser.add_argument(
         "--output-dir",
         default="/tmp/skill-src",
@@ -1218,8 +1601,13 @@ def main():
     )
     parser.add_argument(
         "--skills-base",
-        help="Output dir for SKILL.md files "
-             "(default: $SKILL_LIBRARY_PATH or ~/.claude/skills)",
+        help=(
+            "Output dir for SKILL.md files. Falls back to "
+            "$SKILL_LIBRARY_PATH if unset. NO implicit default — must "
+            "be provided one way or another. Recommended: "
+            "/Users/mhbzhy/claude-config/skills (the technical knowledge "
+            "library indexed by mcp/skill-catalog)."
+        ),
     )
     parser.add_argument(
         "--runs-dir",
@@ -1240,43 +1628,64 @@ def main():
         "--max-skills",
         type=int,
         default=0,
-        help="Truncate plan to first N skills (0 = no truncation)",
-    )
-    parser.add_argument(
-        "--build-batch-size",
-        type=int,
-        default=3,
         help=(
-            "Number of skills processed per build conversation. "
-            "Each batch starts a fresh messages array (system prompt is "
-            "byte-identical so prefix cache still hits). 0 = single "
-            "conversation for ALL skills (legacy fallback). Default: 3."
+            "Truncate plan to first N skills (0 = no truncation). "
+            "For testing/debugging only; do not use in production calls."
         ),
     )
     args = parser.parse_args()
 
+    # ── Resolve provider + api_key from .env (CLI no longer accepts them) ──
+    provider = os.environ.get("DISTILL_PROVIDER", "").strip().lower()
+    if provider not in {"deepseek", "qwen"}:
+        raise SystemExit(
+            "ERROR: DISTILL_PROVIDER missing or invalid in environment "
+            f"(got {provider!r}; expected 'deepseek' or 'qwen').\n\n"
+            "Configure it in /Users/mhbzhy/claude-config/distill/.env\n"
+            "See /Users/mhbzhy/claude-config/distill/.env.example for "
+            "a template."
+        )
+
+    if provider == "deepseek":
+        api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        key_var = "DEEPSEEK_API_KEY"
+    else:  # qwen
+        api_key = os.environ.get("DASHSCOPE_API_KEY", "").strip()
+        key_var = "DASHSCOPE_API_KEY"
+
+    if not api_key:
+        raise SystemExit(
+            f"ERROR: {key_var} missing in environment (required when "
+            f"DISTILL_PROVIDER={provider}).\n\n"
+            "Configure it in /Users/mhbzhy/claude-config/distill/.env\n"
+            "See /Users/mhbzhy/claude-config/distill/.env.example for "
+            "a template."
+        )
+
+    # CLI --model overrides $DISTILL_MODEL which overrides adapter default.
+    model = args.model or os.environ.get("DISTILL_MODEL") or None
+
     from adapter import create_adapter
 
     adapter = create_adapter(
-        provider=args.provider,
-        model=args.model,
-        api_key=args.api_key,
+        provider=provider,
+        model=model,
+        api_key=api_key,
     )
 
-    print("\n  Pipeline: skill-distill v0.2 (3-stage)")
-    print(f"  Provider: {args.provider} ({adapter.model})")
-    print(f"  Target:   {args.tech_stack}")
+    print("\n  Pipeline: skill-distill v0.4 (intent-driven, 3-stage, env-config)")
+    print(f"  Provider: {provider} ({adapter.model})")
+    print(f"  Intent:   {args.intent}")
     print(f"  Temp:     {args.output_dir}")
 
     stats = run_pipeline(
         adapter=adapter,
-        tech_stack=args.tech_stack,
+        intent=args.intent,
         output_dir=args.output_dir,
         skills_base=args.skills_base,
         runs_dir=args.runs_dir,
         tool_budget_multiplier=args.tool_budget_multiplier,
         max_skills=args.max_skills,
-        build_batch_size=args.build_batch_size,
     )
 
     print("\n" + stats.report())

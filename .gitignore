@@ -10,7 +10,11 @@ __pycache__/
 uv.lock
 
 # skill-distill pipeline 运行产物（每次执行写一份 timestamp 目录）
-scripts/distill/runs/
+distill/runs/
+
+# skill-distill 本地凭据（含 DEEPSEEK_API_KEY / DASHSCOPE_API_KEY），勿提交
+# .env.example 是模板，需要 commit；.env 才是含 secret 的实例
+distill/.env
 
 # Ollama 项目内部署（完全自包含，不干涉用户系统环境）
 # - vendor/ollama/         = 下载的 binary + MLX/GGML 后端（~170MB）
