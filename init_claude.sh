@@ -14,7 +14,8 @@
 # Skill（如 /git-commit、/knowledge-retrieval）。这与 MCP skill-catalog 知识库
 # 检索系统（索引 claude-config/skills/，由 server 端按 tag 命中后吐 markdown）
 # 是两套完全独立的方案：前者走 Claude Code 内置 skill loader，后者走 MCP tool。
-# ---------------------------------------------------------------------------set -euo pipefail
+# ---------------------------------------------------------------------------
+set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DST="$HOME/.claude"
