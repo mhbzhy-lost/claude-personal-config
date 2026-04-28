@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -223,12 +224,42 @@ class SkillCatalog:
         return out
 
     def available_tags(self) -> dict[str, list[str]]:
-        """Return the closed-set tag universe present in the indexed library.
+        """Return the closed-set tag universe.
+
+        Resolution order:
+
+        1. Authoritative — read ``<library_path>/_tag_catalog.json`` if
+           present. ``capability`` / ``tech_stack`` may be either a dict
+           (``{key: description}``) or a plain list of keys; ``language``
+           is a flat list. Description values are ignored here — the
+           function returns sorted keys only.
+        2. Fallback — aggregate the tag universe from indexed SKILL.md
+           frontmatter (legacy "what's actually used" reflection).
 
         Consumed by downstream classifiers as a ``pick only from this set``
         constraint. Each dimension is returned as a sorted, de-duplicated
         list.
         """
+        catalog_path = self.library / "_tag_catalog.json"
+        if catalog_path.exists():
+            try:
+                data = json.loads(catalog_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                data = None
+            if isinstance(data, dict):
+                def _keys(field: str) -> list[str]:
+                    val = data.get(field)
+                    if isinstance(val, dict):
+                        return sorted(val.keys())
+                    if isinstance(val, list):
+                        return sorted({str(x) for x in val})
+                    return []
+                return {
+                    "tech_stack": _keys("tech_stack"),
+                    "language": _keys("language"),
+                    "capability": _keys("capability"),
+                }
+
         tech: set[str] = set()
         langs: set[str] = set()
         caps: set[str] = set()
