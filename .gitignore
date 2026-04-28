@@ -9,6 +9,9 @@ __pycache__/
 .venv/
 uv.lock
 
+# skill-distill pipeline 运行产物（每次执行写一份 timestamp 目录）
+scripts/distill/runs/
+
 # Ollama 项目内部署（完全自包含，不干涉用户系统环境）
 # - vendor/ollama/         = 下载的 binary + MLX/GGML 后端（~170MB）
 # - .ollama-models/        = 模型权重存储（qwen3:4b 约 2.5GB）

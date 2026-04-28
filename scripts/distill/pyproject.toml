@@ -1,0 +1,20 @@
+[project]
+name = "skill-distill"
+version = "0.1.0"
+description = "API-based 3-stage skill distillation pipeline for DeepSeek and Qwen"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.0.0",
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+]
+
+[project.scripts]
+skill-distill = "pipeline:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["adapter", "tools", "pipeline", "persistence"]
