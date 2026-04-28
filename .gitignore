@@ -1,4 +1,6 @@
-.claude/
+.claude/*
+!.claude/memory/
+!.claude/settings.json
 .DS_Store
 
 # Python

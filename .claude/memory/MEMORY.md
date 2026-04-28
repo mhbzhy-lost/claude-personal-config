@@ -1,0 +1,2 @@
+- [skill 蒸馏管线 v0.5 架构](project_skill_distill_pipeline.md) — distill/ 是 3-stage（plan + fetch script + build 单对话）OpenAI SDK 蒸馏管线，主 agent CLI 仅 --intent + --skills-base
+- [蒸馏管线设计原则](feedback_distill_design_principles.md) — 双适配器/raw 不进对话/cache 优先/uv/qwen3.6-max-preview/secrets 走 .env/接口极简/标签闭集 SoT
