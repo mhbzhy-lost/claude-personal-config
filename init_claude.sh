@@ -14,10 +14,7 @@
 # Skill（如 /git-commit、/knowledge-retrieval）。这与 MCP skill-catalog 知识库
 # 检索系统（索引 claude-config/skills/，由 server 端按 tag 命中后吐 markdown）
 # 是两套完全独立的方案：前者走 Claude Code 内置 skill loader，后者走 MCP tool。
-#
-# 同时保留历史版本中 "claude 会话链式执行包装函数" 的 ~/.zshrc 注入逻辑。
-
-set -euo pipefail
+# ---------------------------------------------------------------------------set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DST="$HOME/.claude"
@@ -568,203 +565,26 @@ register_http_mcp figma  "https://mcp.figma.com/mcp"
 register_http_mcp sketch "http://localhost:31126/mcp"
 
 # ---------------------------------------------------------------------------
-# 注入 claude → ccr (claude-code-router) 路由包装函数到 ~/.zshrc
-#
-#   设计哲学（v3）：默认 `claude` 命令直通原生 claude（吃本地 Pro/Max 登录态）。
-#   显式 export CLAUDE_USE_CCR=1 时走 ccr daemon → DeepSeek（带 enhancetool
-#   transformer 修工具调用协议差异）。日常用原生 Claude，偶尔需要 DeepSeek
-#   时手动 `CLAUDE_USE_CCR=1 claude ...` 临时切。
-#
-#   ccr daemon 端口 3456；本地 APIKEY 写在 ~/.claude-code-router/config.json
-#   的 APIKEY 字段，wrapper 读取该字段注入 ANTHROPIC_AUTH_TOKEN。
-#
-#   v3 相对 v2 的改动：
-#     - 反转开关变量名：CLAUDE_NO_CCR=0 → CLAUDE_USE_CCR=1（语义更直观）
-#     - 用 ccr_up 状态位 + 启动后再次健康检查；5s 内 ccr 仍未就绪时回退到
-#       原生 claude（v2 缺失此 fallback，会带错 BASE_URL hang）
-#     - python3 调用改为 `command python3`，绕过用户 alias 污染
-#     - 配套注入 _claude_should_autoresume helper：交互式调用自动追加
-#       `--continue --fork-session`（含子命令/会话/打印标志时跳过），
-#       让默认行为变成"续上次会话且分叉新 session id"
-#
-#   迁移：自动清理 ~/.zshrc 中遗留的 v0/v1/v2 wrapper 块。
+# 注册 claude-launchers.zsh 到 ~/.zshrc
+# 提供 claude / claude-qwen / claude-deepseek / claude-log 等 shell 函数
 # ---------------------------------------------------------------------------
+LAUNCHERS_LINE="[[ -f $SRC/scripts/claude-launchers.zsh ]] && source $SRC/scripts/claude-launchers.zsh"
 ZSHRC="$HOME/.zshrc"
-NEW_MARKER="claude_ccr_wrapper_v5"
-HELPER_MARKER="_claude_should_autoresume"
 
-# 通用 awk state-machine：删除从 marker_pattern 匹配行起、到首个独立 '}' 行止
-# 的整段（含 marker 行与 '}' 行）。用于清理历代 wrapper 块。
-prune_block() {
-  local marker_pattern="$1"
-  local file="$2"
-  local tmp
-  tmp="$(mktemp)"
-  awk -v pat="$marker_pattern" '
-    BEGIN { skip = 0 }
-    skip == 0 && $0 ~ pat { skip = 1; next }
-    skip == 1 {
-      if ($0 ~ /^\}[[:space:]]*$/) { skip = 0; next }
-      next
-    }
-    { print }
-  ' "$file" > "$tmp"
-  mv "$tmp" "$file"
-}
+if [ ! -f "$ZSHRC" ]; then
+  echo "[skip] ~/.zshrc not found, please source $SRC/scripts/claude-launchers.zsh manually"
+elif grep -Fq "claude-launchers.zsh" "$ZSHRC"; then
+  echo "[ok] claude-launchers already registered in ~/.zshrc"
+else
+  printf '\n# claude-launchers (auto-registered by init_claude.sh)\n%s\n' "$LAUNCHERS_LINE" >> "$ZSHRC"
+  echo "[linked] claude-launchers registered in ~/.zshrc"
+fi
 
-if [ -f "$ZSHRC" ]; then
-  # v0 → 清理 claude_chain_next 块 + 残留状态文件
-  if grep -q "claude_chain_next" "$ZSHRC"; then
-    echo "[zshrc] 检测到历史 claude_chain_next wrapper，自动清理..."
-    prune_block "链式执行包装函数" "$ZSHRC"
-    rm -f "$HOME/.claude_chain_next" 2>/dev/null || true
-    echo "[zshrc] 已清理旧 claude_chain_next wrapper 与残留状态文件"
-  fi
-
-  # v1 → 清理（仅当未升到更新版本）
-  if grep -q "claude_ccr_wrapper_v1" "$ZSHRC" \
-      && ! grep -q "claude_ccr_wrapper_v2\|claude_ccr_wrapper_v3\|claude_ccr_wrapper_v4" "$ZSHRC"; then
-    echo "[zshrc] 检测到历史 claude_ccr_wrapper_v1 wrapper，自动清理..."
-    prune_block "claude_ccr_wrapper_v1" "$ZSHRC"
-    echo "[zshrc] 已清理旧 claude_ccr_wrapper_v1 wrapper"
-  fi
-
-  # v2 → 清理（仅当未升到 v3/v4）
-  if grep -q "claude_ccr_wrapper_v2" "$ZSHRC" \
-      && ! grep -q "claude_ccr_wrapper_v3\|claude_ccr_wrapper_v4" "$ZSHRC"; then
-    echo "[zshrc] 检测到历史 claude_ccr_wrapper_v2 wrapper，自动清理..."
-    prune_block "claude_ccr_wrapper_v2" "$ZSHRC"
-    echo "[zshrc] 已清理旧 claude_ccr_wrapper_v2 wrapper"
-  fi
-
-  # v3 → 清理（仅当未升到 v4）
-  if grep -q "claude_ccr_wrapper_v3" "$ZSHRC" \
-      && ! grep -q "claude_ccr_wrapper_v4" "$ZSHRC"; then
-    echo "[zshrc] 检测到历史 claude_ccr_wrapper_v3 wrapper，自动清理..."
-    prune_block "claude_ccr_wrapper_v3" "$ZSHRC"
-    echo "[zshrc] 已清理旧 claude_ccr_wrapper_v3 wrapper"
-  fi
-
-  # 注入 v4：helper + wrapper 是配套的（wrapper 体内调用 helper）。
-  # 任一缺失即视为不完整，重新注入完整块；存在时跳过。
-  if grep -q "$NEW_MARKER" "$ZSHRC" && grep -q "$HELPER_MARKER" "$ZSHRC"; then
-    echo "[zshrc] ccr wrapper v4/v5 已存在，跳过注入"
-  else
-    # 若仅 helper 残留（无 v4 wrapper）也清理掉避免重复定义
-    if grep -q "$HELPER_MARKER" "$ZSHRC" && ! grep -q "$NEW_MARKER" "$ZSHRC"; then
-      prune_block "_claude_should_autoresume\\(\\)" "$ZSHRC"
-    fi
-    cat >> "$ZSHRC" << 'EOF'
-
-# claude 自动续聊：交互式调用默认补 --continue --fork-session
-# 跳过：含会话/打印相关标志，或首个参数是子命令
-function _claude_should_autoresume() {
-    if [[ $# -eq 0 ]]; then
-        # 仅当当前目录有历史会话时才自动续聊
-        if ! [[ -f "$HOME/.claude/history.jsonl" ]] \
-            || ! grep -q --fixed-strings "\"project\":\"${PWD}\"" "$HOME/.claude/history.jsonl" 2>/dev/null; then
-            return 1
-        fi
-        return 0
-    fi
-    case "$1" in
-        mcp|config|migrate-installer|setup-token|update|doctor|install)
-            return 1
-            ;;
-    esac
-    local arg
-    for arg in "$@"; do
-        case "$arg" in
-            -c|--continue|-r|--resume|--fork-session|--session-id|-p|--print)
-                return 1
-                ;;
-        esac
-    done
-    return 0
-}
-
-# claude → ccr 路由包装函数（由 claude-config/init_claude.sh 注入，marker: claude_ccr_wrapper_v5）
-# v5 相对于 v4: _claude_should_autoresume 检查 history.jsonl，新目录不续聊
-# 语义：默认走原生 claude；显式 export CLAUDE_USE_CCR=1 才路由到本地 ccr。
-function claude() {
-    if _claude_should_autoresume "$@"; then
-        set -- --continue --fork-session "$@"
-    fi
-    if [[ "${CLAUDE_USE_CCR:-0}" != "1" ]]; then
-        command claude "$@"
-        return $?
-    fi
-
-    # 启动 cache 命中率监控代理（幂等：端口已占用则跳过）
-    local ccm="$HOME/claude-config/monitor-cache-hit.py"
-    local ccm_log="$HOME/.claude-code-router/cache-monitor.log"
-    if [[ -f "$ccm" ]]; then
-        python3 "$ccm" >> "$ccm_log" 2>&1 &
-        local ccm_up=0
-        local j
-        for j in 1 2 3 4 5 6 7 8; do
-            if command python3 -c "
-import socket
-try:
-    s=socket.socket(); s.settimeout(0.3); s.connect(('127.0.0.1',8787)); s.close()
-    print('ready')
-except: pass
-" 2>/dev/null | grep -q ready; then
-                ccm_up=1
-                break
-            fi
-            sleep 0.3
-        done
-        if (( ! ccm_up )); then
-            echo "[claude wrapper] cache monitor proxy 未就绪（日志: $ccm_log），继续启动" >&2
-        fi
-    fi
-
-    local ccr_host="127.0.0.1"
-    local ccr_port="3456"
-    local ccr_url="http://${ccr_host}:${ccr_port}"
-    local ccr_up=0
-    if curl -sf --max-time 1 -o /dev/null "${ccr_url}/" 2>/dev/null \
-        || curl -sf --max-time 1 -o /dev/null "${ccr_url}/api/config" 2>/dev/null; then
-        ccr_up=1
-    fi
-    if (( ! ccr_up )); then
-        if command -v ccr >/dev/null 2>&1; then
-            (ccr start >/dev/null 2>&1 &)
-            local i
-            for i in 1 2 3 4 5 6 7 8 9 10; do
-                if curl -sf --max-time 1 -o /dev/null "${ccr_url}/" 2>/dev/null \
-                    || curl -sf --max-time 1 -o /dev/null "${ccr_url}/api/config" 2>/dev/null; then
-                    ccr_up=1
-                    break
-                fi
-                sleep 0.5
-            done
-        else
-            echo "[claude wrapper] CLAUDE_USE_CCR=1 但 ccr 未安装，本次回退到原生 claude" >&2
-            command claude "$@"
-            return $?
-        fi
-    fi
-    if (( ! ccr_up )); then
-        echo "[claude wrapper] ccr 在 ${ccr_url} 5s 内未就绪，本次回退到原生 claude" >&2
-        command claude "$@"
-        return $?
-    fi
-    local ccr_apikey=""
-    if [[ -f "$HOME/.claude-code-router/config.json" ]]; then
-        ccr_apikey=$(command python3 -c 'import json,os,sys
-try:
-    print(json.load(open(os.path.expanduser("~/.claude-code-router/config.json"))).get("APIKEY",""))
-except Exception:
-    pass' 2>/dev/null)
-    fi
-    ANTHROPIC_BASE_URL="${ccr_url}" \
-    ANTHROPIC_AUTH_TOKEN="${ccr_apikey}" \
-    NO_PROXY="127.0.0.1,localhost" \
-        command claude "$@"
-}
-EOF
-    echo "[zshrc] 已注入 claude → ccr wrapper（marker: $NEW_MARKER；source ~/.zshrc 或重开终端生效）"
-  fi
+# ---------------------------------------------------------------------------
+# 提示 settings/.env 状态（含 deepseek/qwen 凭据，不入 git）
+# ---------------------------------------------------------------------------
+ENV_FILE="$SRC/settings/.env"
+if [ ! -f "$ENV_FILE" ]; then
+  echo "[hint] $ENV_FILE 不存在；请从 settings/.env.example 复制并填入 token："
+  echo "       cp $SRC/settings/.env.example $ENV_FILE && \$EDITOR $ENV_FILE"
 fi
