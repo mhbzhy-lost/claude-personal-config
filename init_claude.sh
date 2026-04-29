@@ -51,9 +51,54 @@ link_item() {
 
 # Items that should live as symlinks under ~/.claude/
 link_item "CLAUDE.md"
-link_item "agents"
 link_item "guidelines"
-link_item "claude-skills" "skills"
+
+# claude-skills 特殊处理：
+#   - 若 ~/.claude/skills 不存在或已是软链 → 走 link_item 软链化
+#   - 若已是真目录（用户/其他工具放过别的 skill）→ 增量同步本仓 3 个 skill 到子目录，
+#     保留其他 skill 不动（每个我们管理的 skill 子目录用 rsync --delete 镜像源）
+sync_claude_skills() {
+  local src_path="$SRC/claude-skills"
+  local dst_path="$DST/skills"
+
+  if [ ! -d "$src_path" ]; then
+    echo "[skip] source $src_path does not exist"
+    return
+  fi
+
+  if [ ! -e "$dst_path" ] || [ -L "$dst_path" ]; then
+    link_item "claude-skills" "skills"
+    return
+  fi
+
+  if ! command -v rsync >/dev/null 2>&1; then
+    echo "[warn] rsync 不可用，跳过 skills 同步；请手动同步 $src_path 到 $dst_path"
+    return
+  fi
+
+  shopt -s nullglob
+  local skill_src skill_name skill_dst
+  for skill_src in "$src_path"/*/; do
+    skill_name=$(basename "$skill_src")
+    skill_dst="$dst_path/$skill_name"
+    if rsync -a --delete "$skill_src" "$skill_dst/" >/dev/null; then
+      echo "[synced] $skill_dst <- $skill_src"
+    else
+      echo "[warn] 同步 $skill_src → $skill_dst 失败"
+    fi
+  done
+  shopt -u nullglob
+}
+sync_claude_skills
+
+# 一次性清理：移除指向已删除目录的失效软链
+#   agents/ 已随 335213f 删除（迁移至 Superpowers 工作流），但 ~/.claude/agents
+#   软链可能仍存在并指向不存在的源
+LEGACY_AGENTS_LINK="$DST/agents"
+if [ -L "$LEGACY_AGENTS_LINK" ] && [ ! -e "$LEGACY_AGENTS_LINK" ]; then
+  rm -f "$LEGACY_AGENTS_LINK"
+  echo "[cleanup] 已移除失效软链 $LEGACY_AGENTS_LINK"
+fi
 
 # ---------------------------------------------------------------------------
 # 合并 settings.json：注入 hooks.SubagentStart（仅 hooks，不含 MCP）
@@ -81,46 +126,20 @@ from pathlib import Path
 src_root = sys.argv[1]
 settings_path = Path(sys.argv[2])
 
-# SubagentStart 保留：
-#   coding-expert       → 注入 coding-expert-rules 共享规范（standard 档）
-#   coding-expert-light → 注入 coding-expert-rules 共享规范（light 档）
-#   coding-expert-heavy → 注入 coding-expert-rules 共享规范（heavy 档）
+# SubagentStart 当前不需要任何 hook（迁移至 Superpowers 工作流后，原有的
+#   coding-expert / coding-expert-light / coding-expert-heavy 三档 subagent
+#   已随 335213f 删除）。此列表保留为空，便于未来追加。
 #
-# 已废弃：
-#   stack-detector / skill-matcher  —— 由 skill-intent-inject.sh 端到端替代后又下线
-#   skill-intent-inject (UserPromptSubmit) —— %skill 关键字与 /knowledge-retrieval
-#       skill 功能重合，已下线；用户改用手动调 /knowledge-retrieval 显式触发
-#   skill-marker (SubagentStart) —— 旧 skill-distill 多 agent 编排架构的角色，
-#       v0.5 重构为 3-stage OpenAI SDK 单进程流水线后已不再派发 subagent
-desired_sub_start_hooks = [
-    {
-        "matcher": "coding-expert",
-        "hooks": [
-            {
-                "type": "command",
-                "command": f"{src_root}/hooks/coding-expert-rules-inject.sh",
-            }
-        ],
-    },
-    {
-        "matcher": "coding-expert-light",
-        "hooks": [
-            {
-                "type": "command",
-                "command": f"{src_root}/hooks/coding-expert-rules-inject.sh",
-            }
-        ],
-    },
-    {
-        "matcher": "coding-expert-heavy",
-        "hooks": [
-            {
-                "type": "command",
-                "command": f"{src_root}/hooks/coding-expert-rules-inject.sh",
-            }
-        ],
-    },
-]
+# 已废弃 hook 历史（由文件下方一次性清理逻辑负责从 settings.json 移除）：
+#   skill-marker        (SubagentStart)  → capability-taxonomy-inject.sh
+#       旧 skill-distill 多 agent 编排架构的角色，v0.5 重构后下线
+#   coding-expert*      (SubagentStart)  → coding-expert-rules-inject.sh
+#       三档 subagent 已删
+#   stack-detector / skill-matcher (SubagentStart) → 由 skill-intent-inject.sh 替代后又下线
+#   skill-intent-inject (UserPromptSubmit) → %skill 关键字与 /knowledge-retrieval 重合后下线
+#   skill-resolve-inject (UserPromptSubmit) → 被 PreToolUse + skill-resolve-preflight 替代
+#   coding-expert-audit (SubagentStop) → 只采集日志无消费，下线
+desired_sub_start_hooks = []
 
 # PreToolUse hook：拦截 mcp__skill-catalog__resolve 调用，硬约束调用方必须
 # 在 tool_input 里携带 tech_stack / capability 至少一个非空，避免 resolve
@@ -185,6 +204,43 @@ for desired in desired_pretooluse_hooks:
         pretool_use[found_idx] = desired
         changed = True
         print(f"[settings] 更新 hooks.PreToolUse[matcher={matcher!r}]")
+
+# 一次性清理：移除已废弃的 SubagentStart hooks
+#   skill-marker        → capability-taxonomy-inject.sh （旧 skill-distill 多 agent 编排架构遗留）
+#   coding-expert*      → coding-expert-rules-inject.sh （三档 subagent 已随 335213f 删除）
+# 仅当 (matcher, command 后缀) 双匹配才删除，避免误伤用户自定义 hook。
+deprecated_sub_start_specs = [
+    ("skill-marker", "/capability-taxonomy-inject.sh"),
+    ("coding-expert", "/coding-expert-rules-inject.sh"),
+    ("coding-expert-light", "/coding-expert-rules-inject.sh"),
+    ("coding-expert-heavy", "/coding-expert-rules-inject.sh"),
+]
+existing_sub_start = hooks.get("SubagentStart")
+if isinstance(existing_sub_start, list):
+    pruned = [
+        entry for entry in existing_sub_start
+        if not (
+            isinstance(entry, dict)
+            and any(
+                entry.get("matcher") == m
+                and any(
+                    isinstance(h, dict) and h.get("command", "").endswith(suffix)
+                    for h in entry.get("hooks", []) if isinstance(h, dict)
+                )
+                for m, suffix in deprecated_sub_start_specs
+            )
+        )
+    ]
+    if len(pruned) != len(existing_sub_start):
+        if pruned:
+            hooks["SubagentStart"] = pruned
+        else:
+            hooks.pop("SubagentStart", None)
+        changed = True
+        print(
+            "[settings] 已清理废弃的 SubagentStart hooks"
+            "（skill-marker / coding-expert*）"
+        )
 
 # 一次性清理：移除已废弃的 SubagentStop hooks（coding-expert-audit.sh）
 # 该 hook 只采集日志无消费，已下线。仅当条目同时满足"matcher 在我们曾管理的
@@ -540,6 +596,32 @@ elif grep -Fq "claude-launchers.zsh" "$ZSHRC"; then
 else
   printf '\n# claude-launchers (auto-registered by init_claude.sh)\n%s\n' "$LAUNCHERS_LINE" >> "$ZSHRC"
   echo "[linked] claude-launchers registered in ~/.zshrc"
+fi
+
+# ---------------------------------------------------------------------------
+# 一次性清理：移除 b9219f0 refactor 之前由 init_claude.sh 直接注入到 ~/.zshrc
+# 的两个函数定义（_claude_should_autoresume + claude_ccr_wrapper_v5）。
+# 它们已抽到 scripts/claude-launchers.zsh 并由 source 加载，旧定义会被同名
+# 函数覆盖（功能正常），但永久污染 zshrc。anchor 用 marker 字符串识别。
+# ---------------------------------------------------------------------------
+if [ -f "$ZSHRC" ] && grep -Fq "claude_ccr_wrapper_v5" "$ZSHRC"; then
+  echo "[cleanup] 检测到历史注入的 ccr wrapper v5 块，自动清理..."
+  TMP_ZSHRC=$(mktemp)
+  awk '
+    BEGIN { skip = 0; close_count = 0 }
+    skip == 0 && /^# claude 自动续聊/ { skip = 1; close_count = 0; next }
+    skip == 1 {
+      if ($0 ~ /^\}[[:space:]]*$/) {
+        close_count += 1
+        if (close_count == 2) { skip = 0 }
+        next
+      }
+      next
+    }
+    { print }
+  ' "$ZSHRC" > "$TMP_ZSHRC"
+  mv "$TMP_ZSHRC" "$ZSHRC"
+  echo "[cleanup] 已从 ~/.zshrc 清理 _claude_should_autoresume + claude_ccr_wrapper_v5"
 fi
 
 # ---------------------------------------------------------------------------
