@@ -7,10 +7,11 @@ description: Git Commit Message 规范——Conventional Commits 轻量化中文
 
 > ## 禁止事项
 >
-> commit message（subject / body / footer）中 **严禁** 出现以下内容：
-> - "Claude"、"Anthropic"、"Claude Code" 等 AI 工具相关标识
-> - `Co-Authored-By: Claude ...` 之类的 AI 工具署名
-> - 其他任何 AI 或自动化工具的署名或标识
+> commit message 中 **严禁** 出现 AI 工具辅助编写的署名或声明，包括但不限于：
+> - `Co-Authored-By: Claude ...`、`Co-Authored-By: Copilot ...` 等
+> - "Generated with Claude"、"AI-assisted" 等辅助编写声明
+>
+> 改动内容本身涉及 AI 工具（如 claude.md、claude-skills）的正常描述不受此限制。
 
 ---
 
