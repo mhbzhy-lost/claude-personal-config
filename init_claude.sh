@@ -82,7 +82,6 @@ src_root = sys.argv[1]
 settings_path = Path(sys.argv[2])
 
 # SubagentStart 保留：
-#   skill-marker        → 注入 capability-taxonomy 闭集，供打标使用
 #   coding-expert       → 注入 coding-expert-rules 共享规范（standard 档）
 #   coding-expert-light → 注入 coding-expert-rules 共享规范（light 档）
 #   coding-expert-heavy → 注入 coding-expert-rules 共享规范（heavy 档）
@@ -91,16 +90,9 @@ settings_path = Path(sys.argv[2])
 #   stack-detector / skill-matcher  —— 由 skill-intent-inject.sh 端到端替代后又下线
 #   skill-intent-inject (UserPromptSubmit) —— %skill 关键字与 /knowledge-retrieval
 #       skill 功能重合，已下线；用户改用手动调 /knowledge-retrieval 显式触发
+#   skill-marker (SubagentStart) —— 旧 skill-distill 多 agent 编排架构的角色，
+#       v0.5 重构为 3-stage OpenAI SDK 单进程流水线后已不再派发 subagent
 desired_sub_start_hooks = [
-    {
-        "matcher": "skill-marker",
-        "hooks": [
-            {
-                "type": "command",
-                "command": f"{src_root}/hooks/capability-taxonomy-inject.sh",
-            }
-        ],
-    },
     {
         "matcher": "coding-expert",
         "hooks": [
@@ -533,37 +525,6 @@ fi
 if [ -x "$OLLAMA_BIN" ] && [ -e "$(manifest_path_for "qwen2.5:7b")" ]; then
   echo "[hint] qwen2.5:7b 模型已不再使用，可用 'OLLAMA_HOST=$OLLAMA_HOST_URL OLLAMA_MODELS=$OLLAMA_MODELS_DIR $OLLAMA_BIN rm qwen2.5:7b' 手动清理（~4.7GB）"
 fi
-
-# ---------------------------------------------------------------------------
-# 注册设计软件 MCP server：Figma（远程）+ Sketch（本地）
-#   - Figma：远程官方 MCP，OAuth 自动处理，无需本地服务
-#     文档：https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/
-#   - Sketch：Sketch 桌面版（2025.2.4+）内置 MCP，需在 Sketch 中按 ⌘K → "Start MCP Server"
-#     文档：https://www.sketch.com/docs/mcp-server/
-# 幂等：URL 一致则 no-op；否则 remove+add 重新注册。注册行为本身不依赖目标在线
-# ---------------------------------------------------------------------------
-register_http_mcp() {
-  local name="$1"
-  local url="$2"
-
-  if ! command -v claude >/dev/null 2>&1; then
-    echo "[warn] claude CLI 不可用，跳过 $name 注册。请手动执行：claude mcp add -s user --transport http $name $url"
-    return
-  fi
-
-  local current
-  current=$(claude mcp get "$name" 2>&1 || true)
-  if echo "$current" | grep -Fq "$url"; then
-    echo "[mcp] $name 已注册且 URL 一致"
-  else
-    claude mcp remove "$name" -s user 2>/dev/null || true
-    claude mcp add -s user --transport http "$name" "$url"
-    echo "[mcp] $name 已注册到 user scope ($url)"
-  fi
-}
-
-register_http_mcp figma  "https://mcp.figma.com/mcp"
-register_http_mcp sketch "http://localhost:31126/mcp"
 
 # ---------------------------------------------------------------------------
 # 注册 claude-launchers.zsh 到 ~/.zshrc

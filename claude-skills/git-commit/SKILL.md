@@ -128,3 +128,79 @@ BREAKING CHANGE: state["current_node"] 中的 "developer_node" 改名为
 - **WIP / 临时检查点**：个人分支上可用 `wip:` 前缀，合并到 main 前必须 squash 重写
 - **revert**：用 `revert: <原 commit subject>` 即可
 - **merge commit**：直接用 git 默认格式
+
+---
+
+## 提交执行流程
+
+写 commit message 之前先取齐 context，再单消息内 stage + commit，避免来回串行。
+
+### 1. 取 context（提交前必跑）
+
+```bash
+git status            # 哪些文件待提交 / 已 stage
+git diff HEAD         # 全部待提交内容（包括 unstaged）
+git branch --show-current
+git log --oneline -10 # 参考近期 commit 风格
+```
+
+四条命令可一次性并行跑（同一消息内多个 Bash 调用）。看完 diff 再决定：
+- 是单 commit 还是要拆成多个（参考"多 commit 拆分原则"）
+- type / scope 怎么选
+- body 该写什么 why
+
+### 2. 分支保护
+
+如果 `git branch --show-current` 显示 `main` / `master`，**先建分支再提交**：
+
+```bash
+git checkout -b <type>/<scope>-<简短描述>
+# 例：git checkout -b fix/recovery-hitl-abort
+```
+
+不要在 main 上直接 commit。
+
+### 3. 单消息 stage + commit
+
+确认好 message 后，同一条消息内并发执行 `git add` + `git commit`，不要分两轮串行。commit message 通过 heredoc 传入以保证换行格式：
+
+```bash
+git commit -m "$(cat <<'EOF'
+<type>(<scope>): <中文 subject>
+
+<可选 body>
+EOF
+)"
+```
+
+### 4. 配套清理
+
+远端已删本地仍存在的分支（`git branch -v` 显示 `[gone]`），用 `/clean_gone` slash command 一键清理（含关联 worktree）。提交完成后顺手跑一次。
+
+---
+
+## 推送 / PR 流程（可选）
+
+提交完成后如需推送并开 PR：
+
+```bash
+git push -u origin <branch>
+gh pr create --fill   # 用最近 commit 自动填 title/body
+```
+
+或更结构化：
+
+```bash
+gh pr create --title "<type>(<scope>): <中文 subject>" --body "$(cat <<'EOF'
+## 改动概要
+- 要点 1
+- 要点 2
+
+## 验证
+- [ ] 单测通过
+- [ ] 手动验证 ...
+EOF
+)"
+```
+
+PR 标题沿用 commit subject 的格式约束（type/scope/中文祈使句），body 用中文。

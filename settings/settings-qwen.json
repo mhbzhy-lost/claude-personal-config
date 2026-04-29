@@ -129,15 +129,6 @@
   "hooks": {
     "SubagentStart": [
       {
-        "matcher": "skill-marker",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/mhbzhy/claude-config/hooks/capability-taxonomy-inject.sh"
-          }
-        ]
-      },
-      {
         "matcher": "coding-expert",
         "hooks": [
           {
@@ -172,46 +163,6 @@
           {
             "type": "command",
             "command": "/Users/mhbzhy/claude-config/hooks/skill-resolve-preflight.sh"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/mhbzhy/claude-config/hooks/skill-intent-inject.sh"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "matcher": "coding-expert",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-audit.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "coding-expert-light",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-audit.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "coding-expert-heavy",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-audit.sh"
           }
         ]
       }
