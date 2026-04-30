@@ -544,6 +544,7 @@ fi
 if command -v claude >/dev/null 2>&1; then
   MCP_CMD="$SKILL_CATALOG_VENV/bin/python"
 
+  # --- skill-catalog MCP ---
   # 检查是否已注册且配置一致（所有 env 变量必须全部匹配）
   # 历史曾注入 SKILL_CATALOG_OLLAMA_MODEL（qwen classifier），现已下线；
   # 旧 state 若仍带该 env 视为配置不一致，触发一次性 re-register。
@@ -567,14 +568,57 @@ if command -v claude >/dev/null 2>&1; then
       -- skill-catalog "$MCP_CMD" -m skill_catalog.server
     echo "[mcp] skill-catalog 已注册到 user scope（embedding=${EMBEDDING_MODEL}, intent_enhancement=${ENABLE_INTENT_ENHANCEMENT}）"
   fi
+
+  # --- playwright-mcp MCP：浏览器自动化 ---
+  if claude mcp get playwright-mcp 2>&1 | grep -q "Connected"; then
+    echo "[mcp] playwright-mcp 已注册"
+  else
+    claude mcp remove playwright-mcp -s user 2>/dev/null || true
+    if claude mcp add -s user -- playwright-mcp npx -y @playwright/mcp; then
+      echo "[mcp] playwright-mcp 已注册到 user scope"
+    else
+      echo "[warn] playwright-mcp 注册失败，请确保 npx 可用"
+    fi
+  fi
 else
-  echo "[warn] claude CLI 不可用，跳过 MCP server 注册。请手动执行："
-  echo "  claude mcp add -s user \\"
-  echo "    -e SKILL_LIBRARY_PATH=$SRC/skills \\"
-  echo "    -e SKILL_CATALOG_EMBEDDING_MODEL=$EMBEDDING_MODEL \\"
-  echo "    -e SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL \\"
-  echo "    -e ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT \\"
-  echo "    -- skill-catalog $SKILL_CATALOG_VENV/bin/python -m skill_catalog.server"
+  echo "[warn] claude CLI 不可用，跳过 MCP server / 插件注册。"
+fi
+
+# ---------------------------------------------------------------------------
+# 安装插件：幂等检查 installed_plugins.json
+# ---------------------------------------------------------------------------
+if command -v claude >/dev/null 2>&1; then
+  PLUGINS_JSON="$DST/plugins/installed_plugins.json"
+
+  # 确保 marketplace 已注册
+  if [ ! -f "$DST/plugins/known_marketplaces.json" ] \
+      || ! grep -q '"claude-plugins-official"' "$DST/plugins/known_marketplaces.json" 2>/dev/null; then
+    echo "[plugins] 注册 marketplace claude-plugins-official ..."
+    claude plugins marketplace add claude-plugins-official github anthropics/claude-plugins-official 2>/dev/null || true
+  fi
+
+  # 插件清单：name:marketplace 一行一个
+  PLUGIN_LIST="superpowers:claude-plugins-official
+plugin-dev:claude-plugins-official
+skill-creator:claude-plugins-official
+agent-sdk-dev:claude-plugins-official
+frontend-design:claude-plugins-official
+github:claude-plugins-official
+commit-commands:claude-plugins-official"
+
+  echo "$PLUGIN_LIST" | while IFS=: read -r plugin_name marketplace; do
+    [ -z "$plugin_name" ] && continue
+    if [ -f "$PLUGINS_JSON" ] && grep -q "\"$plugin_name@$marketplace\"" "$PLUGINS_JSON" 2>/dev/null; then
+      echo "[plugins] $plugin_name@$marketplace 已安装"
+    else
+      echo "[plugins] 安装 $plugin_name@$marketplace ..."
+      if claude plugins install "$plugin_name@$marketplace" 2>&1; then
+        echo "[plugins] $plugin_name@$marketplace 安装完成"
+      else
+        echo "[warn] 插件 $plugin_name@$marketplace 安装失败，请手动安装"
+      fi
+    fi
+  done
 fi
 
 # 提示：已不再使用的 qwen2.5:7b 模型可手动清理（留给用户自决）
