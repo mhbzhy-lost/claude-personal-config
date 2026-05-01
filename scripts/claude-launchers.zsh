@@ -4,7 +4,7 @@
 # --- claude wrapper -----------------------------------------------------------
 claude() {
   if (( $# == 0 )); then
-    command claude --continue --fork-session
+    command claude --continue --fork-session || command claude
   else
     command claude "$@"
   fi
