@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-04-28",
+  "updated_at": "2026-05-01",
   "_doc": "Authoritative closed-set tag catalog for SKILL.md frontmatter. Consumed by mcp/skill-catalog (available_tags) and distill (BUILD_PROMPT injection). Add new keys here when distilling produces previously unseen tags; the distill pipeline auto-appends new keys with null description for later manual fill-in.",
   "capability": {
     "ui-layout": "布局骨架、分栏、容器、栅格。｜不含：内容数据展示｜示例：Grid、Layout、Space、Divider",
@@ -175,15 +175,27 @@
     "agent": "Agent 综合伞标签（无特定框架归属）。",
     "playwright": "Playwright 浏览器自动化 / E2E。",
     "crypto": "加解密 / 密码学综合。",
-    "dash": "MPEG-DASH 流媒体。"
+    "dash": "MPEG-DASH 流媒体。",
+    "media-processing": "音视频处理、编解码、流媒体。合并别名：video-player、video-processing。示例：WebRTC、ffmpeg、HLS",
+    "webrtc": "WebRTC 实时通信协议与 API。示例：RTCPeerConnection、DataChannel、mediasoup",
+    "mysql": "MySQL 关系型数据库。合并别名：mysql8、percona、mariadb（兼容子集）。示例：InnoDB、replication、query-optimization",
+    "rpc": "RPC 通信范式（通用，非特定框架）。示例：gRPC、tRPC、JSON-RPC",
+    "grpc": "gRPC + Protobuf 生态。示例：grpc-go、grpc-web、protoc",
+    "jest-vitest": "Jest / Vitest 测试框架。合并别名：jest、vitest。示例：mock、snapshot、coverage",
+    "mongodb": "MongoDB 文档数据库。示例：aggregation、replica-set、sharding",
+    "rust": "Rust 语言与后端生态。合并别名：rust-lang、rustc。示例：tokio、axum、serde",
+    "vue3": "Vue 3 前端框架。合并别名：vue、vuejs。示例：composition-api、Pinia、Vite",
+    "go": "Go 语言标准库与后端生态。合并别名：golang。示例：net/http、goroutine、context"
   },
   "language": [
     "arkts",
     "blueprint",
+    "bash",
     "cpp",
     "csharp",
     "css",
     "gdscript",
+    "go",
     "hlsl",
     "html",
     "java",
@@ -191,6 +203,7 @@
     "kotlin",
     "objc",
     "python",
+    "rust",
     "sql",
     "swift",
     "typescript"

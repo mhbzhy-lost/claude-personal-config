@@ -53,7 +53,7 @@ from tools import (
 # Budgets are *cumulative* tool-call caps for a single conversation —
 # step boundaries are advisory, the model can push past a step if it
 # needs another read before writing.
-PLAN_TOOL_BUDGET: int = 25
+PLAN_TOOL_BUDGET: int = 100
 
 
 def compute_step_budget(
@@ -479,7 +479,7 @@ def auto_append_new_tags(
     Returns a dict ``{"capability": [...], "tech_stack": [...]}`` listing
     what was newly appended (empty lists when nothing new).
     """
-    appended = {"capability": [], "tech_stack": []}
+    appended = {"capability": [], "tech_stack": [], "language": []}
     base = Path(skills_base)
     catalog_path = base / TAG_CATALOG_FILENAME
     if not catalog_path.exists():
@@ -491,11 +491,14 @@ def auto_append_new_tags(
 
     cap_field = catalog.get("capability")
     tech_field = catalog.get("tech_stack")
+    lang_field = catalog.get("language")
     cap_keys = set(cap_field.keys() if isinstance(cap_field, dict) else (cap_field or []))
     tech_keys = set(tech_field.keys() if isinstance(tech_field, dict) else (tech_field or []))
+    lang_keys = set(lang_field if isinstance(lang_field, list) else [])
 
     new_caps: set[str] = set()
     new_techs: set[str] = set()
+    new_langs: set[str] = set()
     for so in skill_outputs:
         if not so.get("exists"):
             continue
@@ -506,8 +509,11 @@ def auto_append_new_tags(
         for tech in fm.get("tech_stack", []) or []:
             if tech and tech not in tech_keys:
                 new_techs.add(tech)
+        for lang in fm.get("language", []) or []:
+            if lang and lang not in lang_keys:
+                new_langs.add(lang)
 
-    if not new_caps and not new_techs:
+    if not new_caps and not new_techs and not new_langs:
         return appended
 
     # Append (preserve dict shape if present, else upgrade list→dict so we
@@ -529,6 +535,14 @@ def auto_append_new_tags(
             upgraded[k] = None
         catalog["tech_stack"] = upgraded
 
+    if new_langs:
+        lang_list = list(lang_field if isinstance(lang_field, list) else (lang_field or []))
+        for k in sorted(new_langs):
+            if k not in lang_list:
+                lang_list.append(k)
+        lang_list.sort()
+        catalog["language"] = lang_list
+
     catalog["updated_at"] = _dt.date.today().isoformat()
     catalog_path.write_text(
         json.dumps(catalog, indent=2, ensure_ascii=False) + "\n",
@@ -537,10 +551,12 @@ def auto_append_new_tags(
 
     appended["capability"] = sorted(new_caps)
     appended["tech_stack"] = sorted(new_techs)
+    appended["language"] = sorted(new_langs)
     print(
         f"[catalog] appended new tags: "
         f"capability={appended['capability']} "
-        f"tech_stack={appended['tech_stack']}",
+        f"tech_stack={appended['tech_stack']} "
+        f"language={appended['language']}",
         file=sys.stderr,
     )
     return appended
