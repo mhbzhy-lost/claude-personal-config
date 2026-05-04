@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-01",
+  "updated_at": "2026-05-02",
   "_doc": "Authoritative closed-set tag catalog for SKILL.md frontmatter. Consumed by mcp/skill-catalog (available_tags) and distill (BUILD_PROMPT injection). Add new keys here when distilling produces previously unseen tags; the distill pipeline auto-appends new keys with null description for later manual fill-in.",
   "capability": {
     "ui-layout": "布局骨架、分栏、容器、栅格。｜不含：内容数据展示｜示例：Grid、Layout、Space、Divider",
@@ -185,7 +185,9 @@
     "mongodb": "MongoDB 文档数据库。示例：aggregation、replica-set、sharding",
     "rust": "Rust 语言与后端生态。合并别名：rust-lang、rustc。示例：tokio、axum、serde",
     "vue3": "Vue 3 前端框架。合并别名：vue、vuejs。示例：composition-api、Pinia、Vite",
-    "go": "Go 语言标准库与后端生态。合并别名：golang。示例：net/http、goroutine、context"
+    "go": "Go 语言标准库与后端生态。合并别名：golang。示例：net/http、goroutine、context",
+    "claude-agent-sdk": null,
+    "anthropic-sdk": null
   },
   "language": [
     "arkts",
