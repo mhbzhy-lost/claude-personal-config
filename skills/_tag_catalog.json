@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-05",
+  "updated_at": "2026-05-06",
   "_doc": "Authoritative closed-set tag catalog for SKILL.md frontmatter. Consumed by mcp/skill-catalog (available_tags) and distill (BUILD_PROMPT injection). Add new keys here when distilling produces previously unseen tags; the distill pipeline auto-appends new keys with null description for later manual fill-in.",
   "capability": {
     "ui-layout": "布局骨架、分栏、容器、栅格。｜不含：内容数据展示｜示例：Grid、Layout、Space、Divider",
@@ -187,7 +187,17 @@
     "vue3": "Vue 3 前端框架。合并别名：vue、vuejs。示例：composition-api、Pinia、Vite",
     "go": "Go 语言标准库与后端生态。合并别名：golang。示例：net/http、goroutine、context",
     "claude-agent-sdk": null,
-    "anthropic-sdk": null
+    "anthropic-sdk": null,
+    "arq": "arq async 任务队列（基于 Redis）。示例：worker、cron、enqueue、retry",
+    "openapi-ts": "OpenAPI → TypeScript client 代码生成工具链。合并别名：openapi-typescript、orval。示例：schema-types、msw-mock、react-query-client",
+    "observability": "可观测性通用范畴（trace/metric/log 三件套）。示例：OpenTelemetry、Sentry、Prometheus",
+    "sentry": "Sentry 错误监控与性能追踪。示例：error-boundary、source-map、transactions",
+    "pytest": "pytest 测试框架。示例：fixtures、parametrize、asyncio、conftest",
+    "tanstack-query": "TanStack Query (React Query) 服务端状态管理。示例：useQuery、useMutation、queryClient、suspense",
+    "zustand": "Zustand 前端本地状态管理。示例：create-store、middleware、persist、selector",
+    "structlog": "Python 结构化日志库。示例：processors、contextvars、bound-logger",
+    "fastapi-users": "FastAPI 用户认证脚手架（JWT/cookie/OAuth）。示例：UserManager、auth-backend、verify-email",
+    "opentelemetry": "OpenTelemetry SDK（py + js）。示例：tracer、span、otlp、auto-instrumentation"
   },
   "language": [
     "arkts",
