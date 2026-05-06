@@ -202,7 +202,14 @@
     "web-scraping": "网页爬虫与认证模式（跨工具）。示例：session-state、auto-relogin、SSO-extraction、CSRF、HAR-replay、stealth",
     "api-discovery": "未文档化 API 探测与发现（针对内部系统调研）。示例：swagger-probing、graphql-introspection、network-capture、endpoint-fuzzing",
     "dom-extraction": "HTML/JSON 数据解析。示例：selectolax、lxml-xpath、jsonpath、jq",
-    "pgvector": "PostgreSQL 向量扩展。示例：vector 类型、HNSW/IVFFlat、混合搜索"
+    "pgvector": "PostgreSQL 向量扩展。示例：vector 类型、HNSW/IVFFlat、混合搜索",
+    "xcuitest": "iOS XCUITest UI 自动化（XCTest 框架）。示例：XCUIApplication、accessibility-id、test-plans",
+    "espresso": "Android View 系统 UI 测试（Google 官方）。示例：onView、ViewMatchers、IdlingResource、RecyclerViewActions",
+    "compose-ui-testing": "Jetpack Compose UI 测试。示例：onNodeWithText、SemanticsMatcher、performClick、waitForIdle",
+    "uiautomator": "Android 跨 app/系统级 UI 测试。示例：UiDevice、BySelector、cross-app、permission-popup",
+    "arkxtest": "鸿蒙 HarmonyOS UI 测试（hypium 框架）。示例：Driver、ON.text、findComponent、recordAction",
+    "appium": "跨端 UI 自动化测试（iOS/Android/HarmonyOS 统一）。示例：capabilities、locators、Page Object、Selenium Grid",
+    "maestro": "现代 YAML 驱动跨端 UI 测试。示例：flow.yaml、tapOn、assertVisible、Maestro Cloud"
   },
   "language": [
     "arkts",
@@ -222,6 +229,7 @@
     "kotlin",
     "objc",
     "python",
+    "ruby",
     "rust",
     "sql",
     "swift",
