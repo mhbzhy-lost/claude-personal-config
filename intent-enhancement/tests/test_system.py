@@ -288,10 +288,57 @@ class TestHybridRetrievalEngine(unittest.TestCase):
             language=None,
             top_n=10
         )
-        
+
         # 验证过滤结果只包含Django技能
         for skill in search_result.skills:
             self.assertIn("django", skill.tech_stack)
+
+    def test_hard_tag_filter_skips_token_filter(self):
+        """显式 capability/tech_stack 硬过滤后不应再被 user_prompt token 二次裁剪。
+
+        回归用例：当 caller 传 capability=[X] 时，user_prompt 里的字面词
+        不应把硬过滤的命中候选再砍一刀。修复前 prompt="...capability 相关
+        的 skill" 会用 "capability" token 反向把 desc 不含该字面词的命中
+        全删，导致 22 个 llm-client skill 仅返回 2 个。
+        """
+        catalog = [
+            {
+                "name": "django-auth",
+                "description": "Django authentication backends",
+                "tech_stack": ["django"],
+                "language": ["python"],
+                "capability": ["auth"],
+            },
+            {
+                "name": "django-admin",
+                "description": "Django admin site customization",
+                "tech_stack": ["django"],
+                "language": ["python"],
+                "capability": ["auth"],
+            },
+            {
+                "name": "django-orm",
+                "description": "Django ORM querysets and migrations",
+                "tech_stack": ["django"],
+                "language": ["python"],
+                "capability": ["orm"],
+            },
+        ]
+        engine = HybridRetrievalEngine(catalog)
+        # Prompt 字面只命中 django-auth 的 desc（含 "authentication"），
+        # 但 capability=[auth] 应原样保留 django-auth + django-admin 两个
+        # auth 候选，由 _rank_skills 后续排序，而非 token 过滤砍掉 admin。
+        result = engine.search(
+            query="authentication 相关的 skill",
+            tech_stack=None,
+            capability=["auth"],
+            language=None,
+            top_n=10,
+        )
+        names = {s.name for s in result.skills}
+        self.assertIn("django-auth", names)
+        self.assertIn("django-admin", names)  # 修复前会被误删
+        self.assertNotIn("django-orm", names)  # 硬过滤本就不该收
     
     def test_cache_functionality(self):
         """测试缓存功能"""

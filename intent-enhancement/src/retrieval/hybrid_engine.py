@@ -648,9 +648,16 @@ class HybridRetrievalEngine:
         # 对中文查询（不依赖空格分词）额外做整串子串匹配。所有 token 都未命中
         # 时不做过滤，保留 tech/capability/language 硬过滤后的候选，交给
         # _rank_skills 打分层处理。
+        #
+        # 例外：caller 显式传了 tech_stack / capability / language 任一硬过滤时，
+        # 跳过 token 文本过滤，避免 user_prompt 字面词把硬过滤结果再砍一刀。
+        # 例：capability=[llm-client] + prompt="...capability 相关的 skill" 会
+        # 被 token "capability" 反而误删 desc 不含"capability"字面的 20 条命中。
+        # 显式 tag 视为权威召回意图，文本仅用于后续 _rank_skills 排序。
+        has_hard_filter = bool(tech_stack or capability or language)
         tokens = [t.lower() for t in query.split() if t.strip()]
         query_lower = query.lower()
-        if tokens:
+        if tokens and not has_hard_filter:
             def _hits(skill):
                 name = skill.get('name', '').lower()
                 desc = skill.get('description', '').lower()
