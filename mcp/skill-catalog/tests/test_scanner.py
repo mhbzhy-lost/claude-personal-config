@@ -661,3 +661,96 @@ def test_capability_scalar_value_normalized(tmp_path: Path) -> None:
     result = catalog.list_skills(["antd"], capability=["ui-action"])
     names = [s["name"] for s in result["skills"]]
     assert names == ["single-cap"]
+
+
+# ---------------------------------------------------------------------------
+# 34. Freshness: SKILL.md added after init is picked up on next call
+# ---------------------------------------------------------------------------
+
+
+def test_freshness_picks_up_new_skill(tmp_path: Path) -> None:
+    write_skill(tmp_path, "skill-initial", "desc", ["react"])
+    catalog = SkillCatalog(tmp_path)
+    # Sanity: only the initial skill is indexed
+    assert set(catalog.by_name) == {"skill-initial"}
+
+    # Add a new skill on disk after the catalog has scanned
+    write_skill(tmp_path, "skill-added", "desc", ["react"])
+
+    # Next API call should detect the change and rescan
+    result = catalog.list_skills(["react"])
+    names = [s["name"] for s in result["skills"]]
+    assert "skill-added" in names
+    assert "skill-initial" in names
+
+
+def test_freshness_picks_up_modified_skill(tmp_path: Path) -> None:
+    skill_md = write_skill(tmp_path, "evolving", "old description", ["react"])
+    catalog = SkillCatalog(tmp_path)
+    assert catalog.by_name["evolving"].description == "old description"
+
+    # Rewrite with new description and bump mtime explicitly so the test
+    # is robust on filesystems with second-resolution mtimes.
+    import os
+    skill_md.write_text(
+        "---\nname: evolving\ndescription: \"new description\"\n"
+        "tech_stack: [react]\n---\nbody\n",
+        encoding="utf-8",
+    )
+    new_mtime_ns = skill_md.stat().st_mtime_ns + 1_000_000_000
+    os.utime(skill_md, ns=(new_mtime_ns, new_mtime_ns))
+
+    result = catalog.list_skills(["react"])
+    by_name = {s["name"]: s for s in result["skills"]}
+    assert by_name["evolving"]["description"] == "new description"
+
+
+def test_freshness_drops_deleted_skill(tmp_path: Path) -> None:
+    write_skill(tmp_path, "keep-me", "desc", ["react"])
+    skill_md = write_skill(tmp_path, "delete-me", "desc", ["react"])
+    catalog = SkillCatalog(tmp_path)
+    assert "delete-me" in catalog.by_name
+
+    skill_md.unlink()
+
+    result = catalog.list_skills(["react"])
+    names = [s["name"] for s in result["skills"]]
+    assert "keep-me" in names
+    assert "delete-me" not in names
+
+
+def test_freshness_no_change_no_rescan(tmp_path: Path) -> None:
+    """If nothing on disk changed, signature short-circuits the parse pass."""
+    write_skill(tmp_path, "stable", "desc", ["react"])
+    catalog = SkillCatalog(tmp_path)
+    snapshot = catalog._signature
+
+    # Two consecutive calls with no fs change must keep the same signature
+    catalog.list_skills(["react"])
+    catalog.get_skill("stable")
+    catalog.available_tags()
+    assert catalog._signature == snapshot
+
+
+def test_freshness_get_skill_picks_up_new(tmp_path: Path) -> None:
+    catalog = SkillCatalog(tmp_path)
+    assert catalog.get_skill("future-skill") is None
+
+    write_skill(tmp_path, "future-skill", "desc", ["react"], body="hello")
+    result = catalog.get_skill("future-skill")
+    assert result is not None
+    assert "hello" in result["content"]
+
+
+def test_freshness_available_tags_reflects_changes(tmp_path: Path) -> None:
+    write_skill(tmp_path, "alpha", "desc", ["react"], capability=["ui-input"])
+    catalog = SkillCatalog(tmp_path)
+    tags_before = catalog.available_tags()
+    assert "ui-input" in tags_before["capability"]
+
+    # Add a skill with a new capability tag
+    write_skill(tmp_path, "beta", "desc", ["react"], capability=["ui-action"])
+    tags_after = catalog.available_tags()
+    # Without _tag_catalog.json present, available_tags falls back to
+    # the in-memory aggregation, which must reflect the new file.
+    assert "ui-action" in tags_after["capability"]

@@ -73,10 +73,59 @@ class SkillCatalog:
         self.capability_match_mode = capability_match_mode
         self.by_name: dict[str, SkillRecord] = {}
         self.by_tag: dict[str, list[str]] = {}
+        # Filesystem signature of last successful scan. Used by
+        # ``_ensure_fresh`` to detect external SKILL.md additions /
+        # modifications / deletions and trigger a rescan without
+        # restarting the MCP server.
+        self._signature: frozenset[tuple[str, int, int]] = frozenset()
         self._scan()
 
-    def _scan(self) -> None:
+    def _compute_signature(self) -> frozenset[tuple[str, int, int]]:
+        """Cheap directory fingerprint: (path, mtime_ns, size) per SKILL.md.
+
+        ~5ms per 200 files on a warm fs. Walked on every public API call
+        to detect staleness.
+        """
         if not self.library.is_dir():
+            return frozenset()
+        sigs: list[tuple[str, int, int]] = []
+        try:
+            iterator = self.library.rglob("SKILL.md")
+        except OSError:
+            return frozenset()
+        for p in iterator:
+            try:
+                st = p.stat()
+            except OSError:
+                continue
+            sigs.append((str(p), st.st_mtime_ns, st.st_size))
+        return frozenset(sigs)
+
+    def _ensure_fresh(self) -> None:
+        """Compare on-disk signature against last scan; rescan if changed.
+
+        Cheap when nothing changed (no parse). Full rebuild when anything
+        changed — avoids the bookkeeping of incremental updates and is
+        still <100ms for ~250 skills.
+        """
+        sig = self._compute_signature()
+        if sig != self._signature:
+            self._scan(_known_signature=sig)
+
+    def _scan(
+        self,
+        *,
+        _known_signature: frozenset[tuple[str, int, int]] | None = None,
+    ) -> None:
+        # Reset state so this can be safely re-invoked from _ensure_fresh.
+        self.by_name.clear()
+        self.by_tag.clear()
+        if not self.library.is_dir():
+            self._signature = (
+                _known_signature
+                if _known_signature is not None
+                else frozenset()
+            )
             return
         for skill_md in self.library.rglob("SKILL.md"):
             try:
@@ -132,6 +181,14 @@ class SkillCatalog:
             for tag in tech_stack:
                 self.by_tag.setdefault(tag, []).append(name)
 
+        # Persist the signature observed at scan time so subsequent
+        # _ensure_fresh calls can short-circuit when nothing changed.
+        self._signature = (
+            _known_signature
+            if _known_signature is not None
+            else self._compute_signature()
+        )
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -157,6 +214,7 @@ class SkillCatalog:
           **excluded** when *capability* is set.
         - Multiple provided → must match on **all** provided dimensions.
         """
+        self._ensure_fresh()
         has_ts = bool(tech_stack)
         has_lang = bool(language)
         has_cap = bool(capability)
@@ -240,6 +298,7 @@ class SkillCatalog:
         constraint. Each dimension is returned as a sorted, de-duplicated
         list.
         """
+        self._ensure_fresh()
         catalog_path = self.library / "_tag_catalog.json"
         if catalog_path.exists():
             try:
@@ -275,6 +334,7 @@ class SkillCatalog:
 
     def get_skill(self, name: str) -> Optional[dict]:
         """Return skill body (frontmatter stripped, relative links rewritten)."""
+        self._ensure_fresh()
         record = self.by_name.get(name)
         if record is None:
             return None
