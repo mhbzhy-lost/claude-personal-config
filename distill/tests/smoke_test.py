@@ -423,6 +423,52 @@ def test_normalize_tech_slug():
     print(f"  {len(cases)} slug cases all OK")
 
 
+def test_normalize_skill_name():
+    print("\n[test 7] _normalize_skill_name strips <tech>/ prefix")
+    cases = [
+        # (raw, tech_stack, expected)
+        ("arq-worker", "arq", "arq-worker"),
+        ("arq/arq-worker", "arq", "arq-worker"),
+        ("/arq/arq-worker", "arq", "arq-worker"),
+        ("fastapi-users/fastapi-users-core", "fastapi-users", "fastapi-users-core"),
+        ("lodash-array", "lodash", "lodash-array"),
+        ("only-name", "", "only-name"),
+        ("", "arq", ""),
+        (None, "arq", ""),
+    ]
+    for raw, tech, expected in cases:
+        got = pipeline._normalize_skill_name(raw, tech)
+        assert got == expected, f"name={raw!r} tech={tech!r}: got={got!r} want={expected!r}"
+    print(f"  {len(cases)} name cases all OK")
+
+
+def test_frontmatter_list_coercion(rec):
+    print("\n[test 8] _parse_skill_frontmatter coerces scalar list-keys")
+    import tempfile
+    md = """---
+name: foo
+language: javascript
+capability: auth
+tech_stack: [sentry, observability]
+---
+body
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(md)
+        p = Path(f.name)
+    try:
+        fm = pipeline._parse_skill_frontmatter(p)
+        assert fm["language"] == ["javascript"], f"language={fm['language']!r}"
+        assert fm["capability"] == ["auth"], f"capability={fm['capability']!r}"
+        assert fm["tech_stack"] == ["sentry", "observability"], (
+            f"tech_stack={fm['tech_stack']!r}"
+        )
+        assert fm["name"] == "foo", f"name (scalar key) ={fm['name']!r}"
+    finally:
+        p.unlink(missing_ok=True)
+    print("  4 frontmatter coercion cases all OK")
+
+
 def main() -> int:
     runs_dir = ROOT / "runs"
 
@@ -432,6 +478,8 @@ def main() -> int:
     test_dir_layout(RunRecorder(runs_dir))
     test_plan_intent_schema(RunRecorder(runs_dir))
     test_normalize_tech_slug()
+    test_normalize_skill_name()
+    test_frontmatter_list_coercion(RunRecorder(runs_dir))
 
     print("\nSMOKE TEST PASSED")
     return 0

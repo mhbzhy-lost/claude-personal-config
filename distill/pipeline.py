@@ -441,6 +441,12 @@ def build_prompt_with_catalog(catalog: dict) -> str:
     )
 
 
+# Frontmatter keys that downstream code iterates as a list. When the LLM
+# writes them as a scalar (e.g. ``language: javascript``), naive iteration
+# would walk individual characters — coerce to single-item list here.
+_LIST_VALUED_FRONTMATTER_KEYS = frozenset({"capability", "tech_stack", "language"})
+
+
 def _parse_skill_frontmatter(skill_md_path: Path) -> dict:
     """Read SKILL.md frontmatter (between leading ``---`` fences) as dict."""
     if not skill_md_path.exists():
@@ -465,7 +471,11 @@ def _parse_skill_frontmatter(skill_md_path: Path) -> dict:
             items = [x.strip().strip("'\"") for x in inner.split(",") if x.strip()]
             out[key] = items
         else:
-            out[key] = val.strip("'\"")
+            scalar = val.strip("'\"")
+            if key in _LIST_VALUED_FRONTMATTER_KEYS:
+                out[key] = [scalar] if scalar else []
+            else:
+                out[key] = scalar
     return out
 
 
@@ -1221,6 +1231,25 @@ def _normalize_tech_slug(raw: str | None) -> str:
     return s or "unknown"
 
 
+def _normalize_skill_name(raw: str | None, tech_stack: str) -> str:
+    """Strip a leading ``<tech_stack>/`` (and stray slashes) from a skill name.
+
+    The build prompt template substitutes ``<skill_name>`` into
+    ``<skills_base>/<tech>/<skill>/SKILL.md``. When the plan LLM emits a
+    name like ``arq/arq-worker`` instead of ``arq-worker``, that template
+    yields a doubled ``<base>/arq/arq/arq-worker/SKILL.md`` path. This
+    helper strips the redundant prefix defensively.
+    """
+    if not raw:
+        return ""
+    name = str(raw).strip().lstrip("/")
+    if tech_stack:
+        prefix = f"{tech_stack}/"
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+    return name.strip("/")
+
+
 def run_pipeline(
     adapter: DeepSeekAdapter | QwenAdapter,
     intent: str,
@@ -1333,6 +1362,21 @@ def run_pipeline(
     plan_dict["tech_stack"] = tech_stack
     stats.tech_stack = tech_stack
     config_dict["tech_stack"] = tech_stack
+
+    # Normalize skill names: strip leading ``<tech>/`` if the LLM included
+    # it, otherwise the build prompt's path template doubles the prefix
+    # (see _normalize_skill_name docstring). Mutates plan_dict in place so
+    # all downstream stages (fetch / build / summary) see clean names.
+    for _skill in plan_dict.get("skills") or []:
+        _raw_name = _skill.get("name", "")
+        _norm_name = _normalize_skill_name(_raw_name, tech_stack)
+        if _norm_name and _norm_name != _raw_name:
+            print(
+                f"[plan] normalized skill name: {_raw_name!r} -> "
+                f"{_norm_name!r}",
+                file=sys.stderr,
+            )
+            _skill["name"] = _norm_name
     config_dict["intent_summary"] = plan_dict.get("intent_summary", "")
     config_dict["constraints"] = plan_dict.get("constraints", []) or []
 
