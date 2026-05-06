@@ -63,15 +63,15 @@ def compute_step_budget(
 ) -> int:
     """Per-step budget that scales with batch size.
 
-    Empirical formula (recalibrated 2026-04 — single-skill case needs
-    extra slack for list_files + 2-3 read_file + 2 writes + spillover):
-      step_1 (preprocess):     8 + 7*N   (N=1→15, N=3→29, N=5→43)
-      step_2 (build SKILL.md): 5 + 4*N   (N=1→9,  N=3→17, N=5→25)
-      step_3 (mark capability):4 + 3*N   (N=1→7,  N=3→13, N=5→19)
+    Empirical formula (recalibrated 2026-05 — 2-skill batch step_1
+    needs ~35 calls to avoid tool_call_limit aborts):
+      step_1 (preprocess):     21 + 7*N  (N=1→28, N=2→35, N=3→42)
+      step_2 (build SKILL.md): 5 + 4*N   (N=1→9,  N=2→13, N=3→17)
+      step_3 (mark capability):4 + 3*N   (N=1→7,  N=2→10, N=3→13)
     """
     n = max(1, int(n_skills_in_batch))
     base = {
-        "build_step_1": 8 + 7 * n,
+        "build_step_1": 21 + 7 * n,
         "build_step_2": 5 + 4 * n,
         "build_step_3": 4 + 3 * n,
     }
@@ -1242,7 +1242,7 @@ def run_pipeline(
         raise RuntimeError(
             "skills_base unset: pass --skills-base or export "
             "SKILL_LIBRARY_PATH. Recommended: "
-            "/Users/mhbzhy/claude-config/skills (the technical knowledge "
+            "~/claude-config/skills (the technical knowledge "
             "library indexed by mcp/skill-catalog). The legacy default "
             "~/.claude/skills is no longer auto-applied."
         )
@@ -1621,7 +1621,7 @@ def main():
             "Output dir for SKILL.md files. Falls back to "
             "$SKILL_LIBRARY_PATH if unset. NO implicit default — must "
             "be provided one way or another. Recommended: "
-            "/Users/mhbzhy/claude-config/skills (the technical knowledge "
+            "~/claude-config/skills (the technical knowledge "
             "library indexed by mcp/skill-catalog)."
         ),
     )
@@ -1657,8 +1657,8 @@ def main():
         raise SystemExit(
             "ERROR: DISTILL_PROVIDER missing or invalid in environment "
             f"(got {provider!r}; expected 'deepseek' or 'qwen').\n\n"
-            "Configure it in /Users/mhbzhy/claude-config/distill/.env\n"
-            "See /Users/mhbzhy/claude-config/distill/.env.example for "
+            "Configure it in ~/claude-config/distill/.env\n"
+            "See ~/claude-config/distill/.env.example for "
             "a template."
         )
 
@@ -1673,8 +1673,8 @@ def main():
         raise SystemExit(
             f"ERROR: {key_var} missing in environment (required when "
             f"DISTILL_PROVIDER={provider}).\n\n"
-            "Configure it in /Users/mhbzhy/claude-config/distill/.env\n"
-            "See /Users/mhbzhy/claude-config/distill/.env.example for "
+            "Configure it in ~/claude-config/distill/.env\n"
+            "See ~/claude-config/distill/.env.example for "
             "a template."
         )
 

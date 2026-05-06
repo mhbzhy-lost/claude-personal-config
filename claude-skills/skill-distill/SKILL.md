@@ -35,7 +35,7 @@ language: [python]
 
 # 环境配置前置（最高优先级）
 
-调用本工具前**必须确认** `/Users/mhbzhy/claude-config/distill/.env` 文件存在且配置了：
+调用本工具前**必须确认** `~/claude-config/distill/.env` 文件存在且配置了：
 
 | 必填字段 | 说明 |
 |---|---|
@@ -45,7 +45,7 @@ language: [python]
 
 **如果 .env 缺失或字段不全**，主 agent **必须先提示用户**：
 
-> "蒸馏工具需要在 `/Users/mhbzhy/claude-config/distill/.env` 配置 API key。
+> "蒸馏工具需要在 `~/claude-config/distill/.env` 配置 API key。
 > 参考同目录的 `.env.example` 复制并填入：
 > - 选择 `DISTILL_PROVIDER`（deepseek 或 qwen）
 > - 填入对应的 API key
@@ -60,7 +60,7 @@ language: [python]
 
 主 agent 在调用本工具前**必须确定 skill 产出位置**：
 
-- **推荐：技术知识库** `/Users/mhbzhy/claude-config/skills/`（mcp/skill-catalog 索引此处，主 agent 通过 resolve/get_skill 检索的 skill 都在这里）
+- **推荐：技术知识库** `~/claude-config/skills/`（mcp/skill-catalog 索引此处，主 agent 通过 resolve/get_skill 检索的 skill 都在这里）
 - **特殊：Claude Code skill 库** `~/.claude/skills/` = `claude-config/claude-skills/`（仅放 slash command / agent helper 类 skill，**蒸馏产出不应放这里**）
 - **项目级**：`<project_root>/.claude/skills/`（仅当前项目可见）
 - **自定义**：用户指定的其他路径
@@ -68,7 +68,7 @@ language: [python]
 **如果不能从对话上下文推断出该位置**，主 agent 必须**先向用户提问**：
 
 > "新蒸馏的 skill 要落到哪？
-> A. 技术知识库 `/Users/mhbzhy/claude-config/skills/`（推荐：可被 skill-catalog 检索）
+> A. 技术知识库 `~/claude-config/skills/`（推荐：可被 skill-catalog 检索）
 > B. 当前项目 `<project>/.claude/skills/`
 > C. 自定义路径（请提供）"
 
@@ -77,7 +77,7 @@ language: [python]
 调用时通过 `--skills-base <path>` 显式传入（或预先 export `SKILL_LIBRARY_PATH`，工具与 mcp/skill-catalog 共用同一个 env）：
 
 ```bash
-... --skills-base /Users/mhbzhy/claude-config/skills    # 推荐
+... --skills-base ~/claude-config/skills    # 推荐
 ... --skills-base /path/to/project/.claude/skills
 ```
 
@@ -102,10 +102,10 @@ skill 的 `capability` / `tech_stack` 标签来自 `<skills_base>/_tag_catalog.j
 # Invocation
 
 ```bash
-cd /Users/mhbzhy/claude-config/distill && \
+cd ~/claude-config/distill && \
   uv run skill-distill \
     --intent "<自然语言意图>" \
-    --skills-base /Users/mhbzhy/claude-config/skills \
+    --skills-base ~/claude-config/skills \
     [--max-skills N]      # testing only \
     [--model MODEL_OVERRIDE]
 ```
@@ -130,7 +130,7 @@ plan 阶段会把这些维度提炼成 `constraints` 数组（如 `focus:form-co
 
 # Output
 
-- SKILL.md 落到 `<skills_base>/<plan 推断的 tech_stack>/<skill>/SKILL.md`（推荐 `<skills_base>=/Users/mhbzhy/claude-config/skills`）
+- SKILL.md 落到 `<skills_base>/<plan 推断的 tech_stack>/<skill>/SKILL.md`（推荐 `<skills_base>=~/claude-config/skills`）
 - plan.json 落到 `/tmp/skill-src/<tech>/plan.json`，含完整 intent + constraints 审计信息
 - summary 落到 `distill/runs/<ts>/summary.json`（含 token / cache hit / 双家对比基础）
 

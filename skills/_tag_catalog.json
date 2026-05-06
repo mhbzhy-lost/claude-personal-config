@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-02",
+  "updated_at": "2026-05-05",
   "_doc": "Authoritative closed-set tag catalog for SKILL.md frontmatter. Consumed by mcp/skill-catalog (available_tags) and distill (BUILD_PROMPT injection). Add new keys here when distilling produces previously unseen tags; the distill pipeline auto-appends new keys with null description for later manual fill-in.",
   "capability": {
     "ui-layout": "布局骨架、分栏、容器、栅格。｜不含：内容数据展示｜示例：Grid、Layout、Space、Divider",
@@ -191,8 +191,9 @@
   },
   "language": [
     "arkts",
-    "blueprint",
     "bash",
+    "blueprint",
+    "cmake",
     "cpp",
     "csharp",
     "css",
