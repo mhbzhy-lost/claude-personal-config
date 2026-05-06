@@ -1,0 +1,12 @@
+# Skills 同步清单：每行一个 skill 目录名（位于 claude-skills/ 下）。
+# 仅清单内的 skill 会被 init_claude.sh 同步到 ~/.claude/skills/，暴露为
+# Claude Code user-invocable skill。不在清单的 skill 只在 claude-config 仓
+# 内使用（例如供 mcp/skill-catalog 离线检索或开发期参考），不直接调用。
+#
+# 用户覆盖：在同目录创建 skills.local.list（本目录 *.local.list 已被 git 忽略），
+# 存在时 init_claude.sh 优先加载它，且为完全覆盖（不与本文件合并）。
+#
+# 语法：`#` 起首为注释，空行忽略；其余每行一个目录名，前后空白会被 trim。
+
+git-commit
+knowledge-retrieval

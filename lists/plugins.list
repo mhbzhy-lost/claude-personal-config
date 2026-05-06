@@ -1,0 +1,17 @@
+# 插件必装清单：每行一个 name:marketplace
+# 仅放进所有日常工作流都强依赖的核心插件，避免不需要的插件被反复装回。
+#
+# 用户覆盖：在同目录创建 plugins.local.list（本目录 *.local.list 已被 git 忽略），
+# 存在时 init_claude.sh 优先加载它，且为完全覆盖（不与本文件合并）。
+#
+# 可选插件参考（按需手动 `claude plugins install`，或写到 plugins.local.list）：
+#   plugin-dev:claude-plugins-official       —— Plugin 脚手架（plugin.json/skills/agents）
+#   skill-creator:claude-plugins-official    —— Skill 创建/优化/触发率评测
+#   agent-sdk-dev:claude-plugins-official    —— Agent SDK 应用脚手架
+#   frontend-design:claude-plugins-official  —— 高质感前端 UI 生成
+#   github:claude-plugins-official           —— GitHub PR/issue/review 一站式
+#   commit-commands:claude-plugins-official  —— /commit / /commit-push-pr / /clean_gone
+#
+# 语法：`#` 起首为注释，空行忽略；其余每行 `name:marketplace`，前后空白会被 trim。
+
+superpowers:claude-plugins-official

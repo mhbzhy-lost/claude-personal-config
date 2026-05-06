@@ -49,6 +49,32 @@ link_item() {
   fi
 }
 
+# 读清单文件：跳过 # 注释和空行，trim 行首尾空白，逐行 stdout 输出。
+# 文件不存在时直接返回（无输出），调用方需自行检查。
+read_list_file() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [ -z "$line" ] && continue
+    [[ "$line" == \#* ]] && continue
+    printf '%s\n' "$line"
+  done < "$file"
+}
+
+# 解析清单文件路径：优先 lists/<name>.local.list（用户私有，git 不追踪），
+# 不存在则回退 lists/<name>.list（默认，随仓库提交）。两份都缺时输出空。
+resolve_list_file() {
+  local name="$1"
+  if [ -f "$SRC/lists/${name}.local.list" ]; then
+    printf '%s\n' "$SRC/lists/${name}.local.list"
+  elif [ -f "$SRC/lists/${name}.list" ]; then
+    printf '%s\n' "$SRC/lists/${name}.list"
+  fi
+}
+
 # Items that should live as symlinks under ~/.claude/
 link_item "CLAUDE.md"
 link_item "guidelines"
@@ -61,14 +87,47 @@ sync_claude_skills() {
   local src_path="$SRC/claude-skills"
   local dst_path="$DST/skills"
 
+  # 同步清单：默认 lists/skills.list；用户可在同目录创建 skills.local.list 覆盖。
+  # 加载顺序：local 优先，缺省回退 default；为完全覆盖（不合并）。
+  local list_file
+  list_file=$(resolve_list_file "skills")
+  if [ -z "$list_file" ]; then
+    echo "[warn] lists/skills.list 与 lists/skills.local.list 均不存在，跳过 skills 同步"
+    return
+  fi
+  echo "[skills] 使用清单: $list_file"
+
+  local sync_list=()
+  local line
+  while IFS= read -r line; do
+    sync_list+=("$line")
+  done < <(read_list_file "$list_file")
+
+  # 已废弃同步清单：曾经同步过、现已从 sync_list 剔除的 skill。
+  # 一次性清理，仅当目标的 SKILL.md 与源完全一致（确认是本仓同步残留）才删，
+  # 避免误删用户手动放置的同名 skill。
+  local deprecated_list=(
+    "skill-distill"
+  )
+
   if [ ! -d "$src_path" ]; then
     echo "[skip] source $src_path does not exist"
     return
   fi
 
-  if [ ! -e "$dst_path" ] || [ -L "$dst_path" ]; then
-    link_item "claude-skills" "skills"
-    return
+  # 历史上若 ~/.claude/skills 整体软链到 claude-skills/，会绕过 sync_list
+  # 把所有源 skill（含未列入清单的）暴露出去。检测到此情况则拆软链，
+  # 改为真目录 + 按清单逐项 rsync。
+  if [ -L "$dst_path" ]; then
+    local cur
+    cur=$(readlink "$dst_path")
+    if [ "$cur" = "$src_path" ]; then
+      rm -f "$dst_path"
+      echo "[migrate] 移除整目录软链 ${dst_path}（改为按清单逐项同步）"
+    else
+      echo "[warn] $dst_path 是软链但指向 ${cur}（非本仓 claude-skills/），人工核对后再处理"
+      return
+    fi
   fi
 
   if ! command -v rsync >/dev/null 2>&1; then
@@ -76,18 +135,36 @@ sync_claude_skills() {
     return
   fi
 
-  shopt -s nullglob
-  local skill_src skill_name skill_dst
-  for skill_src in "$src_path"/*/; do
-    skill_name=$(basename "$skill_src")
+  mkdir -p "$dst_path"
+
+  local skill_name skill_src skill_dst
+  for skill_name in "${sync_list[@]}"; do
+    skill_src="$src_path/$skill_name"
     skill_dst="$dst_path/$skill_name"
-    if rsync -a --delete "$skill_src" "$skill_dst/" >/dev/null; then
-      echo "[synced] $skill_dst <- $skill_src"
+    if [ ! -d "$skill_src" ]; then
+      echo "[warn] sync_list 含 $skill_name，但 $skill_src 不存在；请检查清单"
+      continue
+    fi
+    if rsync -a --delete "$skill_src/" "$skill_dst/" >/dev/null; then
+      echo "[synced] $skill_dst <- $skill_src/"
     else
       echo "[warn] 同步 $skill_src → $skill_dst 失败"
     fi
   done
-  shopt -u nullglob
+
+  # 清理已从 sync_list 剔除的 skill 残留
+  for skill_name in "${deprecated_list[@]}"; do
+    skill_dst="$dst_path/$skill_name"
+    skill_src="$src_path/$skill_name"
+    [ -e "$skill_dst" ] || continue
+    if [ -f "$skill_dst/SKILL.md" ] && [ -f "$skill_src/SKILL.md" ] \
+        && cmp -s "$skill_dst/SKILL.md" "$skill_src/SKILL.md"; then
+      rm -rf "$skill_dst"
+      echo "[cleanup] 已移除 ${skill_dst}（已从 sync_list 剔除）"
+    else
+      echo "[warn] ${skill_dst} 不像本仓同步残留（SKILL.md 缺失或与源不一致），未自动删除"
+    fi
+  done
 }
 sync_claude_skills
 
@@ -597,28 +674,34 @@ if command -v claude >/dev/null 2>&1; then
     claude plugins marketplace add claude-plugins-official github anthropics/claude-plugins-official 2>/dev/null || true
   fi
 
-  # 插件清单：name:marketplace 一行一个
-  PLUGIN_LIST="superpowers:claude-plugins-official
-plugin-dev:claude-plugins-official
-skill-creator:claude-plugins-official
-agent-sdk-dev:claude-plugins-official
-frontend-design:claude-plugins-official
-github:claude-plugins-official
-commit-commands:claude-plugins-official"
-
-  echo "$PLUGIN_LIST" | while IFS=: read -r plugin_name marketplace; do
-    [ -z "$plugin_name" ] && continue
-    if [ -f "$PLUGINS_JSON" ] && grep -q "\"$plugin_name@$marketplace\"" "$PLUGINS_JSON" 2>/dev/null; then
-      echo "[plugins] $plugin_name@$marketplace 已安装"
-    else
-      echo "[plugins] 安装 $plugin_name@$marketplace ..."
-      if claude plugins install "$plugin_name@$marketplace" 2>&1; then
-        echo "[plugins] $plugin_name@$marketplace 安装完成"
+  # 插件清单：默认 lists/plugins.list；存在 lists/plugins.local.list 则优先（覆盖）。
+  PLUGINS_LIST_FILE=$(resolve_list_file "plugins")
+  if [ -z "$PLUGINS_LIST_FILE" ]; then
+    echo "[warn] lists/plugins.list 与 lists/plugins.local.list 均不存在，跳过插件安装"
+  else
+    echo "[plugins] 使用清单: $PLUGINS_LIST_FILE"
+    while IFS= read -r line; do
+      case "$line" in
+        *:*) ;;
+        *)
+          echo "[warn] 跳过无效行（缺少 marketplace 部分）: $line"
+          continue
+          ;;
+      esac
+      plugin_name="${line%%:*}"
+      marketplace="${line#*:}"
+      if [ -f "$PLUGINS_JSON" ] && grep -q "\"$plugin_name@$marketplace\"" "$PLUGINS_JSON" 2>/dev/null; then
+        echo "[plugins] $plugin_name@$marketplace 已安装"
       else
-        echo "[warn] 插件 $plugin_name@$marketplace 安装失败，请手动安装"
+        echo "[plugins] 安装 $plugin_name@$marketplace ..."
+        if claude plugins install "$plugin_name@$marketplace" 2>&1; then
+          echo "[plugins] $plugin_name@$marketplace 安装完成"
+        else
+          echo "[warn] 插件 $plugin_name@$marketplace 安装失败，请手动安装"
+        fi
       fi
-    fi
-  done
+    done < <(read_list_file "$PLUGINS_LIST_FILE")
+  fi
 fi
 
 # 提示：已不再使用的 qwen2.5:7b 模型可手动清理（留给用户自决）
