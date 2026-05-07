@@ -37,7 +37,9 @@ _ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(_ENV_PATH)
 
 from adapter import DeepSeekAdapter, PipelineStats, QwenAdapter, StageStats
+from asset_builder import AssetSpec, build_assets
 from persistence import FetchLogger, RunRecorder, StageRecorder
+from sandbox_runner import pull_image_with_digest
 from tools import (
     TOOL_DEFINITIONS,
     execute_tool,
@@ -218,6 +220,41 @@ in `build_batch_rationale`.
 After write_file succeeds, return a short JSON status (no fences):
 `{"status":"ok","plan_path":"...","tech_stack":"...","skill_count":N}`
 """
+
+EXECUTABLE_SCHEMA_HINT = """
+
+## Executable skills (optional)
+
+If the skill is a CLI-tool wrapper (mitmproxy, playwright-cli, maestro, ffmpeg
+等"调用即可"工具，非 SDK/lib），mark it executable. Schema additions:
+
+```json
+{
+  "name": "...",
+  "execution_mode": "executable_sandbox",
+  "assets": [
+    {
+      "filename": "install.sh",
+      "role": "install",
+      "purpose": "Install <tool> into Debian sandbox via apt/pip/curl-binary",
+      "idempotent_check": "which <tool>",
+      "smoke_test": ["<tool> --version", "<tool> --help | head -5"]
+    },
+    {
+      "filename": "run-impl.sh",
+      "role": "runner",
+      "purpose": "Wrap <tool> CLI with sane defaults and pass-through args"
+    }
+  ]
+}
+```
+
+Do NOT mark as executable_sandbox if:
+- Skill is a Python/JS library imported by user code (httpx, openai SDK)
+- Skill requires real device (xcuitest, espresso, arkxtest)
+- Skill is pattern documentation without a single CLI invocation point
+"""
+PLAN_PROMPT += EXECUTABLE_SCHEMA_HINT
 
 BUILD_PROMPT = """\
 You are a *skill builder* in a 3-stage distillation pipeline. The plan
@@ -1068,6 +1105,136 @@ def run_fetch(
 
 
 # ---------------------------------------------------------------------------
+# Stage 3 helpers: executable-skill asset generation
+# ---------------------------------------------------------------------------
+def _make_llm_gen(adapter, max_tokens: int = 2000):
+    """Wrap adapter.create_message into a (prompt: str) -> str helper.
+
+    Used by ``asset_builder.build_assets`` to invoke the LLM for asset
+    generation (install.sh / run-impl.sh). Strips any leading bash code
+    fences the model may emit despite the prompt's explicit instruction.
+    """
+    def _gen(prompt: str) -> str:
+        resp = adapter.create_message(
+            messages=[{"role": "user", "content": prompt}],
+            tools=None,
+            max_tokens=max_tokens,
+        )
+        text = resp.choices[0].message.content or ""
+        # Defensive: strip ```bash / ``` fences if the LLM ignored the
+        # "no markdown fences" instruction.
+        text = text.strip()
+        if text.startswith("```"):
+            # Strip leading fence (```bash\n or ```\n)
+            first_nl = text.find("\n")
+            if first_nl >= 0:
+                text = text[first_nl + 1:]
+            # Strip trailing fence
+            if text.endswith("```"):
+                text = text[:-3]
+        return text.strip()
+    return _gen
+
+
+def _read_source_text(cleaned_dir: Path, skill_name: str) -> str:
+    """Read cleaned/<skill_name>/SOURCE.md if it exists; else empty string.
+
+    Used as the reference doc fed to the asset-generation LLM prompt.
+    """
+    src = cleaned_dir / skill_name / "SOURCE.md"
+    if not src.exists():
+        return ""
+    try:
+        return src.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _build_executable_assets_for_skill(
+    adapter,
+    plan_skill: dict,
+    skill_dir: Path,
+    cleaned_dir: Path,
+) -> dict | None:
+    """Generate + validate install.sh / run-impl.sh / runner.sh for an
+    executable_sandbox skill, persist them next to SKILL.md, and return a
+    metadata block for ``_meta.json`` integration.
+
+    Returns ``None`` when the skill is not executable_sandbox (caller
+    should skip). On any failure inside the generation/validation flow,
+    raises — the caller's batch-level try/except will degrade gracefully.
+    """
+    if plan_skill.get("execution_mode") != "executable_sandbox":
+        return None
+
+    base_image = "debian:12-slim"
+    base_digest = pull_image_with_digest(base_image)
+
+    asset_specs = [
+        AssetSpec(
+            filename=a["filename"],
+            idempotent_check=a.get("idempotent_check", ""),
+            smoke_test=a.get("smoke_test", []) or [],
+            purpose=a.get("purpose", ""),
+        )
+        for a in plan_skill.get("assets", []) or []
+    ]
+
+    name = plan_skill.get("name", "")
+    source_text = _read_source_text(cleaned_dir, name)
+
+    asset_outputs = build_assets(
+        plan_skill,
+        asset_specs,
+        base_image,
+        _make_llm_gen(adapter),
+        source_text,
+    )
+
+    # Persist install.sh / run-impl.sh next to SKILL.md (chmod 755).
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    for fname, info in asset_outputs.items():
+        target = skill_dir / fname
+        target.write_text(info.get("content", ""), encoding="utf-8")
+        target.chmod(0o755)
+
+    # Generate runner.sh from template (placeholder substitution).
+    runner_tmpl = (
+        Path(__file__).parent / "templates" / "runner.sh.tmpl"
+    ).read_text(encoding="utf-8")
+    tool_check = next(
+        (
+            a.get("idempotent_check", "true")
+            for a in plan_skill.get("assets", []) or []
+            if a.get("filename") == "install.sh"
+        ),
+        "true",
+    )
+    runner_sh = (
+        runner_tmpl
+        .replace("__SKILL_NAME__", name)
+        .replace("__TOOL_CHECK__", tool_check or "true")
+        .replace("__VALIDATED_DIGEST__", base_digest)
+    )
+    runner_path = skill_dir / "runner.sh"
+    runner_path.write_text(runner_sh, encoding="utf-8")
+    runner_path.chmod(0o755)
+
+    # Compose _meta.json patch (caller writes the file).
+    return {
+        "execution_mode": "executable_sandbox",
+        "validated_against_digest": base_digest,
+        "assets": {
+            fname: {
+                "verified": info.get("verified", False),
+                "rounds": info.get("rounds", 0),
+            }
+            for fname, info in asset_outputs.items()
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Stage 3: build (single conversation, 3 inner steps)
 # ---------------------------------------------------------------------------
 def run_build(
@@ -1197,9 +1364,10 @@ def run_build(
         name = skill.get("name", "")
         if not name:
             continue
-        skill_md = Path(skills_base) / tech_stack / name / "SKILL.md"
+        skill_dir = Path(skills_base) / tech_stack / name
+        skill_md = skill_dir / "SKILL.md"
         exists = skill_md.exists()
-        skill_outputs.append({
+        output_entry: dict = {
             "name": name,
             "path": str(skill_md),
             "exists": exists,
@@ -1209,7 +1377,45 @@ def run_build(
                 "success" if exists
                 else ("aborted" if aborted_in_step else "error")
             ),
-        })
+        }
+
+        # Executable-skill branch: only when SKILL.md exists AND the plan
+        # marked this skill as executable_sandbox. Failures degrade to a
+        # warning so a single broken asset doesn't kill the batch.
+        if exists and skill.get("execution_mode") == "executable_sandbox":
+            try:
+                meta_patch = _build_executable_assets_for_skill(
+                    adapter, skill, skill_dir, cleaned_dir,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"  WARN: executable asset build failed for {name}: {exc}",
+                    file=sys.stderr,
+                )
+                output_entry["execution_mode"] = "executable_sandbox"
+                output_entry["asset_build_error"] = str(exc)
+            else:
+                if meta_patch is not None:
+                    meta_path = skill_dir / "_meta.json"
+                    try:
+                        meta = (
+                            json.loads(meta_path.read_text(encoding="utf-8"))
+                            if meta_path.exists() else {}
+                        )
+                    except json.JSONDecodeError:
+                        meta = {}
+                    meta.update(meta_patch)
+                    meta_path.write_text(
+                        json.dumps(meta, indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    output_entry["execution_mode"] = "executable_sandbox"
+                    output_entry["validated_against_digest"] = (
+                        meta_patch["validated_against_digest"]
+                    )
+                    output_entry["assets"] = meta_patch["assets"]
+
+        skill_outputs.append(output_entry)
     return stats, skill_outputs
 
 

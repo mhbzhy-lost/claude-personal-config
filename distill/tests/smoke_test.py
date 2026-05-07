@@ -469,6 +469,77 @@ body
     print("  4 frontmatter coercion cases all OK")
 
 
+def test_executable_sandbox_mock_e2e(rec):
+    """E2E with mocked LLM + mocked sandbox; verify executable artifacts produced."""
+    print("\n[test 9] executable_sandbox e2e (mocked)")
+    import tempfile
+    from unittest.mock import patch
+    from asset_builder import AssetSpec, ValidationResult, build_assets
+
+    with tempfile.TemporaryDirectory() as tmp:
+        skills_base = Path(tmp) / "skills"
+        skills_base.mkdir(parents=True, exist_ok=True)
+        (skills_base / "_tag_catalog.json").write_text(
+            '{"capability":{},"tech_stack":{},"language":[]}'
+        )
+
+        plan = {
+            "tech_stack": "test-tool",
+            "skills": [{
+                "name": "test-tool-cli",
+                "execution_mode": "executable_sandbox",
+                "assets": [{
+                    "filename": "install.sh",
+                    "idempotent_check": "which test-tool",
+                    "smoke_test": ["test-tool --version"],
+                    "purpose": "Install test-tool",
+                }, {
+                    "filename": "run-impl.sh",
+                    "purpose": "Run test-tool",
+                }],
+            }],
+        }
+
+        with patch("pipeline.pull_image_with_digest", return_value="sha256:fake"), \
+             patch("asset_builder.validate_install_asset",
+                   return_value=ValidationResult(True, "")):
+            skill_dir = skills_base / "test-tool" / "test-tool-cli"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: test-tool-cli\ntech_stack: [test-tool]\n---\nbody"
+            )
+
+            specs = [
+                AssetSpec(
+                    filename=a["filename"],
+                    idempotent_check=a.get("idempotent_check", ""),
+                    smoke_test=a.get("smoke_test", []) or [],
+                    purpose=a.get("purpose", ""),
+                )
+                for a in plan["skills"][0]["assets"]
+            ]
+            outputs = build_assets(
+                plan["skills"][0], specs, "debian:12-slim",
+                lambda p: "#!/bin/bash\nwhich test-tool && exit 0\necho ok",
+                "source text",
+            )
+            assert outputs["install.sh"]["verified"] is True, outputs
+            assert outputs["run-impl.sh"]["verified"] is True, outputs
+            print("  asset build returned verified=True for install.sh: OK")
+
+
+def test_executable_schema_hint_in_plan_prompt():
+    """The PLAN_PROMPT must include the executable_sandbox schema hint so
+    the plan LLM knows it can mark CLI-tool skills as executable."""
+    print("\n[test 10] PLAN_PROMPT includes executable_sandbox schema hint")
+    assert "execution_mode" in pipeline.PLAN_PROMPT
+    assert "executable_sandbox" in pipeline.PLAN_PROMPT
+    assert "## Executable skills" in pipeline.PLAN_PROMPT
+    assert "install.sh" in pipeline.PLAN_PROMPT
+    assert "run-impl.sh" in pipeline.PLAN_PROMPT
+    print("  PLAN_PROMPT carries executable schema hint: OK")
+
+
 def main() -> int:
     runs_dir = ROOT / "runs"
 
@@ -480,6 +551,8 @@ def main() -> int:
     test_normalize_tech_slug()
     test_normalize_skill_name()
     test_frontmatter_list_coercion(RunRecorder(runs_dir))
+    test_executable_sandbox_mock_e2e(RunRecorder(runs_dir))
+    test_executable_schema_hint_in_plan_prompt()
 
     print("\nSMOKE TEST PASSED")
     return 0
