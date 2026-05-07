@@ -469,6 +469,204 @@ body
     print("  4 frontmatter coercion cases all OK")
 
 
+def test_executable_sandbox_mock_e2e(rec):
+    """E2E with mocked LLM + mocked sandbox; verify executable artifacts produced."""
+    print("\n[test 9] executable_sandbox e2e (mocked)")
+    import tempfile
+    from unittest.mock import patch
+    from asset_builder import AssetSpec, ValidationResult, build_assets
+
+    with tempfile.TemporaryDirectory() as tmp:
+        skills_base = Path(tmp) / "skills"
+        skills_base.mkdir(parents=True, exist_ok=True)
+        (skills_base / "_tag_catalog.json").write_text(
+            '{"capability":{},"tech_stack":{},"language":[]}'
+        )
+
+        plan = {
+            "tech_stack": "test-tool",
+            "skills": [{
+                "name": "test-tool-cli",
+                "execution_mode": "executable_sandbox",
+                "assets": [{
+                    "filename": "install.sh",
+                    "idempotent_check": "which test-tool",
+                    "smoke_test": ["test-tool --version"],
+                    "purpose": "Install test-tool",
+                }, {
+                    "filename": "run-impl.sh",
+                    "purpose": "Run test-tool",
+                }],
+            }],
+        }
+
+        with patch("pipeline.pull_image_with_digest", return_value="sha256:fake"), \
+             patch("asset_builder.validate_install_asset",
+                   return_value=ValidationResult(True, "")):
+            skill_dir = skills_base / "test-tool" / "test-tool-cli"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: test-tool-cli\ntech_stack: [test-tool]\n---\nbody"
+            )
+
+            specs = [
+                AssetSpec(
+                    filename=a["filename"],
+                    idempotent_check=a.get("idempotent_check", ""),
+                    smoke_test=a.get("smoke_test", []) or [],
+                    purpose=a.get("purpose", ""),
+                )
+                for a in plan["skills"][0]["assets"]
+            ]
+            outputs = build_assets(
+                plan["skills"][0], specs, "debian:12-slim",
+                lambda p: "#!/bin/bash\nwhich test-tool && exit 0\necho ok",
+                "source text",
+            )
+            assert outputs["install.sh"]["verified"] is True, outputs
+            assert outputs["run-impl.sh"]["verified"] is True, outputs
+            print("  asset build returned verified=True for install.sh: OK")
+
+
+def test_executable_schema_hint_in_plan_prompt():
+    """The PLAN_PROMPT must include the executable_sandbox schema hint so
+    the plan LLM knows it can mark CLI-tool skills as executable."""
+    print("\n[test 10] PLAN_PROMPT includes executable_sandbox schema hint")
+    assert "execution_mode" in pipeline.PLAN_PROMPT
+    assert "executable_sandbox" in pipeline.PLAN_PROMPT
+    assert "## Executable skills" in pipeline.PLAN_PROMPT
+    assert "install.sh" in pipeline.PLAN_PROMPT
+    assert "run-impl.sh" in pipeline.PLAN_PROMPT
+    print("  PLAN_PROMPT carries executable schema hint: OK")
+
+
+class _FakeBashAdapter:
+    """Adapter stub that returns deterministic bash content for asset gen."""
+
+    def __init__(self, content: str = "#!/bin/bash\nwhich test-tool && exit 0\necho ok"):
+        self._content = content
+
+    def create_message(self, *, messages, tools=None, max_tokens=2000):
+        msg = SimpleNamespace(content=self._content, tool_calls=None,
+                              reasoning_content=None)
+        choice = SimpleNamespace(message=msg, finish_reason="stop")
+        return SimpleNamespace(
+            choices=[choice],
+            usage=SimpleNamespace(
+                prompt_tokens=10,
+                completion_tokens=5,
+                prompt_tokens_details=SimpleNamespace(cached_tokens=0),
+            ),
+        )
+
+
+def test_executable_sandbox_helper_writes_artifacts(rec):
+    """_build_executable_assets_for_skill writes install.sh / run-impl.sh /
+    runner.sh / meta_patch with correct content and permissions."""
+    print("\n[test 11] _build_executable_assets_for_skill artifacts")
+    import tempfile
+    from unittest.mock import patch
+    from asset_builder import ValidationResult
+
+    with tempfile.TemporaryDirectory() as tmp:
+        skills_base = Path(tmp) / "skills"
+        skill_dir = skills_base / "test-tool" / "test-tool-cli"
+        skill_dir.mkdir(parents=True)
+        cleaned_dir = Path(tmp) / "cleaned"
+        cleaned_dir.mkdir(parents=True)
+
+        plan_skill = {
+            "name": "test-tool-cli",
+            "execution_mode": "executable_sandbox",
+            "assets": [
+                {
+                    "filename": "install.sh",
+                    "idempotent_check": "which test-tool",
+                    "smoke_test": ["test-tool --version"],
+                    "purpose": "Install test-tool",
+                },
+                {
+                    "filename": "run-impl.sh",
+                    "purpose": "Run test-tool",
+                },
+            ],
+        }
+
+        adapter = _FakeBashAdapter()
+        with patch("pipeline.pull_image_with_digest", return_value="sha256:fake1234"), \
+             patch("asset_builder.validate_install_asset",
+                   return_value=ValidationResult(True, "")):
+            meta_patch = pipeline._build_executable_assets_for_skill(
+                adapter, plan_skill, skill_dir, cleaned_dir,
+            )
+
+        # Assert install.sh / run-impl.sh / runner.sh exist and chmod 755
+        for fname in ("install.sh", "run-impl.sh", "runner.sh"):
+            p = skill_dir / fname
+            assert p.exists(), f"{fname} not created"
+            mode = p.stat().st_mode & 0o777
+            assert mode == 0o755, f"{fname} mode {oct(mode)} != 0755"
+            print(f"  {fname} created with mode 0755: OK")
+
+        # Assert runner.sh has placeholders substituted
+        runner_text = (skill_dir / "runner.sh").read_text()
+        assert "__SKILL_NAME__" not in runner_text, "SKILL_NAME placeholder leaked"
+        assert "__TOOL_CHECK__" not in runner_text, "TOOL_CHECK placeholder leaked"
+        assert "__VALIDATED_DIGEST__" not in runner_text, "DIGEST placeholder leaked"
+        assert "test-tool-cli" in runner_text, "skill name not substituted"
+        assert "which test-tool" in runner_text, "tool check not substituted"
+        assert "sha256:fake1234" in runner_text, "digest not substituted"
+        print("  runner.sh placeholders all substituted: OK")
+
+        # Assert meta_patch shape
+        assert meta_patch["execution_mode"] == "executable_sandbox"
+        assert meta_patch["validated_against_digest"] == "sha256:fake1234"
+        assert "install.sh" in meta_patch["assets"]
+        assert meta_patch["assets"]["install.sh"]["verified"] is True
+        print("  meta_patch contains required fields: OK")
+
+
+def test_executable_sandbox_tool_check_quote_escape(rec):
+    """__TOOL_CHECK__ substitution escapes ' to '\\'' per T1 contract."""
+    print("\n[test 12] __TOOL_CHECK__ single-quote escape")
+    import tempfile
+    from unittest.mock import patch
+    from asset_builder import ValidationResult
+
+    with tempfile.TemporaryDirectory() as tmp:
+        skill_dir = Path(tmp) / "skill"
+        skill_dir.mkdir()
+        cleaned_dir = Path(tmp) / "cleaned"
+        cleaned_dir.mkdir()
+
+        plan_skill = {
+            "name": "x",
+            "execution_mode": "executable_sandbox",
+            "assets": [{
+                "filename": "install.sh",
+                "idempotent_check": "test -x '/opt/foo'",  # has single quote
+                "smoke_test": [],
+                "purpose": "p",
+            }],
+        }
+        adapter = _FakeBashAdapter(content="#!/bin/bash\nexit 0")
+        with patch("pipeline.pull_image_with_digest", return_value="sha256:abc"), \
+             patch("asset_builder.validate_install_asset",
+                   return_value=ValidationResult(True, "")):
+            pipeline._build_executable_assets_for_skill(
+                adapter, plan_skill, skill_dir, cleaned_dir,
+            )
+
+        runner_text = (skill_dir / "runner.sh").read_text()
+        # Original "'" must be escaped to "'\''" inside the bash -c '...'
+        # idempotent_check substitution. Confirm escaped form is present.
+        assert "'\\''/opt/foo'\\''" in runner_text, (
+            "single-quote not escaped to '\\''. runner.sh excerpt:\n"
+            + runner_text
+        )
+        print("  single-quote correctly escaped to '\\'': OK")
+
+
 def main() -> int:
     runs_dir = ROOT / "runs"
 
@@ -480,6 +678,10 @@ def main() -> int:
     test_normalize_tech_slug()
     test_normalize_skill_name()
     test_frontmatter_list_coercion(RunRecorder(runs_dir))
+    test_executable_sandbox_mock_e2e(RunRecorder(runs_dir))
+    test_executable_schema_hint_in_plan_prompt()
+    test_executable_sandbox_helper_writes_artifacts(RunRecorder(runs_dir))
+    test_executable_sandbox_tool_check_quote_escape(RunRecorder(runs_dir))
 
     print("\nSMOKE TEST PASSED")
     return 0
