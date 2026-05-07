@@ -106,13 +106,21 @@ def validate_install_asset(install_sh: str, base_image: str,
             )
             return ValidationResult(False, "\n".join(error_chunks), container_name)
 
-        # Gate 3: zero diff after second run (any new path = idempotency violation)
-        diff_after_2nd = diff_container(container_name)
-        if diff_after_2nd:
-            paths = [p for _, p in diff_after_2nd]
+        # Gate 3: zero-delta on a redundant 3rd run.
+        # ``docker diff`` reports the cumulative delta from the image baseline,
+        # not delta-since-last-checkpoint, so we must subtract before/after sets
+        # around a 3rd redundant run rather than asserting the post-2nd-run diff
+        # is empty (gate 1's writes are still visible there).
+        diff_baseline = set(p for _, p in diff_container(container_name))
+        exec_in_container(
+            container_name, ["bash", "-c", install_sh], check=False,
+        )
+        diff_post = set(p for _, p in diff_container(container_name))
+        new_paths = diff_post - diff_baseline
+        if new_paths:
             error_chunks.append(
-                f"[gate 3: idempotency violation] second run wrote "
-                f"{len(paths)} path(s): {sorted(paths)[:10]}"
+                f"[gate 3: idempotency violation] redundant run wrote "
+                f"{len(new_paths)} new path(s): {sorted(list(new_paths))[:10]}"
             )
             return ValidationResult(False, "\n".join(error_chunks), container_name)
 

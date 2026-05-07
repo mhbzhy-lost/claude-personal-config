@@ -17,7 +17,7 @@ def _fail(stderr="boom"):
 
 
 def test_validate_install_idempotent_check():
-    """First run installs; second run must be no-op (zero diff)."""
+    """First run installs; 3rd redundant run must add zero new paths vs baseline."""
     spec = AssetSpec(
         filename="install.sh",
         idempotent_check="which mitmproxy",
@@ -29,24 +29,28 @@ def test_validate_install_idempotent_check():
          patch("asset_builder.exec_in_container") as m_exec, \
          patch("asset_builder.diff_container") as m_diff:
         m_run.return_value = _ok()
-        m_exec.side_effect = [_ok(), _ok(), _ok()]  # install, install (re-run), smoke
-        m_diff.return_value = []  # empty diff after 2nd run
+        # install x3 (gates 1, 2, 3-redundant) + smoke
+        m_exec.side_effect = [_ok(), _ok(), _ok(), _ok()]
+        # baseline (post-2nd-run) + post (after-3rd-run); both empty for clean case
+        m_diff.side_effect = [[], []]
         result = validate_install_asset(install_sh, "debian:12-slim", spec)
 
     assert result.success is True
     assert result.error_log == ""
 
 
-def test_validate_install_fails_when_diff_nonempty_after_second_run():
-    """Second install run must produce zero diff. Diff = idempotency violation."""
+def test_validate_install_fails_when_third_run_writes_new_paths():
+    """3rd redundant run must add zero new paths. New path => idempotency violation."""
     spec = AssetSpec(filename="install.sh", idempotent_check="which X",
                      smoke_test=["X --version"])
     with patch("asset_builder.run_ephemeral") as m_run, \
          patch("asset_builder.exec_in_container") as m_exec, \
          patch("asset_builder.diff_container") as m_diff:
         m_run.return_value = _ok()
-        m_exec.side_effect = [_ok(), _ok()]
-        m_diff.return_value = [("A", "/var/log/leak")]  # leaked write
+        # install x3 (no smoke since gate 3 fails before)
+        m_exec.side_effect = [_ok(), _ok(), _ok()]
+        # baseline empty, post adds /var/log/leak => new_paths nonempty
+        m_diff.side_effect = [[], [("A", "/var/log/leak")]]
         result = validate_install_asset("...", "debian:12-slim", spec)
 
     assert result.success is False
