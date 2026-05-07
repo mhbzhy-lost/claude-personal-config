@@ -49,13 +49,15 @@ link_item() {
   fi
 }
 
-# 读清单文件：跳过 # 注释和空行，trim 行首尾空白，逐行 stdout 输出。
-# 文件不存在时直接返回（无输出），调用方需自行检查。
+# 读清单文件：跳过 # 行首注释、剥离 " #..." 行内注释、trim 首尾空白后逐行
+# stdout 输出。文件不存在时直接返回（无输出），调用方需自行检查。
 read_list_file() {
   local file="$1"
   [ -f "$file" ] || return 0
   local line
   while IFS= read -r line || [ -n "$line" ]; do
+    # 剥离行内注释：从首个 " #" 开始截掉（要求空格前缀，避免误删 plugin 名里的 #）
+    line="${line%% #*}"
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
     [ -z "$line" ] && continue
