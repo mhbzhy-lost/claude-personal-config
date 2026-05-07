@@ -13,6 +13,7 @@ After 3 failures, mark asset as ``unverified: true`` and emit summary warn.
 from __future__ import annotations
 
 import logging
+import subprocess
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -140,6 +141,12 @@ def validate_install_asset(install_sh: str, base_image: str,
 
     except SandboxError as e:
         return ValidationResult(False, f"[sandbox error] {e}", container_name)
+    except subprocess.TimeoutExpired as e:
+        return ValidationResult(
+            False,
+            f"[timeout after {e.timeout}s] command: {e.cmd}",
+            container_name,
+        )
     finally:
         # Cleanup is best-effort; never let teardown raise into the caller.
         try:
@@ -167,7 +174,12 @@ def build_assets(skill: dict, assets: list[AssetSpec], base_image: str,
     for spec in assets:
         if spec.filename != "install.sh":
             content = llm_generate(_render_prompt(skill, spec, source_text))
-            out[spec.filename] = {"content": content, "verified": False, "rounds": 0}
+            out[spec.filename] = {
+                "content": content,
+                "verified": True,
+                "validation_skipped": True,  # no gates applicable for non-install
+                "rounds": 0,
+            }
             continue
 
         last_error = ""
@@ -182,7 +194,8 @@ def build_assets(skill: dict, assets: list[AssetSpec], base_image: str,
             result = validate_install_asset(content, base_image, spec)
             if result.success:
                 out[spec.filename] = {
-                    "content": content, "verified": True, "rounds": round_idx,
+                    "content": content, "verified": True, "validation_skipped": False,
+                    "rounds": round_idx,
                 }
                 verified = True
                 break
@@ -195,6 +208,7 @@ def build_assets(skill: dict, assets: list[AssetSpec], base_image: str,
         if not verified:
             out[spec.filename] = {
                 "content": last_content, "verified": False,
+                "validation_skipped": False,
                 "rounds": MAX_RETRY_ROUNDS, "error": last_error,
             }
     return out

@@ -5,7 +5,7 @@ import pytest
 from asset_builder import (
     AssetSpec, ValidationResult, validate_install_asset, build_assets,
 )
-from sandbox_runner import ExecResult
+from sandbox_runner import ExecResult, SandboxError
 
 
 def _ok(stdout="", stderr=""):
@@ -78,6 +78,7 @@ def test_build_assets_retries_until_success():
         result = build_assets(skill, [spec], "debian:12-slim", fake_llm, "src")
 
     assert result["install.sh"]["verified"] is True
+    assert result["install.sh"]["validation_skipped"] is False
     assert result["install.sh"]["rounds"] == 2
     assert call_count["n"] == 2
 
@@ -90,5 +91,39 @@ def test_build_assets_marks_unverified_after_3_rounds():
         result = build_assets({"name": "x"}, [spec], "debian:12-slim",
                                 lambda p: "broken", "src")
     assert result["install.sh"]["verified"] is False
+    assert result["install.sh"]["validation_skipped"] is False
     assert result["install.sh"]["rounds"] == 3
     assert "always fail" in result["install.sh"]["error"]
+
+
+def test_build_assets_non_install_marked_skipped():
+    """Non-install assets bypass validation gates and are marked as skipped."""
+    spec = AssetSpec(filename="run-impl.sh", purpose="wrap mitmdump")
+    result = build_assets(
+        {"name": "x"}, [spec], "debian:12-slim",
+        lambda p: "#!/bin/bash\nmitmdump $@", "src",
+    )
+    assert result["run-impl.sh"]["verified"] is True
+    assert result["run-impl.sh"]["validation_skipped"] is True
+    assert result["run-impl.sh"]["rounds"] == 0
+
+
+def test_validate_install_returns_failed_result_on_sandbox_error():
+    """SandboxError from run_ephemeral propagates as ValidationResult, not exception."""
+    spec = AssetSpec(filename="install.sh", smoke_test=[])
+    with patch("asset_builder.run_ephemeral",
+               side_effect=SandboxError("run", 1, "daemon down")):
+        result = validate_install_asset("...", "debian:12-slim", spec)
+    assert result.success is False
+    assert "sandbox error" in result.error_log.lower()
+
+
+def test_validate_install_returns_failed_result_on_timeout():
+    """subprocess.TimeoutExpired from a hung install.sh is caught."""
+    import subprocess as sp
+    spec = AssetSpec(filename="install.sh", smoke_test=[])
+    with patch("asset_builder.run_ephemeral",
+               side_effect=sp.TimeoutExpired(cmd=["docker", "run"], timeout=600)):
+        result = validate_install_asset("...", "debian:12-slim", spec)
+    assert result.success is False
+    assert "timeout" in result.error_log.lower()
