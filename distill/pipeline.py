@@ -1213,7 +1213,7 @@ def _build_executable_assets_for_skill(
     runner_sh = (
         runner_tmpl
         .replace("__SKILL_NAME__", name)
-        .replace("__TOOL_CHECK__", tool_check or "true")
+        .replace("__TOOL_CHECK__", (tool_check or "true").replace("'", "'\\''"))
         .replace("__VALIDATED_DIGEST__", base_digest)
     )
     runner_path = skill_dir / "runner.sh"
