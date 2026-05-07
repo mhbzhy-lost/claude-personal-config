@@ -74,6 +74,40 @@ description: skill-catalog 知识检索工作流——通过 mcp__skill-catalog_
 
 返回完整 markdown 正文。
 
+### 步骤 6：执行 — 区分 knowledge vs executable_sandbox
+
+resolve 返回的 skill 记录里若带 `execution_mode: executable_sandbox`，
+说明这是工具型 skill：除了 SKILL.md 还附带 `install.sh / run-impl.sh
+/ runner.sh / _meta.json`，**不应**像 knowledge skill 那样把 markdown
+当成最终知识带回去，而要走 docker sandbox 调用：
+
+```bash
+bash <skills-base>/<tech>/<skill>/runner.sh <args>
+```
+
+调用语义由 `runner.sh` 统一兜底：
+- 共享容器 `claude-skill-sandbox` 懒创建（首次 10–30s）
+- 工具懒装入 install.sh（首次 30–120s，按工具体量）
+- 二次调用幂等（< 2s，install.sh 顶部 idempotent guard 命中）
+- `$PWD` 在 `$HOME` 内时直接 bind-mount 翻译；否则走 `docker cp` 落回
+  宿主机
+- 宿主机 HTTP proxy 透传（`127.0.0.1` 自动改写为 `host.docker.internal`）
+
+**不要绕开 runner.sh 直接 `bash install.sh` 或调 `run-impl.sh`**，会丢
+失容器/路径/proxy 包装。
+
+参数怎么传以 SKILL.md 的 `## Basic Usage` 为准；常见管理命令：
+
+```bash
+bin/claude-skill-sandbox status        # 容器状态 + drift 警告
+bin/claude-skill-sandbox shell         # 进容器调试
+bin/claude-skill-sandbox validate <s>  # 重跑 4 关验证
+bin/claude-skill-sandbox reset         # 推倒 sandbox 容器+volume
+```
+
+前置：docker daemon 必须可达（`init_claude.sh` 已加 preflight）。更深
+的 4 关验证、模板与已知 caveat 见仓库 `distill/README.md`。
+
 ---
 
 ## 3. 特殊情况
