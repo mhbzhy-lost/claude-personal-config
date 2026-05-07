@@ -59,14 +59,20 @@ def pull_image_with_digest(image: str) -> str:
 
 
 def inspect_image_digest(image: str) -> str | None:
-    """Return current digest of locally cached image, or None if not present."""
+    """Return current digest of locally cached image, or None if not present.
+
+    Mirrors the parsing in :func:`pull_image_with_digest`: docker may emit
+    either a bare ``sha256:...`` Id or a ``repo@sha256:...`` RepoDigest, so
+    we strip any ``repo@`` prefix before validating.
+    """
     res = _run(
         ["docker", "image", "inspect", image, "--format", "{{.Id}}"],
         op="inspect", check=False,
     )
     if res.returncode != 0:
         return None
-    digest = res.stdout.strip()
+    raw = res.stdout.strip()
+    digest = raw.rpartition("@")[2] if "@" in raw else raw
     return digest if digest.startswith("sha256:") else None
 
 
@@ -119,9 +125,12 @@ def diff_container(container: str) -> list[tuple[str, str]]:
     return out
 
 
-def remove_container(name: str, *, force: bool = True) -> None:
+def remove_container(name: str, *, force: bool = True) -> ExecResult:
+    """Remove a container. Returns ExecResult; non-zero rc usually means
+    container didn't exist (idempotent intent), but stderr may contain
+    real errors (daemon down, perms) — caller should inspect."""
     flags = ["-f"] if force else []
-    _run(["docker", "rm", *flags, name], op="rm", check=False)
+    return _run(["docker", "rm", *flags, name], op="rm", check=False)
 
 
 def container_exists(name: str) -> bool:
