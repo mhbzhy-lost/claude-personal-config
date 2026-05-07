@@ -682,7 +682,6 @@ if command -v claude >/dev/null 2>&1; then
     echo "[plugins] 使用清单: $PLUGINS_LIST_FILE"
 
     # 解析 installed_plugins.json 中某 plugin@marketplace 的 gitCommitSha
-    # 输出空字符串表示未装或无 sha 字段
     get_installed_sha() {
       local key="$1"
       [ -f "$PLUGINS_JSON" ] || { printf ''; return; }
@@ -701,33 +700,148 @@ for entry in d.get('plugins', {}).get('$key', []):
 " 2>/dev/null
     }
 
-    # 把 marketplace clone 仓 checkout 到指定 ref（detached HEAD），返回解析后的 SHA
-    # 出错时返回空字符串
-    pin_marketplace_to_ref() {
-      local marketplace="$1"
-      local ref="$2"
-      local clone="$DST/plugins/marketplaces/$marketplace"
-      [ -d "$clone/.git" ] || { printf ''; return; }
-      # 先 fetch 一次，确保引用存在（fetch 失败不阻断，可能是离线但 ref 已在本地）
-      git -C "$clone" fetch origin --quiet 2>/dev/null || true
-      local target_sha
-      target_sha=$(git -C "$clone" rev-parse "$ref" 2>/dev/null || echo "")
-      if [ -z "$target_sha" ]; then
-        echo "[warn] marketplace $marketplace 中找不到 ref '$ref'" >&2
-        printf ''
-        return
+    # 从 marketplace.json 推 plugin 的 upstream URL
+    # 支持 source.source = "url" / "github"；其他类型返回空
+    get_upstream_url() {
+      local marketplace="$1" plugin="$2"
+      local mjson="$DST/plugins/marketplaces/$marketplace/.claude-plugin/marketplace.json"
+      [ -f "$mjson" ] || { printf ''; return; }
+      [ -n "$PY" ] || { printf ''; return; }
+      $PY -c "
+import json, sys
+try:
+    d = json.load(open('$mjson'))
+except Exception:
+    sys.exit(0)
+for p in d.get('plugins', []):
+    if p.get('name') == '$plugin':
+        s = p.get('source', {})
+        t = s.get('source')
+        if t == 'url':
+            print(s.get('url', ''))
+        elif t == 'github':
+            repo = s.get('repo', '')
+            if repo:
+                print(f'https://github.com/{repo}.git')
+        sys.exit(0)
+" 2>/dev/null
+    }
+
+    # 解析 git ref（tag/branch/SHA）到具体 SHA。无须本地 clone，用 ls-remote
+    # 失败时若 ref 是 7-40 位 hex 则当作 SHA 直接返回（覆盖"无 tag 仓库"场景）
+    resolve_ref_to_sha() {
+      local upstream="$1" ref="$2"
+      local sha
+      for r in "$ref" "v$ref" "refs/tags/$ref" "refs/heads/$ref"; do
+        sha=$(git ls-remote "$upstream" "$r" 2>/dev/null | head -1 | awk '{print $1}')
+        if [ -n "$sha" ]; then
+          printf '%s' "$sha"
+          return 0
+        fi
+      done
+      if [[ "$ref" =~ ^[0-9a-f]{7,40}$ ]]; then
+        printf '%s' "$ref"
+        return 0
       fi
-      local cur_sha
-      cur_sha=$(git -C "$clone" rev-parse HEAD 2>/dev/null || echo "")
-      if [ "$cur_sha" != "$target_sha" ]; then
-        git -C "$clone" checkout --detach "$target_sha" --quiet 2>/dev/null || {
-          echo "[warn] marketplace $marketplace checkout $ref 失败" >&2
-          printf ''
-          return
-        }
-        echo "[plugins] marketplace $marketplace pinned 到 $ref ($target_sha)" >&2
+      return 1
+    }
+
+    # Pin 模式：直接 clone upstream 到 cache + checkout ref，绕过
+    # `claude plugins install`。手写 installed_plugins.json 条目。
+    # 失败时返回非 0；caller 需打 warn 但不阻断后续 plugin
+    install_pinned_plugin() {
+      local plugin_name="$1" marketplace="$2" ref="$3"
+      local key="$plugin_name@$marketplace"
+
+      local upstream
+      upstream=$(get_upstream_url "$marketplace" "$plugin_name")
+      if [ -z "$upstream" ]; then
+        echo "[warn] $key 推不出 upstream URL（marketplace.json 缺失或 source 类型未支持）" >&2
+        return 1
       fi
-      printf '%s' "$target_sha"
+
+      local expected_sha
+      if ! expected_sha=$(resolve_ref_to_sha "$upstream" "$ref"); then
+        echo "[warn] $key 无法解析 ref '$ref'（既非 $upstream 上的 tag/branch，也不是 SHA hex）" >&2
+        return 1
+      fi
+
+      # 幂等：cache 现存 SHA 与期望一致则跳过
+      local installed_sha
+      installed_sha=$(get_installed_sha "$key")
+      if [ "$installed_sha" = "$expected_sha" ]; then
+        echo "[plugins] $key 已 pin 在 $ref ($expected_sha)"
+        return 0
+      fi
+
+      echo "[plugins] $key pinning 到 $ref ($expected_sha) — clone $upstream..."
+      local tmp_dir
+      tmp_dir=$(mktemp -d)
+      if ! git clone --quiet "$upstream" "$tmp_dir" 2>&1 | sed 's/^/  /'; then
+        echo "[warn] clone $upstream 失败" >&2
+        rm -rf "$tmp_dir"
+        return 1
+      fi
+      if ! git -C "$tmp_dir" checkout --quiet "$expected_sha" 2>&1; then
+        echo "[warn] checkout $expected_sha 失败" >&2
+        rm -rf "$tmp_dir"
+        return 1
+      fi
+
+      # 读 plugin.json 拿 version；缺失则用 ref 兜底
+      local version="unknown"
+      if [ -f "$tmp_dir/.claude-plugin/plugin.json" ]; then
+        version=$($PY -c "
+import json
+try:
+    print(json.load(open('$tmp_dir/.claude-plugin/plugin.json')).get('version', 'unknown'))
+except Exception:
+    print('unknown')
+" 2>/dev/null || echo "unknown")
+      fi
+
+      # 落到 cache 目录，去掉 .git（cache 是文件树快照，不需要 git 历史）
+      local target_cache="$DST/plugins/cache/$marketplace/$plugin_name/$version"
+      rm -rf "$target_cache"
+      mkdir -p "$(dirname "$target_cache")"
+      mv "$tmp_dir" "$target_cache"
+      rm -rf "$target_cache/.git"
+
+      # 写 installed_plugins.json：保留其他 plugin 条目
+      $PY -c "
+import json, datetime
+from pathlib import Path
+p = Path('$PLUGINS_JSON')
+if p.exists():
+    try:
+        d = json.loads(p.read_text())
+    except Exception:
+        d = {'version': 2, 'plugins': {}}
+else:
+    d = {'version': 2, 'plugins': {}}
+d.setdefault('plugins', {})
+key = '$key'
+now = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+existing = d['plugins'].get(key, [])
+# 取已有第一条 user scope 的 installedAt（若有），否则用 now
+installed_at = now
+for e in existing:
+    if e.get('scope') == 'user' and e.get('installedAt'):
+        installed_at = e['installedAt']
+        break
+d['plugins'][key] = [{
+    'scope': 'user',
+    'installPath': '$target_cache',
+    'version': '$version',
+    'installedAt': installed_at,
+    'lastUpdated': now,
+    'gitCommitSha': '$expected_sha',
+}]
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n')
+"
+      echo "[plugins] $key pinned 完成（version=$version, sha=${expected_sha:0:12}）"
+      return 0
     }
 
     while IFS= read -r line; do
@@ -751,28 +865,20 @@ for entry in d.get('plugins', {}).get('$key', []):
 
       key="$plugin_name@$marketplace"
 
-      # 若声明了 ref，先把 marketplace clone 切到 ref；目标 SHA 用于幂等比对
-      target_sha=""
+      # Pinned plugin：走 git clone 路径
       if [ -n "$ref" ]; then
-        target_sha=$(pin_marketplace_to_ref "$marketplace" "$ref")
+        install_pinned_plugin "$plugin_name" "$marketplace" "$ref" || \
+          echo "[warn] $key pin 失败，请检查 upstream 网络与 ref 正确性"
+        continue
       fi
 
-      # 幂等检查：已装 + (未声明 ref 或 ref 已对齐) 则跳过
+      # 未 pin：原 claude plugins install 路径
       if [ -f "$PLUGINS_JSON" ] && grep -q "\"$key\"" "$PLUGINS_JSON" 2>/dev/null; then
-        if [ -z "$ref" ]; then
-          echo "[plugins] $key 已安装"
-          continue
-        fi
-        installed_sha=$(get_installed_sha "$key")
-        if [ -n "$target_sha" ] && [ "$installed_sha" = "$target_sha" ]; then
-          echo "[plugins] $key 已安装并 pin 在 $ref ($target_sha)"
-          continue
-        fi
-        echo "[plugins] $key 已装但 SHA 不一致 (installed=$installed_sha, expected=$target_sha)，重装..."
-        claude plugins remove "$key" -s user 2>/dev/null || true
+        echo "[plugins] $key 已安装（未 pin，跟随 marketplace HEAD）"
+        continue
       fi
 
-      echo "[plugins] 安装 $key${ref:+ @ $ref} ..."
+      echo "[plugins] 安装 $key（未 pin）..."
       if claude plugins install "$key" 2>&1; then
         echo "[plugins] $key 安装完成"
       else

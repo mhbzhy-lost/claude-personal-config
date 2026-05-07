@@ -15,12 +15,22 @@
 # 语法：`#` 起首为注释，空行忽略；其余每行 `name:marketplace[:ref]`，
 #       前后空白会被 trim。
 #
-# 第三段 ref 可选——填写时为 git commit SHA / tag / branch，
-# init_claude.sh 会在 install 前把 marketplace 仓 checkout 到该 ref，
-# pin 插件为该时刻的快照。适合工作流文档（如 CLAUDE.md）与插件版本强绑定的场景。
-# 不填则跟随 marketplace 默认分支 HEAD（首装定终身，不自动升级）。
+# 第三段 ref 可选——填写时为 git ref，可以是：
+#   - tag 名（如 v5.1.0 或 5.1.0，自动尝试加 v 前缀）
+#   - branch 名（如 main、stable）
+#   - commit SHA（7-40 位 hex，自动识别）
+#
+# 因 `claude plugins install` 不支持指定版本号，pinned plugin 由
+# init_claude.sh 直接从其 upstream git repo clone 到 cache 并 checkout
+# 到 ref，绕过 install 命令。这样：
+#   - 即使目标仓不打 tag 也能 pin 到具体 commit
+#   - marketplace HEAD 升级不影响 pinned plugin
+#   - 退回旧版本只需改本文件的 ref，重跑 init_claude.sh 即可（自动 re-clone）
+#
+# 不填 ref 则走原 `claude plugins install` 路径，跟随 marketplace HEAD
+# （首装定终身，无自动升级）。
 
 # superpowers 与 CLAUDE.md 的工作流增强强绑定（brainstorming/writing-plans/
 # subagent-driven-development 等命令名/skill 路径），升级前需对齐 CLAUDE.md。
-# 当前 pin 在 5.1.0 (gitCommitSha 6efe32c9e2dd002d0c394e861e0529675d1ab32e)。
-superpowers:claude-plugins-official:6efe32c9e2dd002d0c394e861e0529675d1ab32e
+# 当前 pin 在 5.1.0（自动解析为 v5.1.0 tag）。
+superpowers:claude-plugins-official:5.1.0
