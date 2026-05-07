@@ -49,8 +49,14 @@ cmd_status() {
 
   local tools_json="[]"
   if [ "$running" -eq 1 ]; then
-    tools_json=$(docker exec "$SANDBOX" bash -c \
-      'find /state/manifests -maxdepth 1 -name "*.json" -exec cat {} \; 2>/dev/null | jq -s "." 2>/dev/null || echo "[]"')
+    local raw_json
+    raw_json=$(docker exec "$SANDBOX" bash -c \
+      'find /state/manifests -maxdepth 1 -name "*.json" -exec cat {} \; 2>/dev/null | jq -s "." 2>/dev/null') || true
+    if [ -n "$raw_json" ] && echo "$raw_json" | python3 -c 'import json, sys; json.load(sys.stdin)' >/dev/null 2>&1; then
+      tools_json="$raw_json"
+    else
+      echo "[claude-skill] warning: tools manifest aggregation failed (corrupt JSON or jq missing in container); reporting empty list" >&2
+    fi
   fi
 
   if [ $json -eq 1 ]; then
@@ -83,7 +89,10 @@ EOJ
 
 cmd_reset() {
   echo "About to remove sandbox '$SANDBOX' and volume '$STATE_VOL'."
-  read -r -p "Type 'yes' to confirm: " confirm
+  if ! read -r -p "Type 'yes' to confirm: " confirm; then
+    echo "Aborted (no input on stdin)."
+    exit 1
+  fi
   [[ "$confirm" != "yes" ]] && { echo "Aborted."; exit 1; }
   docker rm -f "$SANDBOX" 2>/dev/null || true
   docker volume rm "$STATE_VOL" 2>/dev/null || true
