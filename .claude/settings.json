@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git push origin main)",
+      "Bash(git -C /Users/leshi.zhy/claude-config push origin main)"
+    ]
+  }
+}
