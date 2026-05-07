@@ -32,3 +32,7 @@ settings/.env
 
 # 用户自定义清单：覆盖 lists/*.list 默认值，仅本机生效
 lists/*.local.list
+
+# 并发 task 用的 git worktree 临时目录（subagent-driven-development 流程产物，
+# 整批合并后会清理；过程产物不入仓避免污染主分支）
+.worktrees/
