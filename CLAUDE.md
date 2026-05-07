@@ -1,12 +1,44 @@
 # Superpowers 流程增强
 
-- Brainstorming 与 writing-plans 阶段都必须调用 `/knowledge-retrieval` 检索技能库辅助决策（前者侧重选型/架构方向，后者侧重落地模式与 task 拆分参考）。
-- Writing-plans 必须对子任务做 DAG 拓扑分析，确定执行顺序和并发可行性。
-- Subagent-driven-development 须按 writing-plans 产出的依赖图进行任务编排：以 task 为调度单位，独立 task 可并行派发；每个 task 内部仍走 subagent-driven-development 规定的完整流程，不因并发而变更。
-- 每个 implementer subagent 在动手实施前必须先执行 `/knowledge-retrieval` 检索其 task 涉及的技术域；该约束写入子代理 prompt，由子代理自身执行，主 agent 不代办（主 agent 仅负责在 dispatch prompt 中显式声明此要求）。
-- Subagents 统一在后台执行，不阻塞主对话。依赖未满足的 task 须等待前驱完成后再派发，不得因后台模式而提前并发。
-- 并发 task 须使用独立 git worktree 隔离文件变更，避免冲突；并发结束后合并工作树，无法自动解决的冲突须提请用户决策。
-  - 遵循 `using-git-worktrees` 的：目录选择优先级（`.worktrees/` 优先）、`.gitignore` 安全校验（首个 worktree 创建前一次性完成，避免并发改 `.gitignore` 竞态）、`git worktree add` 命令模板、每个 worktree 的 setup + baseline 测试。
-  - 跳过 `using-git-worktrees` 的：Step 0「已在 worktree 就跳过创建」与 Step 1a 原生 worktree 工具（如 `EnterWorktree`）——前者会让主 agent 误进 worktree，后者语义是把当前 agent 搬进 worktree，均与「主 agent 在协调层建 N 个、分派给 N 个 subagent」模型冲突；强制走 1b 手动 `git worktree add` fallback。
-  - 编排：主 agent 在 dispatch 前一次性建好所有 worktree，把路径写入各 subagent 的 prompt；subagent 直接 `cd` 进入指定路径，不再调用 `using-git-worktrees`。
-- Superpowers 工作流完成后，须对照 writing-plans 产出的计划逐项核实，确保无遗漏或错位；若存在未提交变更，须完成一次提交，保持工作树干净。
+工作流四点补强（语义边界，不绑定 Superpowers 内部步骤命名）：
+
+## 1. 反幻觉：每阶段强制知识检索
+
+- `brainstorming` 与 `writing-plans` 阶段必须调用 `/knowledge-retrieval`
+  （前者侧重选型与架构，后者侧重落地模式与 task 拆分参考）。
+- 每个 implementer subagent 动手前必须自己跑 `/knowledge-retrieval`
+  检索其 task 涉及的技术域；该约束写入 dispatch prompt，由子代理执行，
+  主 agent 不代办。
+
+## 2. 可并发：DAG 拓扑而非串行
+
+- `writing-plans` 必须对子任务做 DAG 依赖分析，明确执行顺序与并发可行集合。
+- `subagent-driven-development` 按 DAG 编排：独立 task 并行派发，每个
+  task 内部仍走 skill 规定的完整流程。
+- 并发 task 在独立 git worktree 中隔离：
+  - 主 agent 留在协调层，**不调用 `using-git-worktrees` skill**（其设计
+    是把当前 agent 移入 worktree，与协调语义冲突），改为直接
+    `git worktree add` 一次性建好所有 worktree。绕过 skill 时主 agent
+    须自行履行其安全契约：
+    - **目录优先级**：`.worktrees/`（已存在则复用）> `worktrees/` >
+      默认新建 `.worktrees/`
+    - **`.gitignore` 校验**：首次 add 前一次性确保 worktree 目录已被忽略，
+      未忽略则 add+commit；后续并发 add 不重复校验，避免竞态
+    - **Submodule guard**：若 cwd 在子模块内，先 `cd` 到 superproject
+      root 再建
+    - **Sandbox 降级**：`git worktree add` 因权限拒绝失败时整批回退到
+      串行执行（在原工作目录顺序跑 task），并提示用户
+  - 路径写入各 subagent prompt；subagent 在已就绪的 worktree 内执行任务，
+    `using-git-worktrees` skill 自动识别"已在 worktree"并跳过创建段，
+    setup 与 baseline 由 skill 标准步骤完成。
+  - 并发结束后合并工作树；自动合并失败的冲突提请用户决策。
+
+## 3. 不阻塞：subagent 后台执行
+
+- 所有 subagent 统一后台运行，主对话保持响应。
+- 依赖未满足的 task 须等前驱完成后再派发；不因后台模式而提前并发破坏依赖序。
+
+## 4. 完整性：终态校验 + 工作树干净
+
+- 工作流完成后对照 `writing-plans` 产出逐项核实，确保无遗漏或错位。
+- 存在未提交变更须完成一次提交。
