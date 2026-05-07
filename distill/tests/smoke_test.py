@@ -575,6 +575,21 @@ def test_executable_sandbox_helper_writes_artifacts(rec):
         cleaned_dir = Path(tmp) / "cleaned"
         cleaned_dir.mkdir(parents=True)
 
+        # Write a placeholder SKILL.md with frontmatter so the helper can
+        # patch in execution_mode. Mirrors the real build-stage flow where
+        # SKILL.md is written by the LLM before the executable-asset helper
+        # runs.
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text(
+            "---\n"
+            "name: test-tool-cli\n"
+            "description: \"Test tool CLI\"\n"
+            "tech_stack: [test-tool]\n"
+            "---\n"
+            "# test-tool-cli\n",
+            encoding="utf-8",
+        )
+
         plan_skill = {
             "name": "test-tool-cli",
             "execution_mode": "executable_sandbox",
@@ -617,6 +632,15 @@ def test_executable_sandbox_helper_writes_artifacts(rec):
         assert "which test-tool" in runner_text, "tool check not substituted"
         assert "sha256:fake1234" in runner_text, "digest not substituted"
         print("  runner.sh placeholders all substituted: OK")
+
+        # Assert SKILL.md frontmatter now has execution_mode: executable_sandbox
+        skill_md_text = skill_md.read_text(encoding="utf-8")
+        assert "execution_mode: executable_sandbox" in skill_md_text, \
+            "execution_mode not patched into SKILL.md frontmatter"
+        # Sanity: still wrapped in frontmatter fences and original fields preserved.
+        assert skill_md_text.startswith("---\n"), "frontmatter fence broken"
+        assert "name: test-tool-cli" in skill_md_text, "name field lost"
+        print("  SKILL.md frontmatter patched with execution_mode: OK")
 
         # Assert meta_patch shape
         assert meta_patch["execution_mode"] == "executable_sandbox"
