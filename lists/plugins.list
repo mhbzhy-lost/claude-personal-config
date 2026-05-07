@@ -12,25 +12,23 @@
 #   github:claude-plugins-official           —— GitHub PR/issue/review 一站式
 #   commit-commands:claude-plugins-official  —— /commit / /commit-push-pr / /clean_gone
 #
-# 语法：`#` 起首为注释，空行忽略；其余每行 `name:marketplace[:ref]`，
+# 语法：`#` 起首为注释，空行忽略；其余每行 `name:marketplace[:commit-sha]`，
 #       前后空白会被 trim。
 #
-# 第三段 ref 可选——填写时为 git ref，可以是：
-#   - tag 名（如 v5.1.0 或 5.1.0，自动尝试加 v 前缀）
-#   - branch 名（如 main、stable）
-#   - commit SHA（7-40 位 hex，自动识别）
+# 第三段 commit SHA 可选——填写时必须是 7-40 位 hex；推荐填完整 40 位以
+# 启用幂等快速路径（否则每次跑 init 都要 clone 上游对比 SHA）。
 #
 # 因 `claude plugins install` 不支持指定版本号，pinned plugin 由
-# init_claude.sh 直接从其 upstream git repo clone 到 cache 并 checkout
-# 到 ref，绕过 install 命令。这样：
-#   - 即使目标仓不打 tag 也能 pin 到具体 commit
-#   - marketplace HEAD 升级不影响 pinned plugin
-#   - 退回旧版本只需改本文件的 ref，重跑 init_claude.sh 即可（自动 re-clone）
+# init_claude.sh 从其 upstream git repo clone 到 cache 并 checkout 到
+# 指定 commit SHA，绕过 install 命令。锁 commit 而非 tag/branch：
+#   - tag/branch 都可能被上游覆写，commit SHA 是唯一不可变锚
+#   - 即使目标仓不打 tag 也能 pin
+#   - 退回旧版本：改本文件的 SHA 重跑 init_claude.sh，自动 re-clone
 #
-# 不填 ref 则走原 `claude plugins install` 路径，跟随 marketplace HEAD
-# （首装定终身，无自动升级）。
+# 选 SHA 的提示：通常用对应版本的 release commit；从 upstream 仓
+# `git rev-parse v5.1.0^{}` 或 GitHub release 页面拷贝。
 
 # superpowers 与 CLAUDE.md 的工作流增强强绑定（brainstorming/writing-plans/
 # subagent-driven-development 等命令名/skill 路径），升级前需对齐 CLAUDE.md。
-# 当前 pin 在 5.1.0（自动解析为 v5.1.0 tag）。
-superpowers:claude-plugins-official:5.1.0
+# 当前 pin: f2cbfbef (= obra/superpowers v5.1.0 release commit)
+superpowers:claude-plugins-official:f2cbfbefebbfef77321e4c9abc9e949826bea9d7
