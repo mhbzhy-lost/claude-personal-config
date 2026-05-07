@@ -95,12 +95,16 @@ sandbox_required_tools: [mitmproxy] # which X 检测列表
 | 项 | 值 | 理由 |
 |---|---|---|
 | 容器名 | `claude-skill-sandbox` | 全局唯一，所有 runner.sh 共用 |
-| Base image | `debian:12-slim` | ~75MB，apt 完整，多架构原生支持 |
+| Base image | `debian:12-slim`（runtime tag）/ digest pinned at distill | runtime 跟随用户拿安全更新，distill 时 pin digest 以可重现验证 |
 | 启动命令 | `sleep infinity` | 长跑空进程，等 `docker exec` |
 | Restart 策略 | `unless-stopped` | 开机重启即用，崩溃自恢复 |
-| Named volume | `claude-skill-state` → `/state` | 状态持久化（cookies / cert / 用户输入数据）|
-| Bind mount | 默认 `$PWD:/work -w /work` | agent 工作目录，方便 IO |
+| Named volume | `claude-skill-state` → `/state` | manifests / cookies / cert / 用户中间数据 |
+| Bind mount（创建时）| `$HOME:/host_home`（读写）| 允许 sandbox 访问 agent 工作目录；runner.sh 把 `$PWD` 翻译成 `/host_home/${PWD#$HOME/}` |
 | Network | `bridge`（默认）| `--network host` 在 macOS 无效，统一 bridge + `host.docker.internal` |
+
+**为什么不用 `docker run --rm --volumes-from`**：`--volumes-from` 只继承 named volume mount，**不继承容器可写层**。`apt-get install` 把文件落到 `/usr/bin/`（容器层），fresh 容器拿不到。用 `docker exec` 进持久 sandbox 才能复用工具。
+
+**`$PWD` 不在 `$HOME` 下时的兜底**：runner.sh 检测后 `cp -r $PWD <sandbox-tmp>` 复制进 sandbox 临时目录执行；产物再 `docker cp` 拷回。覆盖率：日常开发场景 ≥95% 在 `$HOME` 下，兜底只为 `/tmp/...` 等少数情况。
 
 ### 3. runner.sh 模板
 
@@ -111,13 +115,19 @@ SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 SANDBOX="${CLAUDE_SKILL_SANDBOX:-claude-skill-sandbox}"
 BASE_IMAGE="${CLAUDE_SKILL_BASE:-debian:12-slim}"
 STATE_VOL="${CLAUDE_SKILL_STATE_VOL:-claude-skill-state}"
-NETWORK_MODE="${CLAUDE_SKILL_NETWORK:-bridge}"  # bridge | host (Linux only)
+
+# Preflight: docker daemon 可达
+docker info >/dev/null 2>&1 || {
+  echo "[claude-skill] docker daemon not reachable. Start Docker Desktop and retry." >&2
+  exit 2
+}
 
 # 1. 容器懒创建
 if ! docker ps -a --format '{{.Names}}' | grep -q "^${SANDBOX}$"; then
   docker volume create "$STATE_VOL" >/dev/null
   docker run -d --name "$SANDBOX" --restart=unless-stopped \
     --mount type=volume,source="$STATE_VOL",target=/state \
+    --mount type=bind,source="$HOME",target=/host_home \
     "$BASE_IMAGE" sleep infinity
 fi
 
@@ -125,58 +135,85 @@ fi
 docker ps --format '{{.Names}}' | grep -q "^${SANDBOX}$" || \
   docker start "$SANDBOX" >/dev/null
 
-# 3. 工具懒装入（idempotent_check 头由 distill 注入）
-docker exec "$SANDBOX" bash -c "$(cat <<'IDEMPOTENT'
-which mitmproxy >/dev/null 2>&1 && exit 0
-IDEMPOTENT
-)" 2>/dev/null || docker exec "$SANDBOX" bash "$SKILL_DIR/install.sh"
+# 3. 工具懒装入（idempotent_check 由 _meta.json 提供，distill 注入）
+TOOL_CHECK="${CLAUDE_SKILL_TOOL_CHECK:-which mitmproxy}"
+docker exec "$SANDBOX" bash -c "$TOOL_CHECK" >/dev/null 2>&1 || \
+  docker exec -e DEBIAN_FRONTEND=noninteractive "$SANDBOX" bash /host_home/${SKILL_DIR#$HOME/}/install.sh
 
-# 4. 实际执行（挂载工作目录）
-docker exec -i \
-  --mount type=bind,source="$PWD",target=/work \
-  -w /work \
-  "$SANDBOX" bash "$SKILL_DIR/run-impl.sh" "$@"
+# 4. 翻译 host $PWD 到 in-container 路径
+if [[ "$PWD" == "$HOME"* ]]; then
+  IN_CWD="/host_home/${PWD#$HOME/}"
+else
+  # Fallback: 复制到 sandbox tmp，执行后拷回
+  echo "[claude-skill] \$PWD outside \$HOME, using copy-in fallback" >&2
+  TMPID=$(uuidgen | tr -d -)
+  docker exec "$SANDBOX" mkdir -p "/tmp/work-$TMPID"
+  docker cp "$PWD/." "$SANDBOX:/tmp/work-$TMPID/"
+  IN_CWD="/tmp/work-$TMPID"
+  trap 'docker cp "$SANDBOX:$IN_CWD/." "$PWD/" 2>/dev/null; docker exec "$SANDBOX" rm -rf "$IN_CWD"' EXIT
+fi
+
+# 5. 执行
+docker exec -i -w "$IN_CWD" "$SANDBOX" \
+  bash "/host_home/${SKILL_DIR#$HOME/}/run-impl.sh" "$@"
 ```
 
-> 注意：`docker exec` 不支持 `--mount`。实际实现需改用 `docker run --rm` 一次性容器拿到 bind mount，或在持久容器启动时预挂载工作区。下一节重新审视。
+### 3.1 工作目录映射：Path B（docker exec + $HOME mount）
 
-### 3.1 bind mount 的工作目录处理（重要修正）
+**核心做法**：sandbox 启动时把 `$HOME` mount 到 `/host_home`，runner.sh 把 host `$PWD` 翻译成 `/host_home/${PWD#$HOME/}`，所有 `docker exec` 用这个 in-container 路径作为 cwd。
 
-`docker exec` 进入已运行的容器，**继承容器启动时的 mount 配置，无法新增 bind mount**。两个方案：
+| 优点 | 缺点 |
+|---|---|
+| install.sh 用标准 apt/pip，无路径定制 | `$PWD` 必须在 `$HOME` 下（覆盖 ≥95% 实际场景）|
+| 工具一次装入持久容器，多次复用 | `$HOME` 之外用 copy-in/copy-out 兜底，体验稍差 |
+| 工具状态（cookies / cert）共享 named volume | macOS bind mount 大量小文件 IO 慢——但 skill 产物多为单文件（capture / screenshot），实测无感 |
+| 逻辑简单，runner.sh 易维护 | sandbox 容器对 `$HOME` 有读写权限——隔离边界比 read-only 弱 |
 
-**方案 X**：sandbox 启动时预挂载 `$HOME:/host_home:ro`，agent 把数据通过 `cp -r /host_home/<path> /work` 复制进容器
-- 优点：runner.sh 简单，每次 exec 即可
-- 缺点：大文件复制成本；用户的工作目录每次会话可能变
-
-**方案 Y**：每个 skill 用 `docker run --rm` 起一次性容器（共享 named volume，base image 复用），bind mount 当前 `$PWD`
-- 优点：bind mount 灵活，工作目录跟着 `$PWD` 走
-- 缺点：每次 cold start 200-500ms；工具装入要走 named volume（`/usr/local/bin` 不在 volume 上则丢失）
-
-**方案 Z**（推荐）：混合——sandbox 持久容器 + 工具装入 named volume `/state/bin` 路径，runner.sh 用 `docker run --rm --volumes-from $SANDBOX -v "$PWD:/work"` 起临时容器复用 sandbox 的 volumes
-- 优点：bind mount 跟当前目录 + 工具状态共享
-- 缺点：install.sh 必须把可执行文件装到 `/state/bin`（统一前缀），`/etc/profile.d/` 加 PATH
-
-最终方案待 plan 阶段细化。**目前优先方案 Z**，因为它是唯一同时满足"工作目录灵活" + "工具一次安装多次复用"的形态。
+**为什么不是其他方案**：
+- ❌ `--volumes-from`：不继承容器可写层，apt 装的工具拿不到
+- ❌ `docker run --rm`：每次 cold start 200-500ms 累积成本，且工具状态难持久
+- ❌ 全 root mount（`/`）：暴露面过大，安全审计不友好
 
 ### 4. install.sh 强约束
 
-**幂等性强制**：所有 install.sh 第一行必须是 idempotent guard。
+**幂等性强制**：所有 install.sh 第一行（紧跟 set/shebang 后）必须是 idempotent guard。**网络敏感命令必须用 `retry` helper 包裹**，distill 注入 helper。
 
 ```bash
 #!/usr/bin/env bash
-# install.sh — sandbox 内安装 mitmproxy
+# install.sh — sandbox 内安装 mitmproxy（distill 生成）
 set -euo pipefail
-which mitmproxy >/dev/null 2>&1 && exit 0   # ← guard，distill 校验
+which mitmproxy >/dev/null 2>&1 && exit 0   # ← idempotent guard
 
-apt-get update
+# distill 注入的 helper（所有 install.sh 头部统一）
+retry() {
+  local n=0 max=3
+  until "$@"; do
+    n=$((n+1))
+    [ $n -ge $max ] && { echo "[claude-skill] retry $n/$max failed: $*" >&2; return 1; }
+    sleep $((n*3))
+  done
+}
+
+# LLM 生成的内容
+retry apt-get update
 apt-get install -y --no-install-recommends mitmproxy ca-certificates
 apt-get clean && rm -rf /var/lib/apt/lists/*
-mitmproxy --version >/dev/null  # 验证
+mitmproxy --version >/dev/null  # 自验证
 ```
 
-distill build 阶段会**跑两次** install.sh：
-- 第一次在 fresh `debian:12-slim`：必须装成功 + smoke test 通过
-- 第二次紧接着：必须 `which` guard 命中、立即退出零退出码、零副作用
+**distill build 阶段验证序列**：
+
+1. **第一次在 fresh `debian:12-slim`**（pin digest）：跑 install.sh，必须装成功 + smoke 全过
+2. **第二次紧接着**：必须 `which` guard 命中、秒退、零副作用（`docker diff` 检测无新增文件）
+3. **smoke_test 序列**：从 plan 阶段声明的命令清单逐条执行，全 0 退出码
+4. **任一步失败**：stderr 末 100 行 + 当前脚本反馈给 LLM 重生成（≤3 轮）；3 轮仍失败 → asset 标 `unverified: true`，runner.sh 拒绝执行除非 `--allow-unverified`
+
+**为什么 install.sh 内做网络 retry**：
+
+- distill 内的 R1（LLM 重生成）解决"脚本本身有 bug"
+- install.sh 内的 R2（retry helper）解决"用户机器上的临时网络抖动"
+- 两者正交，都需要
+- runner.sh **不**再外加重试层，避免真实失败暴露被推迟到 18s 后
 
 ### 5. distill 管线扩展
 
@@ -217,37 +254,114 @@ plan
   → fetch (官方文档, 同前)
   → build:
       1. 生成 SKILL.md (同前)
-      2. 对每个 asset:
+      2. 解析 base image digest:
+         a. docker pull debian:12-slim
+         b. docker inspect --format '{{index .RepoDigests 0}}' debian:12-slim
+         c. 把 digest 记到 _meta.json.validated_against_digest
+      3. 对每个 asset:
          a. LLM 按 source + asset.purpose 生成脚本
          b. shellcheck (bash) / py_compile (python) 静态检查
-         c. 临时 docker run --rm debian:12-slim 实跑：
+         c. 临时 docker run --rm <digest> 实跑（pin 到 digest，不是 tag）：
             - bash install.sh     # 第一遍，必须成功
             - bash install.sh     # 第二遍，必须秒退（idempotent）
+            - docker diff <ctnr>  # 第二遍后 diff 必须为空（零副作用）
             - eval $smoke_test    # 必须全 0 退出码
          d. 失败 → 反馈 stderr 末 100 行 + 当前脚本给 LLM，重试（≤3 轮）
          e. 3 轮仍失败 → asset 标记 unverified，不入库，summary warn
-      3. 生成 runner.sh (来自固定模板，参数化 sandbox name / state vol)
+      4. 生成 runner.sh (固定模板，参数化 sandbox name / state vol / TOOL_CHECK)
+      5. _meta.json 记录: execution_mode, validated_against_digest, asset 验证状态
 ```
+
+#### Drift 检测（runtime）
+
+runner.sh 启动时对比当前 `debian:12-slim` 的 digest 与 `_meta.json.validated_against_digest`：
+
+- 一致 → 静默
+- 漂移 → stderr warn `[claude-skill] base image drifted from validated digest, run claude-skill-sandbox-validate <skill> if scripts misbehave`
+- **不阻断执行**——多数场景 drift 无影响，强制阻断会让用户每次安全升级后无法工作
+
+提供 `claude-skill-sandbox-validate <skill>` 命令在当前 base 上重跑 install + smoke + 更新 `_meta.json` 的 digest。
 
 ### 6. 数据流（agent 实际调用流）
 
 ```
-agent: bash skills/web-scraping/mitmproxy-tool/runner.sh -p 8080 capture.flow
+agent: bash $HOME/proj/skills/web-scraping/mitmproxy-tool/runner.sh -p 8080 capture.flow
   │
   ▼
 runner.sh:
-  ├─ docker ps -a 检查 sandbox → 不存在则懒创建
+  ├─ docker info → daemon 可达 ✓
+  ├─ docker ps -a 检查 sandbox → 不存在
+  ├─ docker volume create claude-skill-state
+  ├─ docker run -d --name claude-skill-sandbox --restart=unless-stopped \
+  │     -v claude-skill-state:/state -v $HOME:/host_home \
+  │     debian:12-slim sleep infinity
   ├─ docker exec sandbox 'which mitmproxy' → 失败
-  ├─ docker exec sandbox bash install.sh → 装入 mitmproxy
-  │   └─ apt-get update + install + 缓存清理
-  ├─ docker run --rm --volumes-from sandbox -v "$PWD:/work" -w /work \
-  │     debian:12-slim bash run-impl.sh -p 8080 capture.flow
-  │   └─ 在 /work 下生成 capture.flow，agent 用 ls 看得到
+  ├─ docker exec sandbox bash /host_home/proj/skills/.../install.sh
+  │   └─ retry apt-get update + install + 缓存清理
+  ├─ digest 比对 → 一致，静默
+  ├─ $PWD=$HOME/proj 在 $HOME 下 → IN_CWD=/host_home/proj
+  ├─ docker exec -w /host_home/proj sandbox \
+  │     bash /host_home/proj/skills/.../run-impl.sh -p 8080 capture.flow
+  │   └─ 在 /host_home/proj/ 下生成 capture.flow（host 侧 $HOME/proj/capture.flow 同一文件）
   ▼
-agent 拿到产物
+agent 拿到产物（host 侧文件已就位）
 ```
 
-第二次同 skill 调用：步骤 ② idempotent guard 命中，跳过装入，直接到 ③。
+第二次同 skill 调用：步骤 ④ idempotent guard 命中，秒退；后续直接到执行步骤。
+
+### 7. 状态查询命令 `claude-skill-sandbox-status`
+
+人机两用：默认彩色文本，`--json` 切机读。
+
+**默认文本输出**：
+
+```
+Sandbox Container
+  name        claude-skill-sandbox
+  status      running (started 3h 42m ago)
+  base image  debian:12-slim @ sha256:5f3e... (drifted from validated)
+  uptime      14 days
+
+Installed Tools (4)
+  mitmproxy        10.1.5    skill: web-scraping/mitmproxy-tool
+  playwright       1.40.0    skill: playwright/playwright-cli
+  maestro          1.34.0    skill: maestro/maestro-cli
+  ffmpeg           6.0       skill: ffmpeg/ffmpeg-encode
+
+State Volume (claude-skill-state)
+  size        128 MB
+  paths       /state/manifests (4) /state/cookies (12) /state/cert (1)
+
+Recent Skill Invocations (last 7d)
+  mitmproxy-tool      8 calls
+  playwright-cli      3 calls
+
+Health
+  ✓ docker daemon reachable
+  ✓ container responsive
+  ⚠ base digest drift (run validate to confirm install.sh still works)
+```
+
+**`--json` 输出 schema**（agent 解析）：
+
+```json
+{
+  "sandbox": {"name": "...", "status": "running|stopped|missing", "container_id": "...",
+              "started_at": "ISO8601", "uptime_seconds": 0},
+  "base_image": {"ref": "debian:12-slim", "current_digest": "sha256:...",
+                 "validated_digest": "sha256:...", "drifted": true},
+  "tools": [{"name": "...", "version": "...", "skill": "...", "installed_at": "..."}],
+  "state_volume": {"name": "...", "size_bytes": 0},
+  "skills_recent": [{"name": "...", "invocations_7d": 0}],
+  "health": {"docker_reachable": true, "container_responsive": true, "warnings": []}
+}
+```
+
+**数据来源**：
+
+- `docker inspect` 拿容器/镜像/volume 元数据
+- `/state/manifests/<skill-name>.json` —— 每个 skill 第一次装入时由 install.sh 末尾 emit；status 命令读全部 manifests 聚合
+- `/state/manifests/usage.log` —— runner.sh 每次成功执行追加一行 `<ISO8601> <skill-name>`，status 命令统计最近 7d
 
 ## 错误处理
 
@@ -299,29 +413,34 @@ agent 拿到产物
 |---|---|---|---|
 | Base image | `debian:12-slim` | python:3.12-slim / ubuntu:24.04 / alpine | 75MB 最小 + apt 完整 + 多架构原生 + 不锁死语言运行时 |
 | 容器生命周期 | 持久 + named volume | 临时 + volume / 临时无状态 | 工具一次装入多次复用 + 状态共享 |
-| 工作目录挂载 | `docker run --rm --volumes-from sandbox -v $PWD:/work` | bind 到持久容器（无法热挂）/ 复制进容器 | 灵活跟随 agent cwd + 复用工具 volume |
+| **工作目录映射** | **Path B：`docker exec` + `$HOME → /host_home` mount + cwd 路径翻译** | --volumes-from（不继承容器层）/ 全 root mount（暴露面）| 标准 apt/pip 装入 + 95% 场景 cwd 在 $HOME 下；少数场景 docker cp 兜底 |
 | 网络模式 | bridge 默认 + `host.docker.internal` | `--network host` | macOS 不支持 host 模式（VM 隔离）|
-| Install 幂等 | 强制 `which X && exit 0` 头 + distill 跑两遍验证 | 包管理器隐式幂等 | 显式契约更安全，跨发行版可移植 |
+| Install 幂等 | 强制 `which X && exit 0` 头 + distill 跑两遍 + `docker diff` 校验零副作用 | 包管理器隐式幂等 | 显式契约更安全，跨发行版可移植 |
+| **网络重试** | **install.sh 内 `retry()` helper（distill 注入），3 次指数退避** | runner.sh 外层 retry / 不重试 | 解决用户机器临时网络抖动；R1 分布式（distill 端 LLM 重生成）+ R2（runtime 内 retry）正交 |
 | 镜像分发 | 用户首次懒拉 `debian:12-slim` | 我们打 toolbox image / 拉用户预制 | 零运维 + 75MB 一次拉取无感 |
-| Plan schema | 加 `execution_mode` + `assets[]` | 单独 executable 管线 / 后处理增强 | 单管线最简，asset 是 SKILL.md 兄弟 artifact |
-| 验证粒度 | 实跑 install + smoke + 二次跑测幂等 | 仅静态检查（shellcheck）| LLM 生成的脚本必须实跑过才可信 |
+| **Digest pin 策略** | **Distill pin digest（写入 `_meta.json`）+ runtime 用 tag + drift warning + `validate` 命令重跑** | 全程 pin（错过安全更新）/ 全程不 pin（不可重现）| 验证可重现 + 用户能拿到安全更新 |
+| Plan schema | 加 `execution_mode` + `assets[]` + `validated_against_digest` | 单独 executable 管线 / 后处理增强 | 单管线最简 |
+| 验证粒度 | 实跑 install + 二次跑测幂等 + `docker diff` 校验副作用 + smoke | 仅静态检查 / 仅一次 install | LLM 脚本必须实跑+幂等都过才入库 |
+| **status 输出** | **默认彩色文本 + `--json` 开关；数据来源 `docker inspect` + `/state/manifests/*.json`** | 仅文本（agent 解析痛苦）/ 仅 JSON（人读痛苦）| 标准 `--format` 模式，人机两用 |
 
 ## 风险与缓解
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| LLM 生成的 install.sh 在某主机版本失败（系统差异）| 验证通过但用户跑失败 | distill 验证容器 = 用户运行容器（同 base），降低差异；明确 base image 版本约束 |
-| 用户 docker daemon 未跑 | runner.sh 整段失败 | 头部 preflight + 友好提示 |
+| LLM 生成的 install.sh 在某主机版本失败（系统差异）| 验证通过但用户跑失败 | distill 验证容器 = 用户运行容器（同 base + digest 记录），drift 时 warn |
+| 用户 docker daemon 未跑 | runner.sh 整段失败 | 头部 `docker info` preflight + 友好提示 |
 | named volume 数据无意义膨胀 | 占用磁盘 | `claude-skill-sandbox-reset` 命令一键清空 + 文档指引 |
-| `docker run --rm --volumes-from` 不能透传部分 mount type | 个别 skill 兼容性问题 | 试点 3 个 skill 时观察，必要时降级到方案 X |
-| 跨 skill 工作流（mitmproxy + playwright）在不同 `--rm` 容器间数据隔离 | 联动场景失效 | 通过 named volume `/state` 持久化中间产物，下游 skill 主动读 |
+| 用户 `$PWD` 不在 `$HOME` 下 | 路径翻译失效 | runner.sh 切换 copy-in/cp-out fallback；warn 用户体验稍差 |
+| sandbox 容器对 `$HOME` 有读写权限 | 容器内进程可写整个家目录 | 文档明示这是设计选择；敏感场景用 `:ro` 变体（需明确 trade-off）|
+| 跨 skill 联动通过容器内 fs 共享 | 单容器持久 fs 累积工具状态 | 同容器持久即可，命名约定 `/state/<skill>/...` 隔离 |
+| Base digest drift 后 install.sh 行为变 | 旧 skill 失效 | runner.sh drift warn + `validate` 命令重跑 + 自动更新 `_meta.json` digest |
 
-## 开放问题（plan 阶段细化）
+## 已解决的设计问题（原 4 个开放问题）
 
-1. `--volumes-from` 与 idempotent install 的交互——install.sh 装到 `/usr/local/bin` 还是 `/state/bin`？关系到 PATH 配置策略
-2. 蒸馏验证容器与运行容器同 base 但版本可能漂移（`debian:12-slim` 是 rolling tag）——是否要 pin 到 digest？
-3. `claude-skill-sandbox-status` 的输出格式——纯文本 vs JSON？兼顾人 + agent 解析
-4. install.sh 的 retry 是 distill 期间的还是 runtime 期间的？两者都要？
+1. ✅ **PATH 与 install 路径**：抛弃 `--volumes-from`（不继承容器层），改用 Path B（`docker exec` 进持久 sandbox + `$HOME` mount + cwd 翻译）。install.sh 用标准 apt/pip 装到 `/usr/local/bin`。详见 §3.1
+2. ✅ **Digest pin**：Distill 时 pin digest 写入 `_meta.json.validated_against_digest`，runtime 用 tag 跟随安全更新，drift 时 warn 不阻断；`claude-skill-sandbox-validate <skill>` 命令在新 base 上重跑验证。详见 §5
+3. ✅ **status 输出格式**：默认文本（人读）+ `--json` flag（agent 读），数据来源 `docker inspect` + `/state/manifests/<skill>.json`。详见 §7
+4. ✅ **Retry 归属**：双层正交——R1 distill 内 LLM 重生成（脚本质量问题），R2 install.sh 内 `retry()` helper（运行时网络抖动）。runner.sh 不再外加重试避免延迟暴露真实失败。详见 §4
 
 ## 后续工作（不在本期范围）
 
