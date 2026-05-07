@@ -6,4 +6,7 @@
 - 每个 implementer subagent 在动手实施前必须先执行 `/knowledge-retrieval` 检索其 task 涉及的技术域；该约束写入子代理 prompt，由子代理自身执行，主 agent 不代办（主 agent 仅负责在 dispatch prompt 中显式声明此要求）。
 - Subagents 统一在后台执行，不阻塞主对话。依赖未满足的 task 须等待前驱完成后再派发，不得因后台模式而提前并发。
 - 并发 task 须使用独立 git worktree 隔离文件变更，避免冲突；并发结束后合并工作树，无法自动解决的冲突须提请用户决策。
+  - 遵循 `using-git-worktrees` 的：目录选择优先级（`.worktrees/` 优先）、`.gitignore` 安全校验（首个 worktree 创建前一次性完成，避免并发改 `.gitignore` 竞态）、`git worktree add` 命令模板、每个 worktree 的 setup + baseline 测试。
+  - 跳过 `using-git-worktrees` 的：Step 0「已在 worktree 就跳过创建」与 Step 1a 原生 worktree 工具（如 `EnterWorktree`）——前者会让主 agent 误进 worktree，后者语义是把当前 agent 搬进 worktree，均与「主 agent 在协调层建 N 个、分派给 N 个 subagent」模型冲突；强制走 1b 手动 `git worktree add` fallback。
+  - 编排：主 agent 在 dispatch 前一次性建好所有 worktree，把路径写入各 subagent 的 prompt；subagent 直接 `cd` 进入指定路径，不再调用 `using-git-worktrees`。
 - Superpowers 工作流完成后，须对照 writing-plans 产出的计划逐项核实，确保无遗漏或错位；若存在未提交变更，须完成一次提交，保持工作树干净。
