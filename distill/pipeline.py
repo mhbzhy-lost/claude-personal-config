@@ -1150,6 +1150,34 @@ def _read_source_text(cleaned_dir: Path, skill_name: str) -> str:
         return ""
 
 
+def _patch_skill_md_execution_mode(skill_md_path: Path, mode: str) -> None:
+    """Insert ``execution_mode: <mode>`` into SKILL.md frontmatter if absent.
+
+    Idempotent: if the field is already present anywhere in the file
+    (typically inside the leading ``---`` fence) the file is left untouched.
+    Skips silently when:
+    - SKILL.md doesn't exist (caller may not have written it yet)
+    - Frontmatter is malformed (no leading ``---`` line)
+    """
+    if not skill_md_path.exists():
+        return
+    text = skill_md_path.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        # Malformed/no frontmatter — emit warning and skip.
+        print(
+            f"[distill][WARN] {skill_md_path} has no leading --- frontmatter "
+            f"fence; skipping execution_mode patch.",
+            file=sys.stderr,
+        )
+        return
+    if re.search(r"^execution_mode:", text, re.MULTILINE):
+        return  # already set
+    lines = text.splitlines(keepends=True)
+    # lines[0] is "---\n"; insert after the opening fence.
+    lines.insert(1, f"execution_mode: {mode}\n")
+    skill_md_path.write_text("".join(lines), encoding="utf-8")
+
+
 def _build_executable_assets_for_skill(
     adapter,
     plan_skill: dict,
@@ -1219,6 +1247,13 @@ def _build_executable_assets_for_skill(
     runner_path = skill_dir / "runner.sh"
     runner_path.write_text(runner_sh, encoding="utf-8")
     runner_path.chmod(0o755)
+
+    # Surface execution_mode in SKILL.md frontmatter so MCP scanner can
+    # filter on it without reading _meta.json. Idempotent: skipped if the
+    # field already exists or SKILL.md is missing/malformed.
+    _patch_skill_md_execution_mode(
+        skill_dir / "SKILL.md", "executable_sandbox"
+    )
 
     # Compose _meta.json patch (caller writes the file).
     return {

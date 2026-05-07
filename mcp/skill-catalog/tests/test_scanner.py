@@ -26,6 +26,7 @@ def write_skill(
     body: str = "",
     language=None,
     capability=None,
+    execution_mode=None,
 ) -> Path:
     """Write a synthetic SKILL.md under *directory/name*/SKILL.md."""
     skill_dir = directory / name
@@ -53,8 +54,12 @@ def write_skill(
             cap_yaml = str(capability)
         cap_line = f"capability: {cap_yaml}\n"
 
+    exec_line = ""
+    if execution_mode is not None:
+        exec_line = f"execution_mode: {execution_mode}\n"
+
     skill_file.write_text(
-        f"---\nname: {name}\ndescription: \"{description}\"\ntech_stack: {tag_yaml}\n{lang_line}{cap_line}---\n{body}\n",
+        f"---\nname: {name}\ndescription: \"{description}\"\ntech_stack: {tag_yaml}\n{lang_line}{cap_line}{exec_line}---\n{body}\n",
         encoding="utf-8",
     )
     return skill_file
@@ -754,3 +759,135 @@ def test_freshness_available_tags_reflects_changes(tmp_path: Path) -> None:
     # Without _tag_catalog.json present, available_tags falls back to
     # the in-memory aggregation, which must reflect the new file.
     assert "ui-action" in tags_after["capability"]
+
+
+# ---------------------------------------------------------------------------
+# 35. execution_mode frontmatter field — parse, default, filter, output
+# ---------------------------------------------------------------------------
+
+
+def test_execution_mode_parsed_from_frontmatter(tmp_path: Path) -> None:
+    """``execution_mode: executable_sandbox`` in frontmatter is parsed."""
+    write_skill(
+        tmp_path, "exec-tool", "desc", ["http"],
+        execution_mode="executable_sandbox",
+    )
+    catalog = SkillCatalog(tmp_path)
+    assert catalog.by_name["exec-tool"].execution_mode == "executable_sandbox"
+
+
+def test_execution_mode_defaults_to_knowledge_when_missing(tmp_path: Path) -> None:
+    """Missing ``execution_mode`` field defaults to ``"knowledge"``."""
+    write_skill(tmp_path, "doc-skill", "desc", ["react"])  # no execution_mode
+    catalog = SkillCatalog(tmp_path)
+    assert catalog.by_name["doc-skill"].execution_mode == "knowledge"
+
+
+def test_execution_mode_empty_value_defaults_to_knowledge(tmp_path: Path) -> None:
+    """Explicitly empty ``execution_mode:`` value coerces to ``"knowledge"``."""
+    skill_dir = tmp_path / "empty-mode"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: empty-mode\ndescription: x\ntech_stack: [react]\n"
+        "execution_mode:\n---\nbody\n",
+        encoding="utf-8",
+    )
+    catalog = SkillCatalog(tmp_path)
+    assert catalog.by_name["empty-mode"].execution_mode == "knowledge"
+
+
+def test_list_skills_filters_by_execution_mode_executable_sandbox(
+    tmp_path: Path,
+) -> None:
+    """``execution_mode="executable_sandbox"`` returns only matching skills."""
+    write_skill(
+        tmp_path, "exec-tool", "desc", ["http"],
+        execution_mode="executable_sandbox",
+    )
+    write_skill(tmp_path, "doc-skill", "desc", ["http"])  # default knowledge
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(
+        ["http"], execution_mode="executable_sandbox",
+    )
+    names = [s["name"] for s in result["skills"]]
+    assert names == ["exec-tool"]
+
+
+def test_list_skills_filters_by_execution_mode_knowledge(tmp_path: Path) -> None:
+    """``execution_mode="knowledge"`` excludes executable_sandbox skills."""
+    write_skill(
+        tmp_path, "exec-tool", "desc", ["http"],
+        execution_mode="executable_sandbox",
+    )
+    write_skill(tmp_path, "doc-skill", "desc", ["http"])  # default knowledge
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["http"], execution_mode="knowledge")
+    names = [s["name"] for s in result["skills"]]
+    assert names == ["doc-skill"]
+
+
+def test_list_skills_no_execution_mode_filter_returns_both(tmp_path: Path) -> None:
+    """``execution_mode=None`` is the no-filter default."""
+    write_skill(
+        tmp_path, "exec-tool", "desc", ["http"],
+        execution_mode="executable_sandbox",
+    )
+    write_skill(tmp_path, "doc-skill", "desc", ["http"])
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["http"])
+    names = [s["name"] for s in result["skills"]]
+    assert "exec-tool" in names
+    assert "doc-skill" in names
+
+
+def test_execution_mode_in_output_when_non_default(tmp_path: Path) -> None:
+    """``execution_mode`` appears in output dict for non-default values."""
+    write_skill(
+        tmp_path, "exec-tool", "desc", ["http"],
+        execution_mode="executable_sandbox",
+    )
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["http"])
+    by_name = {s["name"]: s for s in result["skills"]}
+    assert by_name["exec-tool"]["execution_mode"] == "executable_sandbox"
+
+
+def test_execution_mode_omitted_from_output_when_default(tmp_path: Path) -> None:
+    """``execution_mode`` is omitted from output for the ``"knowledge"`` default."""
+    write_skill(tmp_path, "doc-skill", "desc", ["http"])  # no execution_mode
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["http"])
+    by_name = {s["name"]: s for s in result["skills"]}
+    assert "execution_mode" not in by_name["doc-skill"]
+
+
+def test_execution_mode_explicit_knowledge_also_omitted(tmp_path: Path) -> None:
+    """Explicit ``execution_mode: knowledge`` is treated as the default and omitted."""
+    write_skill(
+        tmp_path, "doc-skill", "desc", ["http"],
+        execution_mode="knowledge",
+    )
+    catalog = SkillCatalog(tmp_path)
+
+    result = catalog.list_skills(["http"])
+    by_name = {s["name"]: s for s in result["skills"]}
+    assert "execution_mode" not in by_name["doc-skill"]
+
+
+def test_execution_mode_non_string_coerced_to_str(tmp_path: Path) -> None:
+    """Non-string frontmatter values for ``execution_mode`` coerce via str()."""
+    skill_dir = tmp_path / "weird-mode"
+    skill_dir.mkdir()
+    # YAML scalar 42 becomes an int after parsing — ensure scanner coerces.
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: weird-mode\ndescription: x\ntech_stack: [react]\n"
+        "execution_mode: 42\n---\nbody\n",
+        encoding="utf-8",
+    )
+    catalog = SkillCatalog(tmp_path)
+    assert catalog.by_name["weird-mode"].execution_mode == "42"

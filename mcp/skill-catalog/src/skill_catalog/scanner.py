@@ -20,6 +20,11 @@ class SkillRecord:
     capability: list[str]  # empty → unclassified (pre-marker legacy)
     path: Path  # absolute path to the SKILL.md file
     body: str   # markdown body (frontmatter stripped)
+    # Structural attribute (NOT a tag): "knowledge" (default, markdown-only)
+    # vs "executable_sandbox" (skill ships install.sh/run-impl.sh/runner.sh
+    # the agent can bash). Surfaced from SKILL.md frontmatter so resolve /
+    # list_skills consumers can differentiate without reading _meta.json.
+    execution_mode: str = "knowledge"
 
 
 # Matches markdown links/images: ](...) capturing prefix, link target, suffix
@@ -167,6 +172,11 @@ class SkillCatalog:
             else:
                 capability = []
 
+            execution_mode_raw = meta.get("execution_mode", "")
+            execution_mode = str(execution_mode_raw) if execution_mode_raw else ""
+            if not execution_mode:
+                execution_mode = "knowledge"
+
             record = SkillRecord(
                 name=name,
                 description=description,
@@ -175,6 +185,7 @@ class SkillCatalog:
                 capability=capability,
                 path=skill_md.resolve(),
                 body=post.content,
+                execution_mode=execution_mode,
             )
             # Last-write-wins if duplicate names appear; log would be nice but keep silent.
             self.by_name[name] = record
@@ -198,6 +209,7 @@ class SkillCatalog:
         tech_stack: list[str] | None = None,
         language: list[str] | None = None,
         capability: list[str] | None = None,
+        execution_mode: str | None = None,
     ) -> dict:
         """Return skill metadata matching the query.
 
@@ -212,6 +224,12 @@ class SkillCatalog:
           the query (per ``capability_match_mode``, default ``union``).
           Skills without ``capability`` (legacy / pre-marker) are
           **excluded** when *capability* is set.
+        - *execution_mode* → keep only skills whose ``execution_mode`` equals
+          this value exactly (e.g. ``"executable_sandbox"`` to filter to
+          tool-like skills, ``"knowledge"`` for markdown-only). ``None`` =
+          no filter. This is a structural attribute, not a tag dimension —
+          it does NOT independently trigger a non-empty result; it composes
+          AS A FILTER on top of the tag-driven candidate set.
         - Multiple provided → must match on **all** provided dimensions.
         """
         self._ensure_fresh()
@@ -265,6 +283,11 @@ class SkillCatalog:
                     if r.capability and cap_set.intersection(r.capability)
                 ]
 
+        if execution_mode is not None:
+            candidates = [
+                r for r in candidates if r.execution_mode == execution_mode
+            ]
+
         candidates.sort(key=lambda r: r.name)
         return {"skills": [self._format(r) for r in candidates]}
 
@@ -279,6 +302,10 @@ class SkillCatalog:
             out["language"] = r.language
         if r.capability:
             out["capability"] = r.capability
+        # Surface execution_mode only when it's not the default to keep
+        # output lean for the common knowledge-only case.
+        if r.execution_mode and r.execution_mode != "knowledge":
+            out["execution_mode"] = r.execution_mode
         return out
 
     def available_tags(self) -> dict[str, list[str]]:

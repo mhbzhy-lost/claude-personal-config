@@ -61,6 +61,7 @@ def run_resolve_pipeline(
     tech_stack: list[str] | None = None,
     capability: list[str] | None = None,
     language: list[str] | None = None,
+    execution_mode: str | None = None,
     top_n_limit: int | None = None,
 ) -> dict:
     cwd_path = Path(cwd)
@@ -140,6 +141,7 @@ def run_resolve_pipeline(
             tech_stack=tech_stack or None,
             capability=capability or None,
             language=language or None,
+            execution_mode=execution_mode,
         )
 
     ranked = rank(filtered["skills"], tech_stack, capability, user_prompt)

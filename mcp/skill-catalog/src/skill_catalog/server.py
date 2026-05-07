@@ -170,6 +170,7 @@ def list_skills(
     tech_stack: list[str] | None = None,
     language: list[str] | None = None,
     capability: list[str] | None = None,
+    execution_mode: str | None = None,
 ) -> dict:
     """List skills filtered by tech stack, programming language and/or capability.
 
@@ -184,18 +185,24 @@ def list_skills(
             taxonomy (e.g. ["ui-input", "auth"]). When provided, only skills
             whose capability field intersects are returned; skills without
             a capability field (legacy/unmarked) are excluded.
+        execution_mode: Structural attribute filter — ``"knowledge"``
+            (markdown-only) or ``"executable_sandbox"`` (skill ships
+            install.sh/run-impl.sh/runner.sh). ``None`` = no filter.
+            ``execution_mode`` only appears in the returned dict for
+            non-default (non-``"knowledge"``) values.
 
     All empty → returns nothing.
     Multiple provided → must match on all provided dimensions.
 
     Returns:
         {"skills": [{"name", "description", "tech_stack",
-                     "language"?, "capability"?}, ...]}
+                     "language"?, "capability"?, "execution_mode"?}, ...]}
     """
     return catalog.list_skills(
         tech_stack,
         language=language,
         capability=capability,
+        execution_mode=execution_mode,
     )
 
 
@@ -222,6 +229,7 @@ def resolve(
     tech_stack: list[str] | None = None,
     capability: list[str] | None = None,
     language: list[str] | None = None,
+    execution_mode: str | None = None,
     top_n_limit: int | None = None,
 ) -> dict:
     """One-stop retrieval: fingerprint + LLM classify + filter + rank + top-N.
@@ -233,6 +241,9 @@ def resolve(
             for this dimension (value is used as-is).
         capability: Same as above for capability dimension.
         language: Optional programming-language filter.
+        execution_mode: Structural filter — ``"knowledge"`` (markdown-only)
+            or ``"executable_sandbox"`` (ships runnable assets). ``None``
+            (default) keeps both kinds in the candidate pool.
         top_n_limit: Override dynamic top-N truncation.
 
     Returns:
@@ -251,6 +262,7 @@ def resolve(
         tech_stack=tech_stack,
         capability=capability,
         language=language,
+        execution_mode=execution_mode,
         top_n_limit=top_n_limit,
     )
 

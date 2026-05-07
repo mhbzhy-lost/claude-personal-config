@@ -1,4 +1,5 @@
 ---
+execution_mode: executable_sandbox
 name: mitmdump
 description: Command-line HTTP traffic dump tool — non-interactive mitmproxy for recording, replaying, and scripted transformation of HTTP/HTTPS flows.
 tech_stack: [http]
