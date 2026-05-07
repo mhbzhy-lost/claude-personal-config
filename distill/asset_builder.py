@@ -13,6 +13,8 @@ After 3 failures, mark asset as ``unverified: true`` and emit summary warn.
 from __future__ import annotations
 
 import logging
+import os
+import re
 import subprocess
 import uuid
 from dataclasses import dataclass, field
@@ -27,6 +29,36 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRY_ROUNDS = 3
 STDERR_TAIL_LINES = 100
+
+# Replace host-only loopback addresses with the container-reachable
+# host.docker.internal alias so install.sh can reach the user's HTTP proxy.
+_PROXY_LOCALHOST_RE = re.compile(r"://(127\.0\.0\.1|::1|localhost)([:/]|$)")
+
+
+def _translate_proxy_url(url: str) -> str:
+    """Rewrite host-shell proxy URLs (typically http://127.0.0.1:7897) to
+    container-reachable form (http://host.docker.internal:7897). Leaves
+    non-loopback proxies (e.g. corporate proxy.example.com) untouched."""
+    return _PROXY_LOCALHOST_RE.sub(r"://host.docker.internal\2", url)
+
+
+def _collect_proxy_env() -> dict[str, str]:
+    """Read host shell's HTTP proxy env vars (lower + upper case) and return
+    a dict ready to feed into run_ephemeral(env=...). Empty when the host
+    has no proxy configured — fully transparent."""
+    out: dict[str, str] = {}
+    for var in (
+        "http_proxy", "https_proxy", "ftp_proxy", "no_proxy", "all_proxy",
+        "HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "NO_PROXY", "ALL_PROXY",
+    ):
+        v = os.environ.get(var)
+        if not v:
+            continue
+        if var.lower().endswith("no_proxy"):
+            out[var] = v
+        else:
+            out[var] = _translate_proxy_url(v)
+    return out
 
 
 @dataclass
@@ -77,11 +109,12 @@ def validate_install_asset(install_sh: str, base_image: str,
     """
     container_name = f"distill-validate-{uuid.uuid4().hex[:12]}"
     error_chunks: list[str] = []
+    proxy_env = _collect_proxy_env()
 
     try:
         run_ephemeral(
             base_image, name=container_name, detach=True,
-            command=["sleep", "600"],
+            command=["sleep", "600"], env=proxy_env or None,
         )
 
         # Gate 1: first install

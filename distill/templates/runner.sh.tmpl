@@ -27,18 +27,49 @@ to_in_container_path() {
   esac
 }
 
+# Translate host's proxy URL (typically 127.0.0.1) to container-reachable
+# host.docker.internal — required because container's localhost is its own
+# loopback, not the host's. Empty input → empty output.
+translate_proxy_url() {
+  local p="${1:-}"
+  [ -z "$p" ] && return 0
+  printf '%s' "$p" | sed -E 's|://(127\.0\.0\.1\|::1\|localhost)([:/]\|$)|://host.docker.internal\2|g'
+}
+
+# Collect proxy env from host shell, translate to container-reachable URLs.
+# Outputs `-e VAR=val` flags ready for docker run / exec.
+collect_proxy_args() {
+  local args=()
+  local var v
+  for var in http_proxy https_proxy ftp_proxy no_proxy HTTP_PROXY HTTPS_PROXY FTP_PROXY NO_PROXY ALL_PROXY all_proxy; do
+    v="${!var:-}"
+    [ -z "$v" ] && continue
+    case "$var" in
+      no_proxy|NO_PROXY) ;;  # passthrough as-is
+      *) v=$(translate_proxy_url "$v") ;;
+    esac
+    args+=("-e" "$var=$v")
+  done
+  printf '%s\n' "${args[@]:-}"
+}
+
 # 0. Preflight
 docker info >/dev/null 2>&1 || {
   echo "[claude-skill] docker daemon not reachable. Start Docker Desktop and retry." >&2
   exit 2
 }
 
-# 1. 容器懒创建
+# 1. 容器懒创建（含 proxy 透传）
 if ! docker ps -a --format '{{.Names}}' | grep -q "^${SANDBOX}$"; then
   docker volume create "$STATE_VOL" >/dev/null
+  PROXY_ARGS=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && PROXY_ARGS+=("$line")
+  done < <(collect_proxy_args)
   docker run -d --name "$SANDBOX" --restart=unless-stopped \
     --mount type=volume,source="$STATE_VOL",target=/state \
     --mount type=bind,source="$HOME",target=/host_home \
+    ${PROXY_ARGS[@]+"${PROXY_ARGS[@]}"} \
     "$BASE_IMAGE" sleep infinity >/dev/null
 fi
 
