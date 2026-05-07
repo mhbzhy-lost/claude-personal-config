@@ -1,0 +1,24 @@
+{
+  "execution_mode": "executable_sandbox",
+  "validated_against_digest": "sha256:f9c6a2fd2ddbc23e336b6257a5245e31f996953ef06cd13a59fa0a1df2d5c252",
+  "assets": {
+    "install.sh": {
+      "verified": true,
+      "rounds": 0,
+      "verification_method": "manual_smoke_after_pilot",
+      "note": "T7 pilot: LLM 3 轮均失败（gate-1 rc=127，python3 缺失 — debian:12-slim 是最小镜像）。手工补全：apt 源切 tuna mirror + 装 python3+pip+ca-certificates+curl，pip install playwright(--break-system-packages，PEP 668)，playwright install --with-deps chromium 一次性装浏览器+系统库，install 末尾 import 自验。bash runner.sh https://example.com 实跑通过。"
+    },
+    "run-impl.sh": {
+      "verified": true,
+      "rounds": 0,
+      "verification_method": "manual_smoke_after_pilot",
+      "note": "原 LLM 输出为 0 字节。手工补全：python heredoc 包装 sync_playwright，接受 <url> [out_path] [--full-page] 参数，screenshot 落在 $PWD（runner.sh 已将 $PWD 翻译为容器 /work 等价）。"
+    },
+    "runner.sh": {
+      "verified": true,
+      "rounds": 0,
+      "verification_method": "manual_smoke_after_pilot",
+      "note": "T4 集成自动从 templates/runner.sh.tmpl 生成；首次实跑含 docker pull + apt + pip + chromium 下载（~250MB），二次 < 1s（idempotent guard 命中）。"
+    }
+  }
+}
