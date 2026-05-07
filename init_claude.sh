@@ -942,3 +942,38 @@ if [ ! -f "$ENV_FILE" ]; then
   echo "[hint] $ENV_FILE 不存在；请从 settings/.env.example 复制并填入 token："
   echo "       cp $SRC/settings/.env.example $ENV_FILE && \$EDITOR $ENV_FILE"
 fi
+
+# ---------------------------------------------------------------------------
+# Docker 预检：可执行 sandbox skill (executable_sandbox) 用 docker 隔离
+# 工具运行环境，不污染用户主机。检测缺失/未跑时给出平台安装指引；不阻断
+# init —— 知识类 skill 不依赖 docker，executable_sandbox 是可选特性。
+# ---------------------------------------------------------------------------
+if ! command -v docker >/dev/null 2>&1; then
+  echo "[docker] ⚠ docker CLI 未安装。executable_sandbox 类 skill 需要 docker（知识类 skill 不需要）。"
+  case "$(uname -s)" in
+    Darwin)
+      echo "  macOS 安装方案（任选其一）："
+      echo "    A. Docker Desktop (官方 GUI):  https://www.docker.com/products/docker-desktop/"
+      echo "    B. colima (轻量 CLI-only):     brew install colima docker && colima start"
+      ;;
+    Linux)
+      echo "  Linux 安装方案："
+      echo "    Debian/Ubuntu: curl -fsSL https://get.docker.com | sudo bash && sudo usermod -aG docker \$USER"
+      echo "    Fedora/RHEL:   sudo dnf install -y docker && sudo systemctl enable --now docker"
+      echo "    （安装后需重新登录使 docker 组生效）"
+      ;;
+    *)
+      echo "  其他平台请参考 https://docs.docker.com/engine/install/"
+      ;;
+  esac
+elif ! docker info >/dev/null 2>&1; then
+  echo "[docker] ⚠ docker CLI 已装但 daemon 未跑。executable_sandbox 类 skill 需要 daemon 在线。"
+  case "$(uname -s)" in
+    Darwin) echo "  macOS: open -a Docker（Docker Desktop）；或 colima start（若用 colima）" ;;
+    Linux)  echo "  Linux: sudo systemctl start docker" ;;
+    *)      echo "  请按平台启动 docker daemon" ;;
+  esac
+else
+  DOCKER_VERSION=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',' || echo "?")
+  echo "[docker] ✓ docker ${DOCKER_VERSION} daemon 在线（executable_sandbox skill 可用）"
+fi
