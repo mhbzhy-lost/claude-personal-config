@@ -680,6 +680,56 @@ if command -v claude >/dev/null 2>&1; then
     echo "[warn] lists/plugins.list 与 lists/plugins.local.list 均不存在，跳过插件安装"
   else
     echo "[plugins] 使用清单: $PLUGINS_LIST_FILE"
+
+    # 解析 installed_plugins.json 中某 plugin@marketplace 的 gitCommitSha
+    # 输出空字符串表示未装或无 sha 字段
+    get_installed_sha() {
+      local key="$1"
+      [ -f "$PLUGINS_JSON" ] || { printf ''; return; }
+      [ -n "$PY" ] || { printf ''; return; }
+      $PY -c "
+import json, sys
+try:
+    d = json.load(open('$PLUGINS_JSON'))
+except Exception:
+    sys.exit(0)
+for entry in d.get('plugins', {}).get('$key', []):
+    sha = entry.get('gitCommitSha', '')
+    if sha:
+        print(sha)
+        sys.exit(0)
+" 2>/dev/null
+    }
+
+    # 把 marketplace clone 仓 checkout 到指定 ref（detached HEAD），返回解析后的 SHA
+    # 出错时返回空字符串
+    pin_marketplace_to_ref() {
+      local marketplace="$1"
+      local ref="$2"
+      local clone="$DST/plugins/marketplaces/$marketplace"
+      [ -d "$clone/.git" ] || { printf ''; return; }
+      # 先 fetch 一次，确保引用存在（fetch 失败不阻断，可能是离线但 ref 已在本地）
+      git -C "$clone" fetch origin --quiet 2>/dev/null || true
+      local target_sha
+      target_sha=$(git -C "$clone" rev-parse "$ref" 2>/dev/null || echo "")
+      if [ -z "$target_sha" ]; then
+        echo "[warn] marketplace $marketplace 中找不到 ref '$ref'" >&2
+        printf ''
+        return
+      fi
+      local cur_sha
+      cur_sha=$(git -C "$clone" rev-parse HEAD 2>/dev/null || echo "")
+      if [ "$cur_sha" != "$target_sha" ]; then
+        git -C "$clone" checkout --detach "$target_sha" --quiet 2>/dev/null || {
+          echo "[warn] marketplace $marketplace checkout $ref 失败" >&2
+          printf ''
+          return
+        }
+        echo "[plugins] marketplace $marketplace pinned 到 $ref ($target_sha)" >&2
+      fi
+      printf '%s' "$target_sha"
+    }
+
     while IFS= read -r line; do
       case "$line" in
         *:*) ;;
@@ -688,17 +738,45 @@ if command -v claude >/dev/null 2>&1; then
           continue
           ;;
       esac
+      # 解析 name:marketplace[:ref]
       plugin_name="${line%%:*}"
-      marketplace="${line#*:}"
-      if [ -f "$PLUGINS_JSON" ] && grep -q "\"$plugin_name@$marketplace\"" "$PLUGINS_JSON" 2>/dev/null; then
-        echo "[plugins] $plugin_name@$marketplace 已安装"
+      rest="${line#*:}"
+      if [[ "$rest" == *:* ]]; then
+        marketplace="${rest%%:*}"
+        ref="${rest#*:}"
       else
-        echo "[plugins] 安装 $plugin_name@$marketplace ..."
-        if claude plugins install "$plugin_name@$marketplace" 2>&1; then
-          echo "[plugins] $plugin_name@$marketplace 安装完成"
-        else
-          echo "[warn] 插件 $plugin_name@$marketplace 安装失败，请手动安装"
+        marketplace="$rest"
+        ref=""
+      fi
+
+      key="$plugin_name@$marketplace"
+
+      # 若声明了 ref，先把 marketplace clone 切到 ref；目标 SHA 用于幂等比对
+      target_sha=""
+      if [ -n "$ref" ]; then
+        target_sha=$(pin_marketplace_to_ref "$marketplace" "$ref")
+      fi
+
+      # 幂等检查：已装 + (未声明 ref 或 ref 已对齐) 则跳过
+      if [ -f "$PLUGINS_JSON" ] && grep -q "\"$key\"" "$PLUGINS_JSON" 2>/dev/null; then
+        if [ -z "$ref" ]; then
+          echo "[plugins] $key 已安装"
+          continue
         fi
+        installed_sha=$(get_installed_sha "$key")
+        if [ -n "$target_sha" ] && [ "$installed_sha" = "$target_sha" ]; then
+          echo "[plugins] $key 已安装并 pin 在 $ref ($target_sha)"
+          continue
+        fi
+        echo "[plugins] $key 已装但 SHA 不一致 (installed=$installed_sha, expected=$target_sha)，重装..."
+        claude plugins remove "$key" -s user 2>/dev/null || true
+      fi
+
+      echo "[plugins] 安装 $key${ref:+ @ $ref} ..."
+      if claude plugins install "$key" 2>&1; then
+        echo "[plugins] $key 安装完成"
+      else
+        echo "[warn] 插件 $key 安装失败，请手动安装"
       fi
     done < <(read_list_file "$PLUGINS_LIST_FILE")
   fi

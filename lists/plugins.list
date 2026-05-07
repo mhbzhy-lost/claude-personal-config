@@ -1,4 +1,4 @@
-# 插件必装清单：每行一个 name:marketplace
+# 插件必装清单：每行一个 name:marketplace[:ref]
 # 仅放进所有日常工作流都强依赖的核心插件，避免不需要的插件被反复装回。
 #
 # 用户覆盖：在同目录创建 plugins.local.list（本目录 *.local.list 已被 git 忽略），
@@ -12,6 +12,15 @@
 #   github:claude-plugins-official           —— GitHub PR/issue/review 一站式
 #   commit-commands:claude-plugins-official  —— /commit / /commit-push-pr / /clean_gone
 #
-# 语法：`#` 起首为注释，空行忽略；其余每行 `name:marketplace`，前后空白会被 trim。
+# 语法：`#` 起首为注释，空行忽略；其余每行 `name:marketplace[:ref]`，
+#       前后空白会被 trim。
+#
+# 第三段 ref 可选——填写时为 git commit SHA / tag / branch，
+# init_claude.sh 会在 install 前把 marketplace 仓 checkout 到该 ref，
+# pin 插件为该时刻的快照。适合工作流文档（如 CLAUDE.md）与插件版本强绑定的场景。
+# 不填则跟随 marketplace 默认分支 HEAD（首装定终身，不自动升级）。
 
-superpowers:claude-plugins-official
+# superpowers 与 CLAUDE.md 的工作流增强强绑定（brainstorming/writing-plans/
+# subagent-driven-development 等命令名/skill 路径），升级前需对齐 CLAUDE.md。
+# 当前 pin 在 5.1.0 (gitCommitSha 6efe32c9e2dd002d0c394e861e0529675d1ab32e)。
+superpowers:claude-plugins-official:6efe32c9e2dd002d0c394e861e0529675d1ab32e
