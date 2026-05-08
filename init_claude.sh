@@ -10,10 +10,18 @@
 # MCP server 通过 `claude mcp add -s user` 注册到 ~/.claude.json（user scope），
 # 而非写入 settings.json（Claude Code 不从 settings.json 读取 MCP 配置）。
 #
-# claude-skills/ 软链为 ~/.claude/skills，承载 Claude Code 原生 user-invocable
-# Skill（如 /git-commit、/knowledge-retrieval）。这与 MCP skill-catalog 知识库
-# 检索系统（索引 claude-config/skills/，由 server 端按 tag 命中后吐 markdown）
-# 是两套完全独立的方案：前者走 Claude Code 内置 skill loader，后者走 MCP tool。
+# claude-skills/ 暴露给 ~/.claude/skills，承载 Claude Code 原生 user-invocable
+# Skill（如 /git-commit、/knowledge-retrieval）。两种暴露模式：
+#   1. 整目录软链 ~/.claude/skills → claude-skills/（默认；编辑即生效）
+#   2. 真目录 + 按 lists/skills.list 逐 skill rsync --delete（清单白名单
+#      模式，能与用户其他 skill 共存）
+# 策略：~/.claude/skills 不存在 → 走 link_item 软链化；已是指向本仓的软链
+# → 保留不动；已是真目录 → 走 rsync 模式（不主动转回软链）；已是软链但
+# 指向其他位置 → 警告人工处理。
+#
+# 这与 MCP skill-catalog 知识库检索系统（索引 claude-config/skills/，由
+# server 端按 tag 命中后吐 markdown）是两套完全独立的方案：前者走 Claude
+# Code 内置 skill loader，后者走 MCP tool。
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -81,13 +89,42 @@ resolve_list_file() {
 link_item "CLAUDE.md"
 link_item "guidelines"
 
-# claude-skills 特殊处理：
-#   - 若 ~/.claude/skills 不存在或已是软链 → 走 link_item 软链化
-#   - 若已是真目录（用户/其他工具放过别的 skill）→ 增量同步本仓 3 个 skill 到子目录，
-#     保留其他 skill 不动（每个我们管理的 skill 子目录用 rsync --delete 镜像源）
+# claude-skills 特殊处理（按 ~/.claude/skills 当前形态分流）：
+#   - 不存在               → 软链化（link_item，编辑即生效）
+#   - 已是指向 claude-skills/ 的软链 → 保留不动
+#   - 是软链但指向其他位置 → 警告，人工核对
+#   - 是真目录             → 按 lists/skills.list 逐 skill rsync --delete
+#                            （白名单模式，与用户自管 skill 共存）
 sync_claude_skills() {
   local src_path="$SRC/claude-skills"
   local dst_path="$DST/skills"
+
+  if [ ! -d "$src_path" ]; then
+    echo "[skip] source $src_path does not exist"
+    return
+  fi
+
+  # 不存在 → 直接软链
+  if [ ! -e "$dst_path" ] && [ ! -L "$dst_path" ]; then
+    ln -s "$src_path" "$dst_path"
+    echo "[linked] $dst_path -> $src_path"
+    return
+  fi
+
+  # 已是软链 → 校验目标后保留
+  if [ -L "$dst_path" ]; then
+    local cur
+    cur=$(readlink "$dst_path")
+    if [ "$cur" = "$src_path" ]; then
+      echo "[ok] $dst_path -> $src_path （保留软链，编辑 claude-skills/ 即生效）"
+    else
+      echo "[warn] $dst_path 是软链但指向 ${cur}（非本仓 claude-skills/），人工核对后再处理"
+    fi
+    return
+  fi
+
+  # 是真目录 → 走 rsync 白名单模式
+  echo "[info] $dst_path 是真目录，进入 rsync 白名单模式"
 
   # 同步清单：默认 lists/skills.list；用户可在同目录创建 skills.local.list 覆盖。
   # 加载顺序：local 优先，缺省回退 default；为完全覆盖（不合并）。
@@ -112,32 +149,10 @@ sync_claude_skills() {
     "skill-distill"
   )
 
-  if [ ! -d "$src_path" ]; then
-    echo "[skip] source $src_path does not exist"
-    return
-  fi
-
-  # 历史上若 ~/.claude/skills 整体软链到 claude-skills/，会绕过 sync_list
-  # 把所有源 skill（含未列入清单的）暴露出去。检测到此情况则拆软链，
-  # 改为真目录 + 按清单逐项 rsync。
-  if [ -L "$dst_path" ]; then
-    local cur
-    cur=$(readlink "$dst_path")
-    if [ "$cur" = "$src_path" ]; then
-      rm -f "$dst_path"
-      echo "[migrate] 移除整目录软链 ${dst_path}（改为按清单逐项同步）"
-    else
-      echo "[warn] $dst_path 是软链但指向 ${cur}（非本仓 claude-skills/），人工核对后再处理"
-      return
-    fi
-  fi
-
   if ! command -v rsync >/dev/null 2>&1; then
     echo "[warn] rsync 不可用，跳过 skills 同步；请手动同步 $src_path 到 $dst_path"
     return
   fi
-
-  mkdir -p "$dst_path"
 
   local skill_name skill_src skill_dst
   for skill_name in "${sync_list[@]}"; do

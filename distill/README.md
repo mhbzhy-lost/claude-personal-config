@@ -61,18 +61,60 @@ bash <skills-base>/<tech>/<skill>/runner.sh <args>
 - `$PWD` 在 `$HOME` 内时直接 bind-mount 翻译；否则走 `docker cp` 落回宿主机
 - HTTP proxy 透传（host 的 `127.0.0.1` 自动改写为 `host.docker.internal`）
 
-## 4 关验证 + 3 轮 retry
+## 4 关验证 + agentic loop
 
-`asset_builder.build_assets` 对 `install.sh` 做四关验证（在一次性
-debian:12-slim 容器里）：
+`asset_builder.build_assets` 对 `install.sh` 走 `agentic_install_builder`
+里的 LLM 工具循环（替代旧 3 轮 one-shot retry）：
 
-1. **Gate 1 first install** — 第一次执行 rc=0
-2. **Gate 2 second install** — idempotent guard 命中、rc=0
-3. **Gate 3 zero-delta** — 多跑一次 `docker diff` 不出现新路径
-4. **Gate 4 smoke tests** — `smoke_test` 列表全部 rc=0
+- LLM 拿 `bash`（在 probe 容器里执行）+ `finalize`（提交 install.sh）两个
+  工具，自己探明 `debian:12-slim` 缺什么、试装、再 finalize。
+- finalize 触发四关验证（fresh 容器，跟 probe 隔离）：
+  1. **Gate 1 first install** — 第一次执行 rc=0
+  2. **Gate 2 second install** — idempotent guard 命中、rc=0
+  3. **Gate 3 zero-delta** — 多跑一次 `docker diff` 不出现新路径
+  4. **Gate 4 smoke tests** — `smoke_test` 列表全部 rc=0
+- 任一关失败 → gate stderr 喂回对话，LLM 继续 bash 探或重新 finalize。
+- 默认 budget：**10 个 bash 调用 + 3 次 finalize 提交**（见
+  `agentic_install_builder.DEFAULT_BASH_BUDGET / DEFAULT_FINALIZE_BUDGET`）。
+- 两个 budget 都用完 → `verified=false` 写到 `_meta.json`，附
+  `abort_reason` 与最后一次 finalize 的内容，等主 agent 介入。
 
-任一关失败 → 把 stderr + 失败脚本喂回 LLM，最多 3 轮。3 轮还失败则
-`verified=false` 写到 `_meta.json`，提醒人工补全。
+run-impl.sh 等非 install 资产仍走 one-shot 生成（无验证），但 prompt
+仅在有 `idempotent_check` 时注入幂等行，并对空输出强制重试一次再
+RuntimeError，避免落 0 字节文件。
+
+## 主 agent 兜底约定
+
+agentic loop 的 budget 故意定得保守（覆盖大多数工具的环境配置问题，
+playwright python 等典型例子一次过即可）。某些复杂工具的初始化超出
+budget 也属正常 —— 例如 maestro CLI 的 launcher 必须留在原始 `bin/`
+目录下访问兄弟 `lib/jvm-version.jar`，要求 install.sh 复制整棵子树
+而非单个二进制；LLM 在 10 个 bash 内可能没意识到这一点。
+
+这种情况**不应该**继续抬 budget 或加针对性 prompt 工程。约定：
+
+- pipeline 跑完，`_meta.json` 标 `verified=false` + `abort_reason`
+- 主 agent（即调用 distill 的 Claude Code 会话）按现成 install.sh 草稿
+  打开 sandbox 调试、补差异、自验通过
+- 修完后将 `_meta.json` 的 `assets.<file>` 项改为：
+  ```json
+  {
+    "verified": true,
+    "rounds": 0,
+    "verification_method": "main_agent_post_fix",
+    "note": "<简述差异点>"
+  }
+  ```
+
+主 agent 比 pipeline 内嵌 LLM 在两个维度上压倒性强：
+1. 真正的 agentic loop（无 budget、可调度 superpowers / git / docker
+   等 工具，能跨多步查文档 / 测命令 / 改代码 / 写测试）
+2. 完整对话上下文 —— pipeline 内嵌 LLM 拿到的是一坨 SOURCE.md 摘要，
+   主 agent 拿到的是用户意图 + 工程惯例 + 既有同类 skill 模式
+
+所以 pipeline 的 budget 是一道**性价比闸**：覆盖容易的、把疑难外抛
+给主 agent 一次性解决，不要让 pipeline 的 LLM 反复在自己看不见的
+环境里盲改。
 
 ## 已知 caveat（来自 T6/T7 试点）
 
