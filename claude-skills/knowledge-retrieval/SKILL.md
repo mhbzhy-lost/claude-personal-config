@@ -1,102 +1,69 @@
 ---
 name: knowledge-retrieval
-description: skill-catalog 知识检索工作流——通过 mcp__skill-catalog__resolve → get_skill 两阶段渐进式获取技能知识，含意图识别、标签选取、候选筛选、特殊情况处理及约束规则
+description: 两步检索 mcp__skill-catalog → resolve 拿候选 + get_skill 取正文；命中 executable_sandbox 类 skill 时改走 bash runner.sh。
 ---
 
-# 知识检索工作流
+# What
 
-处理涉及特定框架、组件或技术域的任务时，通过 **resolve → get_skill** 两阶段渐进式获取技能知识，避免一次性加载全量内容。
+按 `tech_stack / language / capability` 标签调 `mcp__skill-catalog__resolve` 拿候选名 + 描述，再用 `get_skill` 按需取正文。命中 `execution_mode: executable_sandbox` 的工具型 skill 时**不读正文**，改 `bash <skill>/runner.sh <args>` 执行。
 
----
+# When to Use
 
-## 1. 流程概述
+任务涉及特定框架 / 组件 / 技术域时（如 react / httpx / claude-code hook / playwright 截图）。纯逻辑、纯文档、纯配置工作不调。
 
-1. **获取合法标签** — 若不确定当前库有哪些合法 tag，先调 `mcp__skill-catalog__available_tags`（无参数），返回三维度闭集 `tech_stack` / `language` / `capability`
-2. **意图识别** — 从用户 prompt + 工作目录推断标签，从闭集中选取。宁缺毋滥，不确定就留空交给 server 端 classifier 兜底
-3. **调 resolve** — 传入标签（至少一个维度非空），获取候选 skill 名称与描述（**不含正文**）
-4. **筛选** — 根据描述筛选 1-3 条直接相关的 skill
-5. **get_skill** — 获取选中 skill 的完整内容
-6. **执行** — 带着 skill 知识完成用户任务
+# How
 
----
+## 1. 选标签
 
-## 2. 详细步骤
+从用户 prompt + 工作目录推断 `tech_stack` / `language` / `capability`，**值必须从 `<skills_base>/_tag_catalog.json` 闭集中选**，不得自造。三者至少一个非空。
 
-### 步骤 1：获取合法标签（mcp__skill-catalog__available_tags）
+不确定库里有哪些合法 tag → 调 `mcp__skill-catalog__available_tags`（`{}`）拿三维度排序去重列表。
 
-```json
-{}
-```
+筛选原则：
 
-返回 `tech_stack` / `language` / `capability` 三维度排序去重列表。只在不确定库里有那些合法 tag 时调用；已从 hook 注入获得闭集则可跳过。
-
-### 步骤 2：意图识别
-
-基于用户 prompt + 对话上下文 + 工作目录，判断：
-
-- **tech_stack**：任务涉及哪些技术栈/框架/平台（如 `claude-code`、`react`、`harmonyos`）
-- **language**：任务涉及哪些编程语言（如 `python`、`typescript`、`kotlin`）。混编场景必须多选
-- **capability**：任务涉及哪些能力域（如 `cc-hook`、`cc-mcp`、`ui-form`、`auth`）
-
-判断原则：
-- 宁缺毋滥：只选明显相关的 tag
-- 三者至少一个非空
-- 值必须来自 tag 闭集，不得自造
+- 宁缺毋滥，只选明显相关的 tag
 - `language` 对 skill 做硬过滤（排除 language-agnostic skill），仅在上下文有强语言信号时填
 
-### 步骤 3：调用 resolve（mcp__skill-catalog__resolve）
+## 2. 调 resolve
 
 ```json
 {
-  "user_prompt": "<用户任务核心描述>",
+  "user_prompt": "<任务核心描述>",
   "cwd": "<当前工作目录>",
-  "tech_stack": ["<来自闭集>"],
-  "language": ["<来自闭集，可选>"],
-  "capability": ["<来自闭集>"]
+  "tech_stack": ["<闭集>"],
+  "language": ["<闭集，可选>"],
+  "capability": ["<闭集>"]
 }
 ```
 
-**硬约束（PreToolUse hook 强制）**：`tech_stack` / `language` / `capability` 三者至少一个非空，否则 resolve 调用会被 hook block。若三者均无合法匹配，不要调 resolve（传空数组会被拒绝），直接走 3.1 跳过路径。
+返回 `skills: [{name, description, execution_mode?}]`，按相关度排序，**不含正文**。
 
-返回 `skills` 数组，每项仅含 `name` + `description`，按相关度排序。
+三者均空 → 不调（PreToolUse hook 强制；传空数组会被 block），走 [跳过路径](#跳过检索)。
 
-### 步骤 4：筛选
+## 3. 筛 1–3 条候选
 
-- 根据名称和描述判断是否与任务直接相关
-- 只选 1-3 条，不要无差别获取所有候选
-- 列表顺序仅作参考，重点看描述
+按 `description` 判断是否直接相关，不无差别全取。列表顺序只作参考。
 
-### 步骤 5：获取详情（mcp__skill-catalog__get_skill）
+## 4. 命中类型分流
 
-```json
-{ "name": "<选中的技能名称>" }
-```
+| 候选 | 动作 |
+|---|---|
+| 普通（无 `execution_mode` 或 = `knowledge`）| `mcp__skill-catalog__get_skill` 取 markdown 正文当上下文知识 |
+| `execution_mode: executable_sandbox` | **不取正文**，改 `bash <skills_base>/<tech>/<skill>/runner.sh <args>` |
 
-返回完整 markdown 正文。
+## 5. executable_sandbox 调用约定
 
-### 步骤 6：执行 — 区分 knowledge vs executable_sandbox
+`runner.sh` 是统一入口：
 
-resolve 返回的 skill 记录里若带 `execution_mode: executable_sandbox`，
-说明这是工具型 skill：除了 SKILL.md 还附带 `install.sh / run-impl.sh
-/ runner.sh / _meta.json`，**不应**像 knowledge skill 那样把 markdown
-当成最终知识带回去，而要走 docker sandbox 调用：
+- 容器 `claude-skill-sandbox` 懒创建（首次 10–30s）
+- 工具懒装入 install.sh（首次 30–120s）
+- 二次调用幂等（< 2s）
+- `$PWD` 在 `$HOME` 内 → bind-mount 直读；否则 docker cp 兜底
+- 宿主机 HTTP proxy 透传（127.0.0.1 → host.docker.internal）
 
-```bash
-bash <skills-base>/<tech>/<skill>/runner.sh <args>
-```
+**不要绕开 runner.sh 直接 `bash install.sh` 或 `run-impl.sh`** —— 丢容器/路径/proxy 包装。
 
-调用语义由 `runner.sh` 统一兜底：
-- 共享容器 `claude-skill-sandbox` 懒创建（首次 10–30s）
-- 工具懒装入 install.sh（首次 30–120s，按工具体量）
-- 二次调用幂等（< 2s，install.sh 顶部 idempotent guard 命中）
-- `$PWD` 在 `$HOME` 内时直接 bind-mount 翻译；否则走 `docker cp` 落回
-  宿主机
-- 宿主机 HTTP proxy 透传（`127.0.0.1` 自动改写为 `host.docker.internal`）
-
-**不要绕开 runner.sh 直接 `bash install.sh` 或调 `run-impl.sh`**，会丢
-失容器/路径/proxy 包装。
-
-参数怎么传以 SKILL.md 的 `## Basic Usage` 为准；常见管理命令：
+参数以 SKILL.md `## Basic Usage` 为准；管理命令：
 
 ```bash
 bin/claude-skill-sandbox status        # 容器状态 + drift 警告
@@ -105,41 +72,35 @@ bin/claude-skill-sandbox validate <s>  # 重跑 4 关验证
 bin/claude-skill-sandbox reset         # 推倒 sandbox 容器+volume
 ```
 
-前置：docker daemon 必须可达（`init_claude.sh` 已加 preflight）。更深
-的 4 关验证、模板与已知 caveat 见仓库 `distill/README.md`。
+前置：docker daemon 可达（`init_claude.sh` 已加 preflight）。
 
----
+# Special Cases
 
-## 3. 特殊情况
+## 跳过检索
 
-### 3.1 跳过检索
+任务与任何 tech_stack / capability 均无合法匹配 → 不调 resolve，首次输出明示：
 
-若任务为纯逻辑、纯文档、纯配置工作，与任何 tech_stack / capability 均无合法匹配：
+> 本次任务不涉及框架或组件知识，无需检索技能库。
 
-```
-本次任务不涉及框架或组件知识，无需检索技能库。
-```
+**禁止**传空数组调 resolve 作为跳过手段。
 
-**禁止**以传空数组方式调 resolve 作为跳过手段。
+## get_skill 内容不足
 
-### 3.2 技能信息不完整
-
-若 `get_skill` 返回内容不足：
-1. 重新审视候选列表其他 skill 的描述，挑下一条 get
+1. 候选列表挑下一条 get
 2. 以不同 tag 组合再调一次 resolve
-3. 结合任务上下文与现有知识判断
+3. 结合上下文与现有知识判断
 
-### 3.3 无匹配结果
+## 无匹配
 
-resolve 返回空或所有候选明显不相关 → 直接动手，首次输出中说明无需检索。
+resolve 返回空 / 候选全不相关 → 直接动手，首次输出明示无需检索。
 
----
+# Constraints
 
-## 4. 约束
-
-- `tech_stack` / `language` / `capability` 至少一个非空（PreToolUse hook 强制）
+- `tech_stack` / `language` / `capability` 至少一个非空
 - 禁止调 `mcp__skill-catalog__list_skills` 获取全量清单
-- `language` 对 skill 做硬过滤，仅在强语言信号时填
-- 跳过检索时必须在输出中明示
+- 跳过检索必须在输出中明示
+- executable_sandbox 类 skill 不读正文，必须走 runner.sh
 
-> 注：本规范由 SubagentStart hook 注入 coding-expert 子 agent 时，末尾会附上当前合法 tag 闭集，此时步骤 1 可跳过。
+> SubagentStart hook 注入 coding-expert 子 agent 时会附当前合法 tag 闭集，此时步骤 1 可跳过。
+>
+> 深度细节（4 关验证 / agentic loop / 已知 caveat）见 `~/claude-config/distill/README.md`。
