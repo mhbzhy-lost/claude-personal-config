@@ -267,13 +267,30 @@ def _render_oneshot_prompt(skill: dict, spec: AssetSpec, source_text: str) -> st
     install.sh has its own agentic loop with its own system + initial prompts
     in ``agentic_install_builder``; this is for the legacy one-shot path
     that still serves run-impl.sh and similar simple wrapper scripts.
+
+    The idempotent-guard line is only injected when ``spec.idempotent_check``
+    is non-empty — for run-impl.sh-style wrappers (no guard) the line would
+    be ``<empty> && exit 0`` which is malformed bash and confuses the model
+    into emitting an empty response.
     """
-    return (
-        f"Generate {spec.filename} for skill '{skill.get('name')}'.\n\n"
-        f"Purpose: {spec.purpose}\n"
-        f"Idempotent guard (first line, after shebang): {spec.idempotent_check} && exit 0\n"
-        f"Required smoke test commands (will run in fresh debian:12-slim after install):\n"
-        + "\n".join(f"  - {c}" for c in spec.smoke_test)
-        + "\n\nReference docs (excerpts):\n" + source_text[:5000]
-        + "\n\nOutput ONLY the bash script, no markdown fences, no commentary."
+    parts = [
+        f"Generate {spec.filename} for skill '{skill.get('name')}'.",
+        f"Purpose: {spec.purpose or '(unspecified — infer from skill name + reference docs)'}",
+    ]
+    if spec.idempotent_check:
+        parts.append(
+            f"Idempotent guard (first line, after shebang): "
+            f"{spec.idempotent_check} && exit 0"
+        )
+    if spec.smoke_test:
+        parts.append(
+            "Required smoke test commands (will run in fresh debian:12-slim after install):\n"
+            + "\n".join(f"  - {c}" for c in spec.smoke_test)
+        )
+    parts.append("Reference docs (excerpts):\n" + (source_text or "")[:5000])
+    parts.append(
+        "Output ONLY the bash script, starting with '#!/bin/bash' (or "
+        "'#!/usr/bin/env bash'), no markdown fences, no commentary. "
+        "The script MUST be at least one functional line beyond the shebang."
     )
+    return "\n\n".join(parts)

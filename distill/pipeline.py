@@ -1107,32 +1107,60 @@ def run_fetch(
 # ---------------------------------------------------------------------------
 # Stage 3 helpers: executable-skill asset generation
 # ---------------------------------------------------------------------------
-def _make_llm_gen(adapter, max_tokens: int = 2000):
+def _make_llm_gen(adapter, max_tokens: int = 2000, *, max_retries: int = 1):
     """Wrap adapter.create_message into a (prompt: str) -> str helper.
 
     Used by ``asset_builder.build_assets`` to invoke the LLM for asset
     generation (install.sh / run-impl.sh). Strips any leading bash code
     fences the model may emit despite the prompt's explicit instruction.
+
+    Empty-output guardrail: if the model returns nothing (or only fences
+    that strip to empty), retry once with a sharper nudge appended; if
+    the second pass is still empty, raise ``RuntimeError`` rather than
+    silently writing a 0-byte file. This caught a real bug where a
+    malformed prompt (empty ``idempotent_check`` field rendered as
+    ``<blank> && exit 0``) made deepseek-v4-pro emit an empty body.
     """
-    def _gen(prompt: str) -> str:
-        resp = adapter.create_message(
-            messages=[{"role": "user", "content": prompt}],
-            tools=None,
-            max_tokens=max_tokens,
-        )
-        text = resp.choices[0].message.content or ""
-        # Defensive: strip ```bash / ``` fences if the LLM ignored the
-        # "no markdown fences" instruction.
+    def _strip_fences(text: str) -> str:
         text = text.strip()
         if text.startswith("```"):
-            # Strip leading fence (```bash\n or ```\n)
             first_nl = text.find("\n")
             if first_nl >= 0:
                 text = text[first_nl + 1:]
-            # Strip trailing fence
             if text.endswith("```"):
                 text = text[:-3]
         return text.strip()
+
+    def _gen(prompt: str) -> str:
+        attempt_prompt = prompt
+        last_text = ""
+        for attempt in range(max_retries + 1):
+            resp = adapter.create_message(
+                messages=[{"role": "user", "content": attempt_prompt}],
+                tools=None,
+                max_tokens=max_tokens,
+            )
+            raw = resp.choices[0].message.content or ""
+            text = _strip_fences(raw)
+            if text:
+                return text
+            last_text = raw
+            print(
+                f"[distill][WARN] _make_llm_gen attempt {attempt + 1}: "
+                f"empty output (raw len={len(raw)}); "
+                f"{'retrying with nudge' if attempt < max_retries else 'giving up'}",
+                file=sys.stderr,
+            )
+            attempt_prompt = (
+                prompt
+                + "\n\nIMPORTANT: your previous response was empty. Output the "
+                  "complete bash script now — at least a shebang plus one "
+                  "functional command. No commentary, no fences."
+            )
+        raise RuntimeError(
+            f"_make_llm_gen produced empty output after {max_retries + 1} attempts "
+            f"(last raw len={len(last_text)}); refusing to write 0-byte asset."
+        )
     return _gen
 
 
