@@ -57,43 +57,73 @@ def test_validate_install_fails_when_third_run_writes_new_paths():
     assert "idempotency" in result.error_log.lower()
 
 
-def test_build_assets_retries_until_success():
-    """LLM fails round 1, succeeds round 2."""
+def test_build_assets_install_requires_adapter_and_stats():
+    """install.sh now goes through the agentic loop and needs both kwargs."""
     spec = AssetSpec(filename="install.sh", idempotent_check="which X",
                      smoke_test=["X --version"])
-    skill = {"name": "test-skill"}
-
-    call_count = {"n": 0}
-    def fake_llm(prompt):
-        call_count["n"] += 1
-        if call_count["n"] == 1:
-            return "#!/bin/bash\nbroken"
-        return "#!/bin/bash\nwhich X && exit 0\necho ok"
-
-    with patch("asset_builder.validate_install_asset") as v:
-        v.side_effect = [
-            ValidationResult(False, "round 1 boom"),
-            ValidationResult(True, ""),
-        ]
-        result = build_assets(skill, [spec], "debian:12-slim", fake_llm, "src")
-
-    assert result["install.sh"]["verified"] is True
-    assert result["install.sh"]["validation_skipped"] is False
-    assert result["install.sh"]["rounds"] == 2
-    assert call_count["n"] == 2
+    with pytest.raises(ValueError, match="agentic loop"):
+        build_assets({"name": "x"}, [spec], "debian:12-slim",
+                     lambda p: "ignored", "src")
 
 
-def test_build_assets_marks_unverified_after_3_rounds():
+def test_build_assets_install_dispatches_to_agentic_loop():
+    """install.sh hits build_install_via_agentic_loop and reflects its result."""
+    from agentic_install_builder import AgenticResult
     spec = AssetSpec(filename="install.sh", idempotent_check="which X",
                      smoke_test=["X --version"])
-    with patch("asset_builder.validate_install_asset") as v:
-        v.return_value = ValidationResult(False, "always fail")
-        result = build_assets({"name": "x"}, [spec], "debian:12-slim",
-                                lambda p: "broken", "src")
-    assert result["install.sh"]["verified"] is False
-    assert result["install.sh"]["validation_skipped"] is False
-    assert result["install.sh"]["rounds"] == 3
-    assert "always fail" in result["install.sh"]["error"]
+
+    fake_result = AgenticResult(
+        content="#!/bin/bash\nverified",
+        verified=True,
+        finalize_attempts=2,
+        bash_calls=4,
+        abort_reason="",
+    )
+
+    class _Adapter: pass
+    class _Stats: pass
+
+    with patch(
+        "agentic_install_builder.build_install_via_agentic_loop",
+        return_value=fake_result,
+    ) as m_loop:
+        out = build_assets(
+            {"name": "x"}, [spec], "debian:12-slim",
+            lambda p: "ignored", "src",
+            adapter=_Adapter(), stats=_Stats(),
+        )
+
+    assert m_loop.called
+    entry = out["install.sh"]
+    assert entry["verified"] is True
+    assert entry["rounds"] == 2          # finalize_attempts surfaces as rounds
+    assert entry["bash_calls"] == 4
+    assert entry["validation_skipped"] is False
+    assert "abort_reason" not in entry   # empty reason is omitted
+
+
+def test_build_assets_install_unverified_records_abort_reason():
+    """budget_exhausted etc. land in the entry for downstream _meta.json."""
+    from agentic_install_builder import AgenticResult
+    spec = AssetSpec(filename="install.sh", idempotent_check="which X",
+                     smoke_test=["X --version"])
+    fake_result = AgenticResult(
+        content="best-effort", verified=False,
+        finalize_attempts=3, bash_calls=10, abort_reason="budget_exhausted",
+    )
+    class _A: pass
+    class _S: pass
+    with patch(
+        "agentic_install_builder.build_install_via_agentic_loop",
+        return_value=fake_result,
+    ):
+        out = build_assets(
+            {"name": "x"}, [spec], "debian:12-slim",
+            lambda p: "ignored", "src",
+            adapter=_A(), stats=_S(),
+        )
+    assert out["install.sh"]["verified"] is False
+    assert out["install.sh"]["abort_reason"] == "budget_exhausted"
 
 
 def test_build_assets_non_install_marked_skipped():

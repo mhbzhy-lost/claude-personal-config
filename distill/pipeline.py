@@ -1183,6 +1183,7 @@ def _build_executable_assets_for_skill(
     plan_skill: dict,
     skill_dir: Path,
     cleaned_dir: Path,
+    stats: StageStats,
 ) -> dict | None:
     """Generate + validate install.sh / run-impl.sh / runner.sh for an
     executable_sandbox skill, persist them next to SKILL.md, and return a
@@ -1191,6 +1192,10 @@ def _build_executable_assets_for_skill(
     Returns ``None`` when the skill is not executable_sandbox (caller
     should skip). On any failure inside the generation/validation flow,
     raises — the caller's batch-level try/except will degrade gracefully.
+
+    ``stats`` is the batch's StageStats; the agentic install loop
+    accumulates its LLM token/request counts into it so the batch totals
+    reflect all the work done.
     """
     if plan_skill.get("execution_mode") != "executable_sandbox":
         return None
@@ -1217,6 +1222,8 @@ def _build_executable_assets_for_skill(
         base_image,
         _make_llm_gen(adapter),
         source_text,
+        adapter=adapter,
+        stats=stats,
     )
 
     # Persist install.sh / run-impl.sh next to SKILL.md (chmod 755).
@@ -1256,14 +1263,24 @@ def _build_executable_assets_for_skill(
     )
 
     # Compose _meta.json patch (caller writes the file).
+    def _asset_meta(info: dict) -> dict:
+        m = {
+            "verified": info.get("verified", False),
+            "rounds": info.get("rounds", 0),
+        }
+        if "bash_calls" in info:
+            m["bash_calls"] = info["bash_calls"]
+        if info.get("validation_skipped"):
+            m["validation_skipped"] = True
+        if info.get("abort_reason"):
+            m["abort_reason"] = info["abort_reason"]
+        return m
+
     return {
         "execution_mode": "executable_sandbox",
         "validated_against_digest": base_digest,
         "assets": {
-            fname: {
-                "verified": info.get("verified", False),
-                "rounds": info.get("rounds", 0),
-            }
+            fname: _asset_meta(info)
             for fname, info in asset_outputs.items()
         },
     }
@@ -1420,7 +1437,7 @@ def run_build(
         if exists and skill.get("execution_mode") == "executable_sandbox":
             try:
                 meta_patch = _build_executable_assets_for_skill(
-                    adapter, skill, skill_dir, cleaned_dir,
+                    adapter, skill, skill_dir, cleaned_dir, stats,
                 )
             except Exception as exc:  # noqa: BLE001
                 print(

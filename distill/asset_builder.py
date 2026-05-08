@@ -27,7 +27,6 @@ from sandbox_runner import (
 
 logger = logging.getLogger(__name__)
 
-MAX_RETRY_ROUNDS = 3
 STDERR_TAIL_LINES = 100
 
 # Replace host-only loopback addresses with the container-reachable
@@ -190,23 +189,31 @@ def validate_install_asset(install_sh: str, base_image: str,
 
 
 def build_assets(skill: dict, assets: list[AssetSpec], base_image: str,
-                  llm_generate, source_text: str) -> dict:
-    """Generate + validate all assets for one skill. Up to 3 retry rounds per asset.
+                  llm_generate, source_text: str,
+                  *, adapter=None, stats=None) -> dict:
+    """Generate assets for one skill.
+
+    install.sh:    agentic loop (LLM probes container + iterates finalize).
+                   Requires ``adapter`` + ``stats`` to be passed.
+    other files:   one-shot generation via ``llm_generate``.
 
     Args:
         skill: plan dict for the skill (name, description, ...)
         assets: list of AssetSpec to generate
         base_image: e.g. "debian:12-slim"
-        llm_generate: callable (prompt: str) -> str (returns asset script content)
+        llm_generate: callable (prompt: str) -> str (one-shot, used for run-impl.sh etc.)
         source_text: cleaned doc text to inform LLM
+        adapter: required when any asset is install.sh (drives the agentic loop)
+        stats: StageStats; agentic loop accumulates token/request counts here
 
     Returns:
-        {"<filename>": {"content": "...", "verified": bool, "rounds": N}}
+        {"<filename>": {"content": "...", "verified": bool, "rounds": N, ...}}
+        ``rounds`` for install.sh = number of finalize() attempts (1..3).
     """
     out: dict[str, dict] = {}
     for spec in assets:
         if spec.filename != "install.sh":
-            content = llm_generate(_render_prompt(skill, spec, source_text))
+            content = llm_generate(_render_oneshot_prompt(skill, spec, source_text))
             out[spec.filename] = {
                 "content": content,
                 "verified": True,
@@ -215,60 +222,58 @@ def build_assets(skill: dict, assets: list[AssetSpec], base_image: str,
             }
             continue
 
-        last_error = ""
-        last_content = ""
-        verified = False
-        for round_idx in range(1, MAX_RETRY_ROUNDS + 1):
-            prompt = _render_prompt(skill, spec, source_text,
-                                     prior_attempt=last_content,
-                                     prior_error=last_error)
-            content = llm_generate(prompt)
-            content = _inject_helpers(content)
-            result = validate_install_asset(content, base_image, spec)
-            if result.success:
-                out[spec.filename] = {
-                    "content": content, "verified": True, "validation_skipped": False,
-                    "rounds": round_idx,
-                }
-                verified = True
-                break
-            last_error = result.error_log
-            last_content = content
-            logger.warning(
-                "asset %s round %d failed: %s",
-                spec.filename, round_idx, result.error_log[:300],
+        if adapter is None or stats is None:
+            raise ValueError(
+                "build_assets: install.sh requires adapter + stats for the agentic loop"
             )
-        if not verified:
-            out[spec.filename] = {
-                "content": last_content, "verified": False,
-                "validation_skipped": False,
-                "rounds": MAX_RETRY_ROUNDS, "error": last_error,
-            }
+
+        # Lazy import to avoid circular dep with agentic_install_builder.
+        from agentic_install_builder import build_install_via_agentic_loop
+
+        proxy_env = _collect_proxy_env() or None
+        result = build_install_via_agentic_loop(
+            skill=skill,
+            spec=spec,
+            base_image=base_image,
+            source_text=source_text,
+            adapter=adapter,
+            stats=stats,
+            proxy_env=proxy_env,
+            inject_helpers=_inject_helpers,
+            validator=validate_install_asset,
+        )
+        entry: dict = {
+            "content": result.content,
+            "verified": result.verified,
+            "validation_skipped": False,
+            "rounds": result.finalize_attempts,
+            "bash_calls": result.bash_calls,
+        }
+        if result.abort_reason:
+            entry["abort_reason"] = result.abort_reason
+        out[spec.filename] = entry
+        if not result.verified:
+            logger.warning(
+                "asset %s agentic loop unverified (attempts=%d, bash=%d, reason=%s)",
+                spec.filename, result.finalize_attempts, result.bash_calls,
+                result.abort_reason or "n/a",
+            )
     return out
 
 
-def _render_prompt(skill: dict, spec: AssetSpec, source_text: str,
-                    prior_attempt: str = "", prior_error: str = "") -> str:
-    """Construct LLM prompt for asset generation."""
-    base = (
+def _render_oneshot_prompt(skill: dict, spec: AssetSpec, source_text: str) -> str:
+    """One-shot prompt for non-install assets (e.g. run-impl.sh).
+
+    install.sh has its own agentic loop with its own system + initial prompts
+    in ``agentic_install_builder``; this is for the legacy one-shot path
+    that still serves run-impl.sh and similar simple wrapper scripts.
+    """
+    return (
         f"Generate {spec.filename} for skill '{skill.get('name')}'.\n\n"
         f"Purpose: {spec.purpose}\n"
         f"Idempotent guard (first line, after shebang): {spec.idempotent_check} && exit 0\n"
         f"Required smoke test commands (will run in fresh debian:12-slim after install):\n"
         + "\n".join(f"  - {c}" for c in spec.smoke_test)
         + "\n\nReference docs (excerpts):\n" + source_text[:5000]
+        + "\n\nOutput ONLY the bash script, no markdown fences, no commentary."
     )
-    if prior_attempt and prior_error:
-        base += (
-            f"\n\n---\nPrior attempt failed validation. Previous script:\n"
-            f"```bash\n{prior_attempt}\n```\n\n"
-            f"Failure log:\n```\n{prior_error}\n```\n\n"
-            f"Required: fix the above. Keep idempotent guard, use retry helper for "
-            f"network ops (apt-get update, curl downloads). Output only the bash script."
-        )
-    else:
-        base += (
-            "\n\nOutput ONLY the bash script, no markdown fences, no commentary. "
-            "Use retry helper (already injected by build pipeline) for network ops."
-        )
-    return base
