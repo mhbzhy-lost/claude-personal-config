@@ -1,0 +1,2 @@
+node_modules/
+# generated/ is checked in — it's a build artifact you want diffable
