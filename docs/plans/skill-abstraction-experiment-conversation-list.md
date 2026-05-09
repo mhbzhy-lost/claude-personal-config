@@ -328,11 +328,69 @@ Variant C 的 `im-conversation-list` block 应当：
 
 预期 Variant C 在 list_render + infra 两个桶内合并降至 ≤ 200 LoC（vs A 的 1308），并把 app_layout 控制在 130 LoC 以内（与 A 持平）。
 
-### 7.3 后续
+### 7.3 第三轮：Variant C 工件就位（2026-05-09 v3，初步）
 
-- Variant C：触发，按 §6.4 流程蒸馏 `im-conversation-list` skill + 写生产级前端组件，进 `blocks/im-conversation-list/frontend/`
-- 验收清单需要做封闭性强化（禁止可选特性追加），否则 Parkinson 现象会继续污染 C 的对比
-- 实验方法学补充：分桶 LOC 是更稳健的指标；TOTAL 仅做参考
+#### 7.3.1 工件
+
+`blocks/im-conversation-list/frontend/` 已实现：
+- `<ConversationList config={...} onSelect={...} />` 单组件 API
+- `useConversations(config)` 进阶 hook（自定义渲染时用）
+- 内部封装：HTTP client（fetch + Problem+JSON）+ WS reconnect + seq-gap
+  检测 + cursor 分页 + 搜索 debounce + 智能时间 + 7 类事件路由 +
+  pin/mute/remove/markRead + 骨架/空态/错误重试 + a11y
+- **强指令型 SKILL.md**：明令"凡 IM 列表场景禁止自行用
+  List/Avatar/Badge 拼装"
+- 可插拔 auth：`{type:'header', headerName, getValue}` 或
+  `{type:'bearer', getToken}`
+- `examples/basic/` 端到端跑通（playwright 视觉验证：列表渲染、智能
+  时间、置顶高亮、对端名展示、未读 badge 全部正确）
+
+#### 7.3.2 LoC 数据（自实现，初步）
+
+| 角色 | self-write LoC |
+|---|---:|
+| Variant A（仅原子，cold subagent） | 1841 |
+| Variant B（A + ProList，cold subagent） | 1810 |
+| **Variant C consumer（使用 block）** | **38** |
+| Block 内部（amortized） | 888 |
+
+Variant C consumer 相比 A 减少 **−97.9%**，相比 B 减少 **−97.9%**。
+按决策树（§5）落点 ≥ 50% → **H2 强成立**。
+
+#### 7.3.3 ⚠️ 当前数据的偏倚（必须诚实记录）
+
+**38 LoC 是主对话自己写出来的，不是 cold subagent**。等于上下文有
+完整的 block API 知识（我自己设计的）。冷启动 agent 看 SKILL.md 直接
+上手，未必能这么顺。可能的偏倚来源：
+
+- 我知道 `config` 的精确 shape，cold agent 要从 SKILL.md 推断
+- 我知道必须挂在 `<App>` 下面（context 依赖），cold agent 可能踩这个坑
+- 我没遇到任何"哪个 prop 控制选中"这种 API 探索成本
+- 我对 `examples/basic/` 的最小化设计有先验偏好
+
+**结论：38 LoC 是上限假设值，真正 H2 验证还得跑 cold subagent**。
+
+#### 7.3.4 待执行：Variant C 的 cold subagent 验证
+
+按 `docs/methodology/agent-experiment-dispatch.md` 模板派发：
+- 允许 skill 路径：仅 Variant C 的 SKILL.md + 必要的 antd 工具型
+  skill（ant-app、ant-layout）
+- 禁止读取 `blocks/im-conversation-list/frontend/src/**`（强制黑盒消费）
+- 允许读取 `blocks/im-conversation-list/frontend/dist/index.d.ts`
+  （类型探查可接受）
+- 验收清单**严格封闭**（防 Parkinson）
+- 输出到 `experiments/im-conversation-list-2026-05-09-v3/variant-c/`
+
+预期落点：cold subagent 在 50–150 LoC 完成同样验收（即便 API 探索成本
+翻倍，也比 A/B 低 90%+）。
+
+### 7.4 后续
+
+- Variant C cold subagent 验证（见上 §7.3.4）
+- 验收清单需要做封闭性强化（禁止可选特性追加），否则 Parkinson
+  现象会继续污染对比
+- 实验方法学补充：分桶 LoC 是更稳健的指标；TOTAL 仅做参考
+- 复用 block 模板做下一个业务模式（订单详情 / 商品瀑布流 / 通话面板）
 
 ## 8. 产物质量基线
 
