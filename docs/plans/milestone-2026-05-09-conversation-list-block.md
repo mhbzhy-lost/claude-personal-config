@@ -1,0 +1,147 @@
+# Milestone：会话列表 Block + 抽象层级实验（2026-05-09）
+
+## 1. 这段工作要回答的命题
+
+> 怎样让 agent 自主完成大型软件需求？
+
+经过对话推进，命题被拆为两条相互独立的轴：
+
+1. **领域知识**：skills/ 提供"在该技术栈里怎么做"的指导，对抗预训练知识滞后
+2. **预制件**：blocks/ 提供"该业务模式直接组装"的工件，对抗 agent 注意力被细节耗尽
+
+这次的具体动作是验证第二轴：**对一个高频业务场景（微信风格会话列表）做端到端的 block 建设 + 用受控实验验证抽象层级对 agent 自写代码量的真实影响**。
+
+## 2. 已落地的产出
+
+### 2.1 `blocks/im-conversation-list/` —— 第一个生产级业务模式 block
+
+| 层 | 路径 | 状态 | 关键数据 |
+|---|---|---|---|
+| protocol | `protocol/openapi.yaml` `asyncapi.yaml` `types.md` | v0.2 | spectral lint 0 errors |
+| protocol（codegen） | `protocol/generated/openapi.ts` `zodios.ts` | v0.2 | TS 类型 + zod schemas + Zodios 类型化客户端 |
+| backend | `backend/app/**` (FastAPI + SQLAlchemy + asyncpg) | v0.2 | 11 endpoints / 21 tests pass / **74% coverage** |
+| seed | `backend/app/scripts/seed.py` | v0.1 | demo (~100 conv/~3k msg) + bench (~1k conv/~150k msg) |
+| WS hub | `backend/app/ws/hub.py` | v0.1 | 内存 fan-out，多实例需换 Redis adapter |
+| frontend (block) | `frontend/` | **未做** | 按实验结论待定 Variant C |
+
+后端已被两次受控派发的 subagent 当作真实接口打通，证明**协议契约够明确、API 表面适合 agent 直接消费**。
+
+### 2.2 `docs/plans/`（计划与方法学沉淀）
+
+| 文档 | 内容 |
+|---|---|
+| `skill-abstraction-experiment-conversation-list.md` | 实验方案 + §7.1 第一轮（biased，作废）+ §7.2 第二轮（受控派发） |
+| `skill-organization-grouping.md` | skill 分组策略推迟决策（等可量化失败案例触发） |
+| `skill-retrieval-optimization.md` | 检索引擎优化方案（独立主题，未实施） |
+| `milestone-2026-05-09-conversation-list-block.md` | 本文档 |
+
+### 2.3 `experiments/im-conversation-list-2026-05-09-v2/`
+
+两个 subagent 在受控环境（白名单 SKILL.md + 禁 mcp 检索 + 禁兄弟变体）下产出的对照样本：
+- `variant-a/`：仅 antd 原子组件（13 份 SKILL.md + 3 份 IM skill）
+- `variant-b/`：A 全部 + ProComponents（ant-pro-list / ant-pro-layout）
+
+第一轮的 `experiments/im-conversation-list-2026-05-09/` 被判作废（主对话上下文污染），保留作工程参考但不作实验证据。
+
+## 3. 三个关键发现
+
+### 3.1 受控实验的派发方法学（首次跑通）
+
+**不需要新写 harness**——直接用 `Agent` 工具派发 subagent，关键在 prompt 控制：
+- **必须显式禁掉** `mcp__skill-catalog__*` 和 `/knowledge-retrieval`，否则等于让 subagent 看到全集 skill 索引
+- **必须用文件路径白名单**列出允许读取的 SKILL.md，名单外的 `skills/**` 全禁
+- **必须显式覆盖** CLAUDE.md "强制 /knowledge-retrieval"那条规则（项目 CLAUDE.md 优先级高于 prompt）
+- **必须要求合规自审报告**：subagent 列出所有 Read / Bash / Skill 调用，主对话事后审计
+- **串行派发**，中间 reset DB，避免数据互污
+
+合规审计结果证明这套方法是有效的：两个 subagent 全程 0 次 mcp 检索、0 次禁路径越界、诚实报告了被 sandbox 拦截的边界尝试。
+
+唯一缝隙：白名单未覆盖 `blocks/<name>/README.md` 和 `Makefile` 这种顶层文件（两个 subagent 都读了）。下次 prompt 应补禁。
+
+### 3.2 AI Parkinson 定律
+
+**给 agent 一个高层组件，它不会"提早收工"——它会用省下的注意力额度去装饰项目边角。**
+
+冷启动派发的实验数据（按职责分桶）：
+
+| 桶 | A（仅原子） | B（A+Pro） | Δ |
+|---|---:|---:|---:|
+| **list_render** | **632** | **279** | **−55.9%** |
+| infra（types/http/ws/state/util） | 676 | 659 | −2.5% |
+| app_layout | 238 | 515 | **+116.4%** |
+| css | 192 | 260 | +35.4% |
+| **TOTAL** | **1841** | **1810** | **−1.7%** |
+
+ProList 在它覆盖的列表渲染域内确实砍掉一半代码（强成立 H1），但 agent 没把省下来的精力变成"更短总代码"——反手在 app_layout 桶里加了 DetailPane、IdentityGate、更复杂的 App.tsx 等**不在验收清单里**的特性。
+
+**这反过来强化了预制件策略的价值**：
+- agent 注意力是有限资源
+- 预制件不是"让 agent 写更少代码"，而是"让 agent 把注意力分配到真正需要它的地方"
+- LOC 不是合适的单一指标——total 会被 Parkinson 抹平；分桶才看得到真实价值
+
+### 3.3 真正的天花板是 infra 桶（不是 list_render）
+
+A 和 B 在 infra 桶（types / api / ws / format / state）上几乎一样多（676 vs 659），因为这层完全是**业务专属逻辑**，UI 组件库（不论 ProList 还是裸 List）都帮不上忙：
+
+- types 手写（A 134 / B 145）—— **codegen 已就位但实验为公平禁用了**
+- HTTP client（A 118 / B 104）—— 业务 block 应当 export
+- WS reconnect + event router（A 95 / B 70）—— 业务 block 应当 export
+- 状态合并 reducer（A 219 / B 235）—— IM 业务专属，必须由业务 block 提供
+- 智能时间格式化（A 110 / B 105）—— util 类，可单独提取
+
+Variant C（业务模式 block 的 frontend 层）的目标就是把这 660+ LoC 变成 import。
+
+## 4. 未完事项
+
+### 4.1 短期（下一轮实验）
+
+- **Variant C**：实施 `blocks/im-conversation-list/frontend/` 的生产级实现 + 强指令型 SKILL.md
+  - 直接 export `<ConversationList>` 组件 + `useConversations` hook
+  - 配合 protocol/generated/ 让 agent 直接 import 类型
+  - SKILL.md 写"凡 IM 列表场景禁止自行手写 list / item / WS 状态机"
+- **派发 Variant C 的 prompt 强化**：
+  - 验收清单严格封闭（禁追加未要求特性，避免 Parkinson 继续污染对比）
+  - 白名单补禁 `blocks/<name>/README.md` `Makefile` 顶层文件
+- **预期**：list_render + infra 合并降至 ≤ 200 LoC（vs A 的 1308）
+
+### 4.2 中期（实验复用）
+
+- **方法学固化**：把"subagent + 路径白名单 + 合规自审"做成可重复模板（不需要 harness 代码，用一份模板 prompt 就够），下个业务模式（订单详情 / 商品瀑布流 / 通话面板）直接套
+- **量化指标二维化**：分桶 LOC + 验收完成率，不再用单一 LOC 总数
+- **强封闭验收清单**：把"禁追加未要求特性"作为方法学固定项
+
+### 4.3 长期（产品方向）
+
+- 复制 block 模式到其他高频业务场景，构建 agent-native 业务组件库
+- 协议层 codegen 流水线（已为 IM block 跑通）作为通用模板
+- 后端层是否也做生产级预制（现在每个 block 都自带 FastAPI 服务，是否要抽出 platform 层）—— 待真实复用 ≥3 个 block 后再回头评估
+
+## 5. 后端服务的当前状态（手册）
+
+```bash
+# 启动 postgres
+docker run -d --name imcl-pg \
+  -e POSTGRES_USER=imcl -e POSTGRES_PASSWORD=imcl -e POSTGRES_DB=imcl \
+  -p 5544:5432 postgres:17-alpine
+docker exec imcl-pg psql -U imcl -d imcl -c "CREATE DATABASE imcl_test OWNER imcl;"
+
+# 起后端
+cd /Users/mhbzhy/claude-config/blocks/im-conversation-list/backend
+make install     # uv venv + 安装
+make migrate     # alembic upgrade head
+make seed-demo   # ~100 conv / ~3k msg
+make dev         # uvicorn :8080
+
+# 起前端实验产出（任一变体）
+cd /Users/mhbzhy/claude-config/experiments/im-conversation-list-2026-05-09-v2/variant-a
+echo "VITE_DEV_USER_ID=01KR5Y935AR1JJT0RJ31ABG5YD" > .env.local
+pnpm install && pnpm dev    # http://localhost:5173
+
+# 协议层 codegen
+cd /Users/mhbzhy/claude-config/blocks/im-conversation-list/protocol
+make install
+make gen     # → generated/openapi.ts + zodios.ts
+make lint    # spectral
+```
+
+种子里 demo 用户 ID 固定为 `01KR5Y935AR1JJT0RJ31ABG5YD`（用 `--primary-user-id` 锁定），后续实验复跑保证起点一致。
