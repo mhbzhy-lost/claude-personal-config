@@ -145,3 +145,103 @@ make lint    # spectral
 ```
 
 种子里 demo 用户 ID 固定为 `01KR5Y935AR1JJT0RJ31ABG5YD`（用 `--primary-user-id` 锁定），后续实验复跑保证起点一致。
+
+---
+
+## 6. 第二个 block：commerce-product-list（2026-05-12）
+
+按 milestone §4.3 长期方向，建第二个业务 block 测**模板可复用性**。刻意
+选了与 IM 差异最大的场景，以暴露模板的边界：
+
+| 维度 | im-conversation-list | commerce-product-list |
+|---|---|---|
+| 实时 | WebSocket + 7 事件 | 无 WS |
+| 分页 | cursor | offset + limit |
+| 布局 | 垂直列表 | 响应式 grid |
+| Item action | 右键菜单（4 项） | 收藏按钮 + 数量选择器 |
+| 鉴权语义 | 必登录 | 匿名可读、写需登录 |
+| 表数 | 6 | 3 |
+| Endpoints | 11 | 5 |
+
+### 6.1 构建耗时对比
+
+| 阶段 | IM block 首次构建 | Commerce block 构建 | 加速比 |
+|---|---|---|---|
+| protocol（含 codegen） | ~20 min | ~5 min | **4×** |
+| backend（含测试） | ~6–8 h（多轮调试） | ~30 min | **~12–16×** |
+| frontend block | ~4 h | ~25 min | **~10×** |
+| **合计** | **~2 天** | **~1 h** | **~16×** |
+
+后端测试 **16/16 首次即过**——IM 当初要修 pytest-asyncio loop 跨测试漏池、
+TRUNCATE 关键字、FK ordering 等坑，第二次完全没复发。
+
+### 6.2 自实现 LoC 对比
+
+| 角色 | LoC |
+|---|---|
+| IM consumer（example/basic） | 38 |
+| Commerce consumer（example/basic） | **44** |
+| IM block frontend 内部 | 888 |
+| Commerce block frontend 内部 | **708**（无 WS hook，少 ~180 LoC） |
+
+Consumer 38 vs 44 只差 6 行——两套 block 给消费者的认知负荷基本对等，
+强指令型 SKILL.md 的"一次 import 全搞定"承诺**被验证可移植**。
+
+### 6.3 摩擦点（候选 `blocks/_shared/` 抽出清单）
+
+**强候选**（基本机械 cp + s/imcl/cpl/g 改动的文件）：
+
+- `app/__init__.py` / `app/config.py`（仅 env_prefix 差异）
+- `app/ulid_utils.py`（完全相同）
+- `app/errors.py`（完全相同）
+- `app/db.py`（完全相同）
+- `app/auth.py`（一处差异：IM 强制 user_id；commerce 允许 None——可参数化）
+- `app/models/base.py`（完全相同）
+- `app/models/user.py`（IM 多 `online_status` 字段——可参数化）
+- `alembic.ini` / `alembic/env.py` / `alembic/script.py.mako`（完全相同）
+- 测试 `conftest.py`（仅 TRUNCATE 表名列表差异）
+- 前端 `client.ts`（仅 URL prefix + auth 类型名差异，约 80% 重合）
+- 前端 `vite.config.ts` / `tsconfig.json` / `tsconfig.build.json`（完全相同）
+
+**业务专属（不该抽出）**：
+- `app/models/{conversation,message,product,user_product_state}.py`
+- `app/services/*.py`
+- `app/api/v1/*.py`（除 `me.py` 完全相同）
+- 前端 component / hook 业务逻辑
+
+**抽的不是代码而是脚手架**：
+- 后端的 dep + auth 抽象（pluggable auth backend 模式）
+- 前端的 ConfigProvider + auth pluggable 模式
+- pagination envelope 模式（cursor / offset 两种）
+
+### 6.4 结论
+
+**block 模板成立**，可复用价值约 **16× 时间节省 + 一次过测试**。
+下一个 block 启动前抽共享层：
+
+- `blocks/_shared/backend/` —— config / db / auth / deps / errors /
+  ulid_utils / alembic 模板 / conftest 模板
+- `blocks/_shared/frontend/` —— vite/tsconfig 模板 + client / auth
+  pluggable 接口 + Vite lib 配置
+- `scripts/new-block.py` 脚手架生成器：参数化场景名 + env_prefix + 表清单
+
+预计第三个 block（如订单详情）总耗时降至 ~20 min。
+
+### 6.5 commerce 数据手册
+
+```bash
+docker run -d --name cpl-pg \
+  -e POSTGRES_USER=cpl -e POSTGRES_PASSWORD=cpl -e POSTGRES_DB=cpl \
+  -p 5545:5432 postgres:17-alpine
+docker exec cpl-pg psql -U cpl -d cpl -c "CREATE DATABASE cpl_test OWNER cpl;"
+
+cd blocks/commerce-product-list/backend
+make install && make migrate
+make seed-demo                  # 100 products
+make dev                        # uvicorn :8081
+
+cd ../frontend/examples/basic
+pnpm install && pnpm dev        # :5176
+```
+
+固定 demo user_id：`01KR9D7VAY4FYDVK7C2DZH8KM0`
