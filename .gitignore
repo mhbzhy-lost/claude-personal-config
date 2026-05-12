@@ -40,3 +40,11 @@ lists/*.local.list
 
 # playwright-mcp 运行时产物（截图 / console log / snapshot yml）
 .playwright-mcp/
+
+# Node / frontend 构建产物（block dev 工具 + examples）
+node_modules/
+**/dist/
+pnpm-lock.yaml.*
+
+# block component symlink-back-to-dev (created by block frontend dev tooling)
+blocks/*/component/frontend/node_modules

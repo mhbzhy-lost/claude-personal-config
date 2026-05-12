@@ -10,7 +10,7 @@ export default defineConfig({
   plugins: [react(), cssInjectedByJsPlugin()],
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
+      entry: resolve(__dirname, '../../component/frontend/src/index.ts'),
       formats: ['es'],
       fileName: 'index',
     },

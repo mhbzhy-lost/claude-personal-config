@@ -26,4 +26,4 @@ lint: install
 	pnpm lint
 
 clean:
-	rm -rf node_modules generated
+	rm -rf node_modules ../../component/protocol/generated

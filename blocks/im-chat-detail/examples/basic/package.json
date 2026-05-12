@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": { "dev": "vite", "build": "tsc -b && vite build" },
   "dependencies": {
-    "@chat/im-chat-detail": "link:../..",
+    "@chat/im-chat-detail": "link:../../component/frontend",
     "antd": "^5.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
