@@ -1,0 +1,75 @@
+.ui-navbar {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.ui-navbar-safe-area {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+.ui-navbar-transparent {
+  background: transparent;
+  border-bottom: none;
+}
+
+.ui-navbar-inner {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  align-items: center;
+  height: 44px;
+  padding: 0 4px;
+}
+
+.ui-navbar-left,
+.ui-navbar-right {
+  display: flex;
+  align-items: center;
+}
+
+.ui-navbar-right {
+  justify-content: flex-end;
+  gap: 4px;
+  padding-right: 8px;
+}
+
+.ui-navbar-left {
+  padding-left: 4px;
+}
+
+.ui-navbar-back.ant-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.ui-navbar-title {
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f1f1f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 8px;
+}
+
+.ui-navbar-transparent .ui-navbar-title-text {
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.ui-navbar-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.ui-navbar-page-content {
+  flex: 1;
+  overflow-y: auto;
+}
