@@ -38,10 +38,18 @@ SPECIAL_PATHS = {
     "block-README.md": "README.md",
 }
 
+# When --no-backend is set, we use block-README-ui.md instead.
+SPECIAL_PATHS_UI = {
+    "block-README-ui.md": "README.md",
+}
+
 # Skip these paths entirely (cache / generated / module installs).
 SKIP_PATHS_RE = re.compile(
     r"(^|/)(node_modules|\.venv|\.vite|__pycache__|dist|generated|\.pytest_cache|\.ruff_cache)(/|$)"
 )
+
+# Top-level template dirs that are backend-related; skipped when --no-backend.
+BACKEND_ONLY_DIRS = {"backend", "protocol"}
 
 
 def slug_to_snake(slug: str) -> str:
@@ -49,16 +57,17 @@ def slug_to_snake(slug: str) -> str:
 
 
 def build_substitutions(args: argparse.Namespace) -> dict[str, str]:
-    pkg_ns = args.pkg_ns or args.env_prefix.lower()
+    env_prefix = args.env_prefix or args.slug.split("-")[0].upper()
+    pkg_ns = args.pkg_ns or env_prefix.lower()
     seed_cmd = args.seed_cmd or f"{pkg_ns}-seed"
     return {
         "{{SLUG}}": args.slug,
         "{{SLUG_SNAKE}}": slug_to_snake(args.slug),
-        "{{ENV_PREFIX}}": args.env_prefix,
-        "{{ENV_PREFIX_LOWER}}": args.env_prefix.lower(),
+        "{{ENV_PREFIX}}": env_prefix,
+        "{{ENV_PREFIX_LOWER}}": env_prefix.lower(),
         "{{PKG_NS}}": pkg_ns,
-        "{{BACKEND_PORT}}": str(args.backend_port),
-        "{{POSTGRES_PORT}}": str(args.postgres_port),
+        "{{BACKEND_PORT}}": str(args.backend_port or 0),
+        "{{POSTGRES_PORT}}": str(args.postgres_port or 0),
         "{{TITLE_EN}}": args.title_en,
         "{{TITLE_CN}}": args.title_cn or args.title_en,
         "{{SEED_CMD}}": seed_cmd,
@@ -89,19 +98,39 @@ def is_text(path: Path) -> bool:
     return False
 
 
-def copy_tree(src_root: Path, dst_root: Path, subs: dict[str, str], dry_run: bool) -> int:
+def copy_tree(
+    src_root: Path,
+    dst_root: Path,
+    subs: dict[str, str],
+    dry_run: bool,
+    no_backend: bool = False,
+) -> int:
     """Walk src_root, copy with substitution to dst_root. Returns file count."""
     count = 0
+    special_paths = SPECIAL_PATHS_UI if no_backend else SPECIAL_PATHS
     for src in sorted(src_root.rglob("*")):
         rel = src.relative_to(src_root).as_posix()
         if SKIP_PATHS_RE.search(rel):
             continue
         if src.is_dir():
             continue
+        # Skip backend/protocol templates when --no-backend.
+        top = rel.split("/", 1)[0]
+        if no_backend and top in BACKEND_ONLY_DIRS:
+            continue
+        # The top-level templates/README.md documents the scaffold itself,
+        # not a block deliverable; never copy it into a block.
+        if rel == "README.md":
+            continue
+        # Skip the README variant we're NOT using.
+        if no_backend and rel == "block-README.md":
+            continue
+        if not no_backend and rel == "block-README-ui.md":
+            continue
 
         # Special mapping at the file-name level (top-level only).
-        if rel in SPECIAL_PATHS:
-            dst_rel = SPECIAL_PATHS[rel]
+        if rel in special_paths:
+            dst_rel = special_paths[rel]
         else:
             dst_rel = rel
         # Substitute placeholders in the path itself (e.g. dir names).
@@ -132,10 +161,15 @@ def main(argv: list[str] | None = None) -> int:
         description="Scaffold a new business pattern block from .claude/skills/new-block/templates/.",
     )
     parser.add_argument("--slug", required=True, help='Block slug, e.g. "order-detail"')
-    parser.add_argument("--env-prefix", required=True, help='Env prefix (uppercase), e.g. "OD"')
+    parser.add_argument("--no-backend", action="store_true",
+                        help='Frontend-only block (UI chrome). Skips protocol/ and backend/ templates.')
+    parser.add_argument("--env-prefix", default=None,
+                        help='Env prefix (uppercase), e.g. "OD". Required unless --no-backend.')
     parser.add_argument("--pkg-ns", default=None, help='NPM namespace, defaults to env-prefix lowercased')
-    parser.add_argument("--backend-port", type=int, required=True)
-    parser.add_argument("--postgres-port", type=int, required=True)
+    parser.add_argument("--backend-port", type=int, default=None,
+                        help='uvicorn port. Required unless --no-backend.')
+    parser.add_argument("--postgres-port", type=int, default=None,
+                        help='postgres host port. Required unless --no-backend.')
     parser.add_argument("--title-en", required=True, help='English title, e.g. "Order Detail"')
     parser.add_argument("--title-cn", default=None, help='Chinese title, defaults to title-en')
     parser.add_argument("--seed-cmd", default=None, help='CLI seed command name, defaults to "<pkg-ns>-seed"')
@@ -147,15 +181,37 @@ def main(argv: list[str] | None = None) -> int:
     if not re.match(r"^[a-z][a-z0-9-]*[a-z0-9]$", args.slug):
         print(f"error: slug must be lowercase-kebab-case, got {args.slug!r}", file=sys.stderr)
         return 2
-    if not re.match(r"^[A-Z][A-Z0-9]*$", args.env_prefix):
-        print(f"error: env-prefix must be UPPERCASE, got {args.env_prefix!r}", file=sys.stderr)
-        return 2
-    if not (1024 <= args.backend_port <= 65535):
-        print(f"error: backend-port out of range: {args.backend_port}", file=sys.stderr)
-        return 2
-    if not (1024 <= args.postgres_port <= 65535):
-        print(f"error: postgres-port out of range: {args.postgres_port}", file=sys.stderr)
-        return 2
+
+    if args.no_backend:
+        # Frontend-only: ignore backend-related fields if provided
+        if args.env_prefix is None:
+            args.env_prefix = ""
+        if not args.pkg_ns:
+            print("error: --pkg-ns is required when --no-backend is set", file=sys.stderr)
+            return 2
+    else:
+        # Full block: require backend fields
+        missing = []
+        if not args.env_prefix:
+            missing.append("--env-prefix")
+        if args.backend_port is None:
+            missing.append("--backend-port")
+        if args.postgres_port is None:
+            missing.append("--postgres-port")
+        if missing:
+            print(f"error: missing required args: {', '.join(missing)}\n"
+                  f"       (pass --no-backend for frontend-only UI block)",
+                  file=sys.stderr)
+            return 2
+        if not re.match(r"^[A-Z][A-Z0-9]*$", args.env_prefix):
+            print(f"error: env-prefix must be UPPERCASE, got {args.env_prefix!r}", file=sys.stderr)
+            return 2
+        if not (1024 <= args.backend_port <= 65535):
+            print(f"error: backend-port out of range: {args.backend_port}", file=sys.stderr)
+            return 2
+        if not (1024 <= args.postgres_port <= 65535):
+            print(f"error: postgres-port out of range: {args.postgres_port}", file=sys.stderr)
+            return 2
 
     if not SHARED.exists():
         print(f"error: shared templates not found at {SHARED}", file=sys.stderr)
@@ -181,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     print()
 
     total = 0
-    total += copy_tree(SHARED, target, subs, args.dry_run)
+    total += copy_tree(SHARED, target, subs, args.dry_run, no_backend=args.no_backend)
 
     print()
     if args.dry_run:
@@ -191,11 +247,16 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print("Next steps:")
         print(f"  cd {target.relative_to(REPO_ROOT)}")
-        print(f"  cd protocol && make install && make lint     # validate scaffold")
-        print(f"  cd ../backend && make install                # install Python deps")
-        print(f"  # (start postgres on :{args.postgres_port} and run `make migrate`)")
-        print(f"  make test                                    # run scaffold's 2 baseline tests")
-        print(f"  make dev                                     # uvicorn :{args.backend_port}")
+        if not args.no_backend:
+            print(f"  cd protocol && make install && make lint     # validate scaffold")
+            print(f"  cd ../backend && make install                # install Python deps")
+            print(f"  # (start postgres on :{args.postgres_port} and run `make migrate`)")
+            print(f"  make test                                    # run scaffold's 2 baseline tests")
+            print(f"  make dev                                     # uvicorn :{args.backend_port}")
+            print()
+            print(f"  cd ../frontend && pnpm install && pnpm build # frontend lib build")
+        else:
+            print(f"  cd frontend && pnpm install && pnpm build    # frontend-only block")
         print()
         print(f"  cd ../frontend && pnpm install && pnpm build # frontend lib build")
         print()
