@@ -26,7 +26,7 @@ description: 创建一个新的"业务模式 block"——端到端预制件（pr
 ## 用法
 
 ```bash
-./claude-skills/new-block/scripts/new-block.py \
+./.claude/skills/new-block/scripts/new-block.py \
   --slug <kebab-case> \
   --env-prefix <UPPERCASE> \
   --pkg-ns <lowercase-npm-ns> \

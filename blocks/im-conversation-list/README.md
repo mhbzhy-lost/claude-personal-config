@@ -102,4 +102,4 @@ im-conversation-list/
 ```
 
 修 bug / 加特性：进对应层目录，看里面的 README。
-新增类似 block：调 `new-block` skill（位于 `claude-skills/new-block/`）。
+新增类似 block：调 `new-block` skill（位于 `.claude/skills/new-block/`）。

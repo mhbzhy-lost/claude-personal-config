@@ -69,7 +69,7 @@ dict 形态（`{key: description}`）or list 形态（仅 keys）都支持。新
 - `distill/persistence.py`: RunRecorder + StageRecorder + FetchLogger（schema_version=2）
 - `distill/.env.example`: 用户配置模板（必填 DISTILL_PROVIDER + 对应 KEY）
 - `distill/pyproject.toml`: uv 管理，py-modules 扁平
-- `claude-skills/skill-distill/SKILL.md`: 主 agent 入口包装（含环境/路径前置 + 标签闭集 + 初始化机制）
+- `.claude/skills/skill-distill/SKILL.md`: 主 agent 入口包装（含环境/路径前置 + 标签闭集 + 初始化机制）
 
 ## 产物结构
 
