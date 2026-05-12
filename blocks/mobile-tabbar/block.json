@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "slug": "mobile-tabbar",
+  "title": "移动端底部 tabbar",
+  "title_en": "Mobile Bottom Tabbar",
+  "description": "移动端底部 tabbar shell：2-5 个 tab，keep-alive 切换保留滚动位置，badge 双形态（数字角标 / 小红点）。",
+  "kind": "ui-chrome",
+  "capabilities": [
+    "ui-chrome",
+    "navigation",
+    "tabs",
+    "keep-alive",
+    "mobile-friendly"
+  ],
+  "tech_stack": ["react", "antd"],
+  "copyable_root": "component",
+  "consumer_readme": "component/README.md",
+  "frontend": {
+    "path": "component/frontend",
+    "package_name": "@ui/mobile-tabbar",
+    "main_export": "TabbarShell"
+  },
+  "anti_use_cases": [
+    "顶部返回 / 标题条 → top-navbar",
+    "≥6 个 tab → 拆 sub-tabbar 或抽屉",
+    "桌面侧边导航 → antd Layout.Sider + Menu",
+    "路由级 tab → react-router Outlet"
+  ],
+  "related_blocks": ["top-navbar"]
+}

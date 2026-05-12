@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "slug": "im-conversation-list",
+  "title": "多会话列表（微信风格）",
+  "title_en": "IM Conversation List",
+  "description": "多对话列表 + WebSocket 实时推送 + 未读/置顶/免打扰 per-user 状态。微信 / 钉钉 / Slack 风格首页 tab。",
+  "kind": "business-pattern",
+  "capabilities": [
+    "list-view",
+    "realtime",
+    "websocket",
+    "pagination-cursor",
+    "per-user-state",
+    "soft-delete",
+    "auth-required",
+    "multi-conversation"
+  ],
+  "tech_stack": ["react", "antd", "fastapi", "postgres", "websocket"],
+  "copyable_root": "component",
+  "consumer_readme": "component/README.md",
+  "frontend": {
+    "path": "component/frontend",
+    "package_name": "@imcl/conversation-list",
+    "main_export": "ConversationList"
+  },
+  "backend": {
+    "path": "component/backend",
+    "env_prefix": "IMCL",
+    "http_port": 8080,
+    "postgres_port": 5544
+  },
+  "protocol": {
+    "path": "component/protocol",
+    "openapi": "component/protocol/openapi.yaml",
+    "asyncapi": "component/protocol/asyncapi.yaml"
+  },
+  "anti_use_cases": [
+    "双人对话详情页 → im-chat-detail",
+    "评论流 / 通知中心",
+    "嵌入式评论 → comment-thread",
+    "商品/订单列表 → commerce-product-list / order-detail"
+  ],
+  "related_blocks": ["im-chat-detail"]
+}

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "slug": "commerce-product-list",
+  "title": "商品列表（瀑布流）",
+  "title_en": "Commerce Product List",
+  "description": "商品 grid + 筛选/排序 + 收藏/加购 per-user 状态。匿名可读，登录后出现互动按钮。",
+  "kind": "business-pattern",
+  "capabilities": [
+    "list-view",
+    "pagination-offset",
+    "per-user-state",
+    "anonymous-readable",
+    "product-catalog",
+    "filtering",
+    "sorting"
+  ],
+  "tech_stack": ["react", "antd", "fastapi", "postgres"],
+  "copyable_root": "component",
+  "consumer_readme": "component/README.md",
+  "frontend": {
+    "path": "component/frontend",
+    "package_name": "@cpl/product-list",
+    "main_export": "ProductList"
+  },
+  "backend": {
+    "path": "component/backend",
+    "env_prefix": "CPL",
+    "http_port": 8081,
+    "postgres_port": 5545
+  },
+  "protocol": {
+    "path": "component/protocol",
+    "openapi": "component/protocol/openapi.yaml"
+  },
+  "anti_use_cases": [
+    "单品详情页 → product-detail（待建）",
+    "购物车结算 → cart-checkout（待建）",
+    "订单详情 → order-detail",
+    "会话列表 → im-conversation-list"
+  ],
+  "related_blocks": ["order-detail"]
+}

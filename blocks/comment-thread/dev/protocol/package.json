@@ -1,0 +1,18 @@
+{
+  "name": "comment-thread-protocol-dev",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Codegen dev tooling. Contract at ../../component/protocol/openapi.yaml.",
+  "type": "module",
+  "scripts": {
+    "gen:ts": "openapi-typescript ../../component/protocol/openapi.yaml -o ../../component/protocol/generated/openapi.ts",
+    "gen:zod": "openapi-zod-client ../../component/protocol/openapi.yaml -o ../../component/protocol/generated/zodios.ts --strict-objects",
+    "gen": "pnpm gen:ts && pnpm gen:zod",
+    "lint": "spectral lint ../../component/protocol/openapi.yaml"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.4.4",
+    "openapi-zod-client": "^1.18.2",
+    "@stoplight/spectral-cli": "^6.14.2"
+  }
+}

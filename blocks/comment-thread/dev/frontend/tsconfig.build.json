@@ -1,0 +1,13 @@
+{
+  "extends": "../../component/frontend/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "dist",
+    "rootDir": "../../component/frontend/src"
+  },
+  "include": ["../../component/frontend/src"],
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
+}
