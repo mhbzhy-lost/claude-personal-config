@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cpl
+      POSTGRES_PASSWORD: cpl
+      POSTGRES_DB: cpl
+    ports:
+      - "5545:5432"
+    volumes:
+      - cpl-pg:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cpl -d cpl"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+volumes:
+  cpl-pg:
