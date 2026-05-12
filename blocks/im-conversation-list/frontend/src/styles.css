@@ -15,7 +15,7 @@
 }
 
 .imcl-item-selected {
-  background: #e6f4ff !important;
+  background: var(--imcl-color-primary-bg, #e6f4ff) !important;
 }
 
 .imcl-item-pinned {
@@ -78,7 +78,7 @@
 }
 
 .imcl-flag-pin {
-  color: #faad14;
+  color: var(--imcl-color-warning, #faad14);
 }
 
 .imcl-sr-only {

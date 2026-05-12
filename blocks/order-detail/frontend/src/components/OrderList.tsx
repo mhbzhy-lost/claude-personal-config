@@ -1,5 +1,6 @@
 import { Button, Empty, Result, Segmented, Skeleton, Spin } from 'antd';
 import { useOrders } from '../hooks/useOrders';
+import { useTokenStyle } from '../utils/tokenStyle';
 import type { BlockConfig, OrderStatus, OrderSummary } from '../types';
 import { formatDateTime, formatPrice } from '../utils/format';
 import { StatusBadge } from './StatusBadge';
@@ -20,9 +21,10 @@ const FILTER_OPTIONS = [
 
 export function OrderList({ config, selectedId, onSelect }: OrderListProps) {
   const orders = useOrders(config);
+  const tokenStyle = useTokenStyle();
 
   return (
-    <div className="od-list">
+    <div className="od-list" style={tokenStyle}>
       <div className="od-list-header">
         <Segmented
           options={FILTER_OPTIONS}

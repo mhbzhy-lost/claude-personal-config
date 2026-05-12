@@ -37,7 +37,7 @@
 }
 
 .od-list-item-selected {
-  background: #e6f4ff;
+  background: var(--od-color-primary-bg, #e6f4ff);
 }
 
 .od-list-item-img {
@@ -81,7 +81,7 @@
 }
 
 .od-list-item-total {
-  color: #ff4d4f;
+  color: var(--od-color-error, #ff4d4f);
   font-weight: 600;
 }
 
@@ -176,7 +176,7 @@
 }
 
 .od-detail-item-price {
-  color: #ff4d4f;
+  color: var(--od-color-error, #ff4d4f);
   font-weight: 600;
   min-width: 80px;
   text-align: right;
@@ -200,7 +200,7 @@
 .od-detail-totals-grand {
   font-size: 16px;
   font-weight: 600;
-  color: #ff4d4f;
+  color: var(--od-color-error, #ff4d4f);
   margin-top: 4px;
 }
 

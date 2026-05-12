@@ -68,7 +68,7 @@
 }
 
 .cpl-card-price {
-  color: #ff4d4f;
+  color: var(--cpl-color-error, #ff4d4f);
   font-size: 16px;
   font-weight: 600;
 }

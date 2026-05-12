@@ -47,7 +47,7 @@
 
 .chat-header-offline {
   font-size: 11px;
-  color: #ff4d4f;
+  color: var(--chat-color-error, #ff4d4f);
   font-weight: normal;
 }
 
@@ -127,9 +127,9 @@
 }
 
 .chat-bubble-mine .chat-bubble-content {
-  background: #1677ff;
+  background: var(--chat-color-primary, #1677ff);
   color: #fff;
-  border-color: #1677ff;
+  border-color: var(--chat-color-primary, #1677ff);
 }
 
 .chat-bubble-recall {
@@ -165,7 +165,7 @@
 .chat-bubble-recall-btn {
   background: none;
   border: none;
-  color: #1677ff;
+  color: var(--chat-color-primary, #1677ff);
   cursor: pointer;
   font-size: 11px;
   padding: 0;

@@ -4,6 +4,7 @@ import { ConversationItem } from './ConversationItem';
 import { ContextMenu } from './ContextMenu';
 import { SearchBar } from './SearchBar';
 import { useConversations } from '../hooks/useConversations';
+import { useTokenStyle } from '../utils/tokenStyle';
 import type { Conversation, BlockConfig } from '../types';
 
 export interface ConversationListProps {
@@ -40,6 +41,7 @@ export function ConversationList({
 }: ConversationListProps) {
   const conv = useConversations(config);
   const { message } = App.useApp();
+  const tokenStyle = useTokenStyle();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const onScroll = useCallback(() => {
@@ -56,7 +58,7 @@ export function ConversationList({
   const retryText = locale.retry ?? '重试';
 
   return (
-    <div className="imcl-list" style={STYLE_HOST} role="region" aria-label="会话列表">
+    <div className="imcl-list" style={{ ...STYLE_HOST, ...tokenStyle }} role="region" aria-label="会话列表">
       <div className="imcl-list-header" style={STYLE_HEADER}>
         <SearchBar value={conv.search} onChange={conv.setSearch} />
       </div>

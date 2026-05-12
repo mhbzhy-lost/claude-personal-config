@@ -3,6 +3,7 @@ import { App, Button, Col, Empty, Result, Row, Skeleton, Spin } from 'antd';
 import { FilterBar } from './FilterBar';
 import { ProductCard } from './ProductCard';
 import { useProducts } from '../hooks/useProducts';
+import { useTokenStyle } from '../utils/tokenStyle';
 import type { BlockConfig, ProductFilters, ProductWithState } from '../types';
 
 export interface ProductListProps {
@@ -38,6 +39,7 @@ export function ProductList({
 }: ProductListProps) {
   const products = useProducts(config, initialFilters);
   const { message } = App.useApp();
+  const tokenStyle = useTokenStyle();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const onScroll = useCallback(() => {
@@ -52,7 +54,7 @@ export function ProductList({
   const authenticated = !!config.auth && !!products.me;
 
   return (
-    <div className="cpl-list" style={STYLE_HOST}>
+    <div className="cpl-list" style={{ ...STYLE_HOST, ...tokenStyle }}>
       <div style={STYLE_TOOLBAR}>
         <FilterBar
           filters={products.filters}

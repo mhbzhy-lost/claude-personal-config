@@ -5,6 +5,7 @@ import { Composer } from './Composer';
 import { DateDivider } from './DateDivider';
 import { MessageBubble } from './MessageBubble';
 import { useChat } from '../hooks/useChat';
+import { useTokenStyle } from '../utils/tokenStyle';
 import type { BlockConfig, Message, Ulid } from '../types';
 
 export interface ChatDetailProps {
@@ -26,6 +27,7 @@ function sameDay(a: string, b: string): boolean {
 export function ChatDetail({ config, peerId }: ChatDetailProps) {
   const chat = useChat(config, peerId);
   const { message } = App.useApp();
+  const tokenStyle = useTokenStyle();
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastSeenIdRef = useRef<string | null>(null);
 
@@ -55,7 +57,7 @@ export function ChatDetail({ config, peerId }: ChatDetailProps) {
   };
 
   return (
-    <div className="chat-detail">
+    <div className="chat-detail" style={tokenStyle}>
       <ChatHeader peer={chat.peer} wsConnected={chat.wsConnected} />
       <div ref={scrollRef} className="chat-detail-scroll" onScroll={onScroll}>
         {chat.loading && chat.messages.length === 0 && (

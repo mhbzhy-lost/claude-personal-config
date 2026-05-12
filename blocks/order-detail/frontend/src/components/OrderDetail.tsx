@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { App, Button, Divider, Empty, Input, Modal, Result, Skeleton, Space, Typography } from 'antd';
 import { useOrder } from '../hooks/useOrder';
+import { useTokenStyle } from '../utils/tokenStyle';
 import type { BlockConfig } from '../types';
 import { formatDateTime, formatPrice } from '../utils/format';
 import { StatusBadge } from './StatusBadge';
@@ -15,6 +16,7 @@ export interface OrderDetailProps {
 export function OrderDetail({ config, orderId }: OrderDetailProps) {
   const order = useOrder(config, orderId);
   const { message, modal } = App.useApp();
+  const tokenStyle = useTokenStyle();
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundReason, setRefundReason] = useState('');
 
@@ -85,7 +87,7 @@ export function OrderDetail({ config, orderId }: OrderDetailProps) {
   const canRefund = d.status === 'paid' || d.status === 'shipped' || d.status === 'delivered';
 
   return (
-    <div className="od-detail">
+    <div className="od-detail" style={tokenStyle}>
       <div className="od-detail-header">
         <Space>
           <Typography.Title level={4} style={{ margin: 0 }}>
