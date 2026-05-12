@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Scaffold a new business pattern block from blocks/_shared/ templates.
+Scaffold a new business pattern block from claude-skills/new-block/templates/.
 
 Usage:
-    ./scripts/new-block.py \
+    ./claude-skills/new-block/scripts/new-block.py \
         --slug order-detail \
         --env-prefix OD \
         --pkg-ns od \
@@ -25,8 +25,12 @@ import shutil
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-SHARED = REPO_ROOT / "blocks" / "_shared"
+# Script lives at claude-skills/new-block/scripts/new-block.py.
+# Templates live at claude-skills/new-block/templates/.
+# Output goes to <repo>/blocks/<slug>/.
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = SKILL_ROOT.parent.parent
+SHARED = SKILL_ROOT / "templates"
 BLOCKS = REPO_ROOT / "blocks"
 
 # Files in _shared/ that map to special destinations in the new block.
@@ -125,7 +129,7 @@ def copy_tree(src_root: Path, dst_root: Path, subs: dict[str, str], dry_run: boo
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="new-block",
-        description="Scaffold a new business pattern block from blocks/_shared/ templates.",
+        description="Scaffold a new business pattern block from claude-skills/new-block/templates/.",
     )
     parser.add_argument("--slug", required=True, help='Block slug, e.g. "order-detail"')
     parser.add_argument("--env-prefix", required=True, help='Env prefix (uppercase), e.g. "OD"')
