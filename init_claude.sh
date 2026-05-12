@@ -459,6 +459,41 @@ if [ -f "$INTENT_ENHANCEMENT_DIR/pyproject.toml" ] && [ -f "$SKILL_CATALOG_VENV/
 fi
 
 # ---------------------------------------------------------------------------
+# 初始化 block-catalog MCP server 的 Python 虚拟环境
+# 与 skill-catalog 区分开：本 MCP 索引 blocks/ 目录下的业务模式预制件，
+# 让 agent 能 list / get / search / copy 这些 block 作为 SDK 模板复用。
+# 无 ollama / embedding 依赖；纯 tag + 关键词匹配（block 数量小 ~10 个）。
+# ---------------------------------------------------------------------------
+BLOCK_CATALOG_DIR="$SRC/mcp/block-catalog"
+BLOCK_CATALOG_VENV="$BLOCK_CATALOG_DIR/.venv"
+
+if [ -f "$BLOCK_CATALOG_DIR/pyproject.toml" ]; then
+  if [ ! -f "$BLOCK_CATALOG_VENV/bin/python" ]; then
+    echo "[venv] 创建 block-catalog 虚拟环境..."
+    if command -v uv >/dev/null 2>&1; then
+      uv venv "$BLOCK_CATALOG_VENV" --python ">=3.11"
+    elif command -v python3 >/dev/null 2>&1 \
+        && python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' 2>/dev/null; then
+      python3 -m venv "$BLOCK_CATALOG_VENV"
+    else
+      echo "[error] 需要 python>=3.11 或 uv 来初始化 block-catalog 环境，跳过"
+    fi
+  else
+    echo "[venv] block-catalog 环境已存在，跳过创建"
+  fi
+
+  if [ -f "$BLOCK_CATALOG_VENV/bin/python" ]; then
+    echo "[venv] 同步 block-catalog 依赖（pyproject.toml）..."
+    if command -v uv >/dev/null 2>&1; then
+      uv pip install --python "$BLOCK_CATALOG_VENV/bin/python" -e "$BLOCK_CATALOG_DIR" >/dev/null
+    else
+      "$BLOCK_CATALOG_VENV/bin/pip" install -e "$BLOCK_CATALOG_DIR" >/dev/null
+    fi
+    echo "[venv] block-catalog 环境就绪: $BLOCK_CATALOG_VENV"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # 初始化本地 LLM 后端：ollama + bge-m3 embedding（项目内完全自包含部署）
 #
 #   设计哲学：像 .venv/ 一样，ollama binary + 模型数据 + 运行时状态都落在
@@ -661,6 +696,25 @@ if command -v claude >/dev/null 2>&1; then
       -e "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT" \
       -- skill-catalog "$MCP_CMD" -m skill_catalog.server
     echo "[mcp] skill-catalog 已注册到 user scope（embedding=${EMBEDDING_MODEL}, intent_enhancement=${ENABLE_INTENT_ENHANCEMENT}）"
+  fi
+
+  # --- block-catalog MCP：业务模式 block 索引 + copy ---
+  if [ -f "$BLOCK_CATALOG_VENV/bin/python" ]; then
+    BC_CMD="$BLOCK_CATALOG_VENV/bin/python"
+    BC_CURRENT=$(claude mcp get block-catalog 2>&1 || true)
+    if echo "$BC_CURRENT" | grep -q "Connected" \
+        && echo "$BC_CURRENT" | grep -q "$BC_CMD" \
+        && echo "$BC_CURRENT" | grep -q "BLOCK_LIBRARY_PATH=$SRC/blocks"; then
+      echo "[mcp] block-catalog 已注册且配置一致"
+    else
+      claude mcp remove block-catalog -s user 2>/dev/null || true
+      claude mcp add -s user \
+        -e "BLOCK_LIBRARY_PATH=$SRC/blocks" \
+        -- block-catalog "$BC_CMD" -m block_catalog.server
+      echo "[mcp] block-catalog 已注册到 user scope（library=$SRC/blocks）"
+    fi
+  else
+    echo "[mcp] block-catalog venv 未就绪，跳过 MCP 注册"
   fi
 
   # --- playwright-mcp MCP：浏览器自动化 ---

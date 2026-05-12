@@ -2,20 +2,22 @@
 """
 Scaffold a new business pattern block from .claude/skills/new-block/templates/.
 
+The generated block has three top-level dirs:
+    component/   <- SDK surface; agent copies this entire tree to target project
+    dev/         <- maintainer tooling (Makefile / tests / docker-compose / codegen)
+    examples/    <- local demo
+
 Usage:
-    ./.claude/skills/new-block/scripts/new-block.py \
-        --slug order-detail \
-        --env-prefix OD \
-        --pkg-ns od \
-        --backend-port 8082 \
-        --postgres-port 5546 \
-        --title-en "Order Detail" \
+    ./.claude/skills/new-block/scripts/new-block.py \\
+        --slug order-detail \\
+        --env-prefix OD \\
+        --pkg-ns od \\
+        --backend-port 8082 \\
+        --postgres-port 5546 \\
+        --title-en "Order Detail" \\
         --title-cn "订单详情"
 
-After scaffold:
-    cd blocks/order-detail/protocol && make install
-    cd ../backend && make install
-    cd ../frontend && pnpm install
+After scaffold, follow the printed "Next steps".
 """
 from __future__ import annotations
 
@@ -28,28 +30,44 @@ from pathlib import Path
 # Script lives at <repo>/.claude/skills/new-block/scripts/new-block.py.
 # Templates live at <repo>/.claude/skills/new-block/templates/.
 # Output goes to <repo>/blocks/<slug>/.
-SKILL_ROOT = Path(__file__).resolve().parents[1]   # .claude/skills/new-block/
-REPO_ROOT = Path(__file__).resolve().parents[4]    # repo root
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 SHARED = SKILL_ROOT / "templates"
 BLOCKS = REPO_ROOT / "blocks"
 
-# Files in _shared/ that map to special destinations in the new block.
-SPECIAL_PATHS = {
+# Templates that map to special destinations / filenames in the new block.
+#   - block-README.md  -> <block>/README.md  (maintainer-facing top-level)
+#   - component-README.md  -> <block>/component/README.md  (consumer-facing)
+#   - block.json.tmpl  -> <block>/block.json
+SPECIAL_PATHS_FULL = {
     "block-README.md": "README.md",
+    "component-README.md": "component/README.md",
+    "block.json.tmpl": "block.json",
 }
-
-# When --no-backend is set, we use block-README-ui.md instead.
 SPECIAL_PATHS_UI = {
     "block-README-ui.md": "README.md",
+    "component-README-ui.md": "component/README.md",
+    "block-ui.json.tmpl": "block.json",
 }
 
-# Skip these paths entirely (cache / generated / module installs).
+# Templates that exist for one variant but should be SKIPPED for the other.
+SKIP_WHEN_FULL = {
+    "block-README-ui.md",
+    "component-README-ui.md",
+    "block-ui.json.tmpl",
+}
+SKIP_WHEN_UI = {
+    "block-README.md",
+    "component-README.md",
+    "block.json.tmpl",
+}
+
+# When --no-backend, also skip the backend/protocol layers entirely.
+BACKEND_ONLY_TOP_DIRS = {"component/backend", "component/protocol", "dev/backend", "dev/protocol"}
+
 SKIP_PATHS_RE = re.compile(
     r"(^|/)(node_modules|\.venv|\.vite|__pycache__|dist|generated|\.pytest_cache|\.ruff_cache)(/|$)"
 )
-
-# Top-level template dirs that are backend-related; skipped when --no-backend.
-BACKEND_ONLY_DIRS = {"backend", "protocol"}
 
 
 def slug_to_snake(slug: str) -> str:
@@ -80,19 +98,16 @@ def substitute(text: str, subs: dict[str, str]) -> str:
     return text
 
 
-# File extensions we treat as text and substitute. Anything else copied raw.
 TEXT_SUFFIXES = {
     ".py", ".toml", ".yaml", ".yml", ".json", ".md", ".ini",
     ".ts", ".tsx", ".css", ".html", ".sh", ".sql", ".mako", ".tmpl",
-    "", ".example", ".gitignore", ".gitkeep", ".gitkeep.example",
-    ".spectral",
+    "", ".example", ".gitignore", ".gitkeep", ".spectral",
 }
 
 
 def is_text(path: Path) -> bool:
     if path.suffix in TEXT_SUFFIXES:
         return True
-    # Dotfiles: rely on name
     if path.name in {".gitignore", ".gitkeep", ".env.example", ".spectral.yaml"}:
         return True
     return False
@@ -107,33 +122,32 @@ def copy_tree(
 ) -> int:
     """Walk src_root, copy with substitution to dst_root. Returns file count."""
     count = 0
-    special_paths = SPECIAL_PATHS_UI if no_backend else SPECIAL_PATHS
+    special_paths = SPECIAL_PATHS_UI if no_backend else SPECIAL_PATHS_FULL
+    skip_set = SKIP_WHEN_UI if no_backend else SKIP_WHEN_FULL
+
     for src in sorted(src_root.rglob("*")):
         rel = src.relative_to(src_root).as_posix()
         if SKIP_PATHS_RE.search(rel):
             continue
         if src.is_dir():
             continue
+
         # Skip backend/protocol templates when --no-backend.
-        top = rel.split("/", 1)[0]
-        if no_backend and top in BACKEND_ONLY_DIRS:
+        if no_backend and any(rel.startswith(d + "/") for d in BACKEND_ONLY_TOP_DIRS):
             continue
+
         # The top-level templates/README.md documents the scaffold itself,
         # not a block deliverable; never copy it into a block.
         if rel == "README.md":
             continue
-        # Skip the README variant we're NOT using.
-        if no_backend and rel == "block-README.md":
-            continue
-        if not no_backend and rel == "block-README-ui.md":
+
+        # Skip the README/block.json variant we're NOT using.
+        if rel in skip_set:
             continue
 
         # Special mapping at the file-name level (top-level only).
-        if rel in special_paths:
-            dst_rel = special_paths[rel]
-        else:
-            dst_rel = rel
-        # Substitute placeholders in the path itself (e.g. dir names).
+        dst_rel = special_paths.get(rel, rel)
+        # Substitute placeholders in the path itself.
         dst_rel = substitute(dst_rel, subs)
         dst = dst_root / dst_rel
         if not dry_run:
@@ -158,39 +172,39 @@ def copy_tree(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="new-block",
-        description="Scaffold a new business pattern block from .claude/skills/new-block/templates/.",
+        description=(
+            "Scaffold a new block (component/ + dev/ + examples/) from "
+            ".claude/skills/new-block/templates/."
+        ),
     )
     parser.add_argument("--slug", required=True, help='Block slug, e.g. "order-detail"')
-    parser.add_argument("--no-backend", action="store_true",
-                        help='Frontend-only block (UI chrome). Skips protocol/ and backend/ templates.')
-    parser.add_argument("--env-prefix", default=None,
-                        help='Env prefix (uppercase), e.g. "OD". Required unless --no-backend.')
-    parser.add_argument("--pkg-ns", default=None, help='NPM namespace, defaults to env-prefix lowercased')
-    parser.add_argument("--backend-port", type=int, default=None,
-                        help='uvicorn port. Required unless --no-backend.')
-    parser.add_argument("--postgres-port", type=int, default=None,
-                        help='postgres host port. Required unless --no-backend.')
-    parser.add_argument("--title-en", required=True, help='English title, e.g. "Order Detail"')
-    parser.add_argument("--title-cn", default=None, help='Chinese title, defaults to title-en')
-    parser.add_argument("--seed-cmd", default=None, help='CLI seed command name, defaults to "<pkg-ns>-seed"')
-    parser.add_argument("--dry-run", action="store_true", help='Preview without writing')
-    parser.add_argument("--force", action="store_true", help='Overwrite existing target dir (dangerous)')
+    parser.add_argument(
+        "--no-backend",
+        action="store_true",
+        help="Frontend-only block (UI chrome). Skips protocol/ and backend/.",
+    )
+    parser.add_argument("--env-prefix", default=None, help='Env prefix (UPPERCASE)')
+    parser.add_argument("--pkg-ns", default=None, help="NPM namespace, defaults to env-prefix lowercased")
+    parser.add_argument("--backend-port", type=int, default=None)
+    parser.add_argument("--postgres-port", type=int, default=None)
+    parser.add_argument("--title-en", required=True)
+    parser.add_argument("--title-cn", default=None, help="Defaults to title-en")
+    parser.add_argument("--seed-cmd", default=None, help='Defaults to "<pkg-ns>-seed"')
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--force", action="store_true", help="Overwrite existing target dir")
     args = parser.parse_args(argv)
 
-    # Validate
     if not re.match(r"^[a-z][a-z0-9-]*[a-z0-9]$", args.slug):
         print(f"error: slug must be lowercase-kebab-case, got {args.slug!r}", file=sys.stderr)
         return 2
 
     if args.no_backend:
-        # Frontend-only: ignore backend-related fields if provided
         if args.env_prefix is None:
             args.env_prefix = ""
         if not args.pkg_ns:
-            print("error: --pkg-ns is required when --no-backend is set", file=sys.stderr)
+            print("error: --pkg-ns is required when --no-backend", file=sys.stderr)
             return 2
     else:
-        # Full block: require backend fields
         missing = []
         if not args.env_prefix:
             missing.append("--env-prefix")
@@ -199,9 +213,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.postgres_port is None:
             missing.append("--postgres-port")
         if missing:
-            print(f"error: missing required args: {', '.join(missing)}\n"
-                  f"       (pass --no-backend for frontend-only UI block)",
-                  file=sys.stderr)
+            print(
+                f"error: missing required args: {', '.join(missing)}\n"
+                f"       (pass --no-backend for frontend-only UI block)",
+                file=sys.stderr,
+            )
             return 2
         if not re.match(r"^[A-Z][A-Z0-9]*$", args.env_prefix):
             print(f"error: env-prefix must be UPPERCASE, got {args.env_prefix!r}", file=sys.stderr)
@@ -220,9 +236,11 @@ def main(argv: list[str] | None = None) -> int:
     target = BLOCKS / args.slug
     if target.exists():
         if not args.force:
-            print(f"error: target already exists: {target}\n"
-                  f"       (use --force to overwrite, or pick a different --slug)",
-                  file=sys.stderr)
+            print(
+                f"error: target already exists: {target}\n"
+                f"       (use --force to overwrite, or pick a different --slug)",
+                file=sys.stderr,
+            )
             return 2
         if not args.dry_run:
             shutil.rmtree(target)
@@ -231,38 +249,33 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Scaffolding block {args.slug!r} from {SHARED.relative_to(REPO_ROOT)} ...")
     print(f"  target:  {target.relative_to(REPO_ROOT)}")
-    print(f"  subs:")
-    for k, v in subs.items():
-        print(f"    {k:25s} → {v}")
+    print(f"  layout:  component/ + dev/ + examples/ + block.json + README.md")
     print()
 
-    total = 0
-    total += copy_tree(SHARED, target, subs, args.dry_run, no_backend=args.no_backend)
-
+    total = copy_tree(SHARED, target, subs, args.dry_run, no_backend=args.no_backend)
     print()
     if args.dry_run:
         print(f"[dry-run] would create {total} files")
     else:
         print(f"Created {total} files in {target.relative_to(REPO_ROOT)}/")
         print()
-        print("Next steps:")
-        print(f"  cd {target.relative_to(REPO_ROOT)}")
+        print("Next steps (replace TODOs with your domain):")
+        print(f"  1. Edit blocks/{args.slug}/block.json — fill capabilities + description")
+        print(f"  2. Edit blocks/{args.slug}/component/README.md — consumer-facing API")
+        print(f"  3. Edit blocks/{args.slug}/component/frontend/SKILL.md — agent usage")
         if not args.no_backend:
-            print(f"  cd protocol && make install && make lint     # validate scaffold")
-            print(f"  cd ../backend && make install                # install Python deps")
-            print(f"  # (start postgres on :{args.postgres_port} and run `make migrate`)")
-            print(f"  make test                                    # run scaffold's 2 baseline tests")
-            print(f"  make dev                                     # uvicorn :{args.backend_port}")
+            print(f"  4. Define your domain in component/backend/app/{{models,schemas,services,api}}/")
+            print(f"  5. Generate alembic migration:")
+            print(f"     cd blocks/{args.slug}/component/backend && uv run alembic revision --autogenerate")
+            print(f"  6. Edit component/protocol/openapi.yaml + cd ../../dev/protocol && pnpm gen")
             print()
-            print(f"  cd ../frontend && pnpm install && pnpm build # frontend lib build")
+            print(f"  7. cd blocks/{args.slug}/dev/backend && make install && make db-up && make migrate")
+            print(f"  8. make dev    # uvicorn :{args.backend_port}")
+            print(f"  9. cd ../../examples/basic && pnpm install && pnpm dev")
         else:
-            print(f"  cd frontend && pnpm install && pnpm build    # frontend-only block")
-        print()
-        print(f"  cd ../frontend && pnpm install && pnpm build # frontend lib build")
-        print()
-        print("Then fill in your domain (models / schemas / services / routes /")
-        print("components / SKILL.md). See blocks/im-conversation-list/ or")
-        print("blocks/commerce-product-list/ for reference patterns.")
+            print(f"  4. Build component/frontend/src/components/")
+            print(f"  5. cd dev/frontend && pnpm install && pnpm build  # optional lib build")
+            print(f"  6. cd ../../examples/basic && pnpm install && pnpm dev")
 
     return 0
 

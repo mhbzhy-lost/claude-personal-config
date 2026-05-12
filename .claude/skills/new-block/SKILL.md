@@ -36,7 +36,8 @@ description: 创建一个新的"业务模式 block"——端到端预制件（pr
   --title-cn "<中文标题>"
 ```
 
-完成后 `blocks/<slug>/` 含 57 个文件，立即可跑：
+完成后 `blocks/<slug>/` 含约 60 个文件，按新三层布局（component/ + dev/ +
+examples/ + block.json + README.md），立即可跑：
 
 ```bash
 # 启动 postgres（用脚本里输出的端口）
@@ -46,12 +47,12 @@ docker run -d --name <env-prefix-lower>-pg \
   -e POSTGRES_DB=<env-prefix-lower> \
   -p <postgres-port>:5432 postgres:17-alpine
 
-cd blocks/<slug>/backend
+cd blocks/<slug>/dev/backend
 make install && make migrate
 make test                   # 2 个 baseline 测试应一次过
 
 cd ../protocol && make install && make gen && make lint
-cd ../frontend && pnpm install && pnpm build
+cd ../frontend && pnpm install && pnpm build  # 可选；agent 直接消费源码不需要
 ```
 
 ## 占位符与设计约束

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "slug": "{{SLUG}}",
+  "title": "{{TITLE_CN}}",
+  "title_en": "{{TITLE_EN}}",
+  "description": "TODO: 一句话描述这个 block 的业务模式 + 关键技术特征。",
+  "kind": "business-pattern",
+  "capabilities": [],
+  "tech_stack": ["react", "antd", "fastapi", "postgres"],
+  "copyable_root": "component",
+  "consumer_readme": "component/README.md",
+  "frontend": {
+    "path": "component/frontend",
+    "package_name": "@{{PKG_NS}}/{{SLUG}}",
+    "main_export": "TODO"
+  },
+  "backend": {
+    "path": "component/backend",
+    "env_prefix": "{{ENV_PREFIX}}",
+    "http_port": {{BACKEND_PORT}},
+    "postgres_port": {{POSTGRES_PORT}}
+  },
+  "protocol": {
+    "path": "component/protocol",
+    "openapi": "component/protocol/openapi.yaml"
+  },
+  "anti_use_cases": [],
+  "related_blocks": []
+}
