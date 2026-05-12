@@ -140,12 +140,22 @@ cd ../frontend && pnpm install && pnpm build
 
 ## 已有 block 索引（参考实现）
 
+### Business-pattern blocks（有后端）
+
 | Block | 形态 | 特征 |
 |---|---|---|
 | `blocks/im-conversation-list/` | 多对话列表 | WebSocket + cursor 分页 + 右键菜单 |
 | `blocks/commerce-product-list/` | 商品 grid | 无 WS + offset 分页 + 匿名可读 + 收藏/加购 |
 | `blocks/order-detail/` | 单实体 + 嵌套 | 状态机驱动 + Modal 操作 + 必登录 |
 | `blocks/comment-thread/` | 嵌入式 widget | 树状 reply / 软指针 host / 混合鉴权 / 无 list+detail 双视图 |
+| `blocks/im-chat-detail/` | 双人对话页 | WS 实时 + 气泡左右分发 + 已读 ✓✓ + cursor 分页 + 撤回 |
+
+### UI chrome blocks（无后端，用 `--no-backend` 起）
+
+| Block | 形态 |
+|---|---|
+| `blocks/top-navbar/` | 顶部导航条（返回/标题/右槽） |
+| `blocks/mobile-tabbar/` | 底部 tabbar（keep-alive 切换 2-5 个 tab） |
 
 新 block 建议在差异维度找新切片（如通知中心 / 通话面板 / 媒体画廊）。
 重复造同形态的 block 不会带来额外验证价值。
@@ -160,4 +170,5 @@ cd ../frontend && pnpm install && pnpm build
 | commerce-product-list | CPL | 8081 | 5545 |
 | order-detail | OD | 8082 | 5546 |
 | comment-thread | CT | 8083 | 5547 |
-| **下一个** | **?** | **8084** | **5548** |
+| im-chat-detail | CHAT | 8084 | 5548 |
+| **下一个** | **?** | **8085** | **5549** |
