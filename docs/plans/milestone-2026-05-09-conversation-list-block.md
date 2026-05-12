@@ -245,3 +245,88 @@ pnpm install && pnpm dev        # :5176
 ```
 
 固定 demo user_id：`01KR9D7VAY4FYDVK7C2DZH8KM0`
+
+---
+
+## 7. 第三个 block：order-detail（2026-05-12，scaffold 验证）
+
+抽完 `blocks/_shared/` + `scripts/new-block.py` 后用它真起一个新 block，
+测脚手架的实际加速效果。刻意选最不一样的场景：**单实体 + 嵌套子资源
++ 状态机驱动 UX + 必登录写**——和前两个 block 形态都不同。
+
+### 7.1 加速数据
+
+| 阶段 | IM 首次 | Commerce（手工 cp） | Order（脚手架） |
+|---|---:|---:|---:|
+| 工程骨架（pyproject / Makefile / docker / alembic / config / db / auth) | ~30 min | ~10 min | **0.08 s** |
+| protocol（含 codegen） | ~20 min | ~5 min | ~10 min |
+| backend domain（含测试） | ~6–8 h | ~30 min | ~30 min |
+| frontend block | ~4 h | ~25 min | ~35 min |
+| 合计 | ~2 天 | ~1 h | **~1.5 h**（含 ~30 min retry / 调试损耗） |
+
+纯进度 ~60 min 与 commerce 持平。脚手架没让总时间变更短，因为：
+- Commerce 当时手工 cp 也只占首次 ~10 min（10% 比重）
+- 真正不可压缩的是业务建模（model / schema / service / route / 组件
+  + SKILL.md），约占 80%
+
+但脚手架带来其他价值：
+- **零认知负担**：不需要回忆"还要复制 alembic.ini / 还要改 env_prefix /
+  conftest 的 TRUNCATE 要扩 / Makefile 端口要换"——脚本一次替全
+- **降低门槛**：新人/agent 起 block 不需要先把另一个 block 扫一遍
+- **方差降低**：手工 cp 容易漏改一两处（docker volume 还叫 imcl-pg、
+  port 还是 5544），脚本统一替换不会漏
+
+### 7.2 业务模式变异空间被验证覆盖
+
+| 维度 | IM | Commerce | Order |
+|---|---|---|---|
+| 形态 | 多对话列表 | 商品 grid | 单实体 + 嵌套 |
+| 实时 | WebSocket + 7 事件 | 无 | 无 |
+| 分页 | cursor | offset | offset |
+| 鉴权 | 必登录 | 匿名可读 / 写需登录 | 必登录全部 |
+| Item action | 右键菜单 | 收藏 + 数量选择 | 状态机驱动按钮 |
+| 子资源 | 无 | 无 | 嵌套 items + status events |
+| 状态机 | 无 | 无 | pending→paid→shipped→delivered + 分支 |
+
+**共用同一份 `_shared/` 模板**，意味着模板对业务模式变异空间覆盖足够。
+
+### 7.3 Consumer LoC 对比
+
+| Block | Consumer LoC |
+|---|---:|
+| IM | 38 |
+| Commerce | 44 |
+| Order | **31** |
+
+差异 ±15 行内，证明 `BlockConfig + ConfigProvider/AntdApp + Layout` 模式
+对消费者认知负荷一致。
+
+### 7.4 后续优化候选（不优先做）
+
+- `scripts/new-block.py` 增量改进：端口冲突检测、`--with-websocket`
+  flag scaffold WS 层、`--auth-required` flag
+- `_shared` SKILL.md 占位符更结构化（固定的"何时使用 / 何时不使用 /
+  内部已处理 / 严格禁止"四段框架）
+- scaffold 时根据"主实体名"参数自动生成基础 happy path 测试
+
+但 v0.1 不做——三个 block 验证脚手架成立已经够，过早抽象违反 Parkinson
+教训。
+
+### 7.5 order-detail 数据手册
+
+```bash
+docker run -d --name od-pg \
+  -e POSTGRES_USER=od -e POSTGRES_PASSWORD=od -e POSTGRES_DB=od \
+  -p 5546:5432 postgres:17-alpine
+docker exec od-pg psql -U od -d od -c "CREATE DATABASE od_test OWNER od;"
+
+cd blocks/order-detail/backend
+make install && make migrate
+make seed-demo                  # 20 orders, mixed statuses
+make dev                        # uvicorn :8082
+
+cd ../frontend/examples/basic
+pnpm install && pnpm dev        # :5177
+```
+
+固定 demo user_id：`01KRD7H5SBR3PR8R4DTH7XZG3W`
