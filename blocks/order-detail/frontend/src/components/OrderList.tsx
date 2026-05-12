@@ -1,0 +1,95 @@
+import { Button, Empty, Result, Segmented, Skeleton, Spin } from 'antd';
+import { useOrders } from '../hooks/useOrders';
+import type { BlockConfig, OrderStatus, OrderSummary } from '../types';
+import { formatDateTime, formatPrice } from '../utils/format';
+import { StatusBadge } from './StatusBadge';
+
+export interface OrderListProps {
+  config: BlockConfig;
+  selectedId?: string | null;
+  onSelect?: (o: OrderSummary) => void;
+}
+
+const FILTER_OPTIONS = [
+  { value: 'all', label: '全部' },
+  { value: 'pending', label: '待付款' },
+  { value: 'paid', label: '已付款' },
+  { value: 'shipped', label: '已发货' },
+  { value: 'delivered', label: '已送达' },
+];
+
+export function OrderList({ config, selectedId, onSelect }: OrderListProps) {
+  const orders = useOrders(config);
+
+  return (
+    <div className="od-list">
+      <div className="od-list-header">
+        <Segmented
+          options={FILTER_OPTIONS}
+          value={orders.status ?? 'all'}
+          onChange={(v) => orders.setStatus(v === 'all' ? undefined : (v as OrderStatus))}
+        />
+        <span className="od-list-total">共 {orders.total} 单</span>
+      </div>
+      {orders.error && orders.items.length === 0 && (
+        <Result
+          status="error"
+          title="加载失败"
+          subTitle={orders.error.message}
+          extra={<Button type="primary" onClick={() => void orders.refresh()}>重试</Button>}
+        />
+      )}
+      {orders.loading && orders.items.length === 0 && (
+        <div style={{ padding: 16 }}>
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} avatar paragraph={{ rows: 2 }} active style={{ padding: 8 }} />
+          ))}
+        </div>
+      )}
+      {!orders.loading && !orders.error && orders.items.length === 0 && (
+        <div style={{ padding: 32, textAlign: 'center' }}>
+          <Empty description="暂无订单" />
+        </div>
+      )}
+      <div className="od-list-scroll">
+        {orders.items.map((o) => (
+          <div
+            key={o.id}
+            className={`od-list-item ${selectedId === o.id ? 'od-list-item-selected' : ''}`}
+            onClick={() => onSelect?.(o)}
+          >
+            {o.cover_image && (
+              <img className="od-list-item-img" src={o.cover_image} alt="" loading="lazy" />
+            )}
+            <div className="od-list-item-meta">
+              <div className="od-list-item-row1">
+                <span className="od-list-item-number">{o.order_number}</span>
+                <StatusBadge status={o.status} />
+              </div>
+              <div className="od-list-item-row2">
+                <span className="od-list-item-time">{formatDateTime(o.created_at)}</span>
+                <span className="od-list-item-count">{o.item_count} 件</span>
+                <span className="od-list-item-total">{formatPrice(o.total, o.currency)}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+        {orders.hasMore && (
+          <div style={{ textAlign: 'center', padding: 12 }}>
+            <Button type="link" loading={orders.loading} onClick={() => void orders.loadMore()}>
+              加载更多
+            </Button>
+          </div>
+        )}
+        {!orders.hasMore && orders.items.length > 0 && (
+          <div className="od-list-end">没有更多了</div>
+        )}
+        {orders.loading && orders.items.length > 0 && (
+          <div style={{ textAlign: 'center', padding: 12 }}>
+            <Spin />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
