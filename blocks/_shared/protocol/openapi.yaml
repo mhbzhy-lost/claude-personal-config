@@ -1,0 +1,121 @@
+openapi: 3.1.0
+info:
+  title: {{TITLE_EN}} Block API
+  version: 0.1.0
+  summary: REST contract for the {{SLUG}} block.
+  description: |
+    Source of truth for backend implementation and frontend client. Define
+    your domain endpoints below; the auth + /me + Problem boilerplate is
+    pre-filled from the scaffold.
+
+servers:
+  - url: /v1
+    description: Default mount point. Path prefix carries major version.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Me
+
+paths:
+  /me:
+    get:
+      tags: [Me]
+      operationId: getMe
+      summary: Get the current authenticated user
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # TODO: Define your domain endpoints below.
+  # Example pattern (from im-conversation-list or commerce-product-list):
+  #
+  # /<entities>:
+  #   get:
+  #     tags: [<Entities>]
+  #     operationId: list<Entities>
+  #     summary: ...
+  #     parameters:
+  #       - $ref: '#/components/parameters/Page'
+  #       - $ref: '#/components/parameters/PageSize'
+  #     responses:
+  #       '200':
+  #         description: OK
+  #         content:
+  #           application/json:
+  #             schema: { $ref: '#/components/schemas/<Entity>Page' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Page:
+      in: query
+      name: page
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      in: query
+      name: page_size
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Not found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unprocessable:
+      description: Validation failed
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Ulid:
+      type: string
+      pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+
+    User:
+      type: object
+      required: [id, name]
+      additionalProperties: false
+      properties:
+        id:         { $ref: '#/components/schemas/Ulid' }
+        name:       { type: string, maxLength: 200 }
+        avatar_url: { type: string, format: uri, nullable: true }
+
+    Problem:
+      type: object
+      required: [type, title, status]
+      additionalProperties: true
+      properties:
+        type:     { type: string, format: uri }
+        title:    { type: string }
+        status:   { type: integer }
+        detail:   { type: string }
+        instance: { type: string }
+        code:     { type: string }
+        errors:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }

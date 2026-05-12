@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: {{ENV_PREFIX_LOWER}}
+      POSTGRES_PASSWORD: {{ENV_PREFIX_LOWER}}
+      POSTGRES_DB: {{ENV_PREFIX_LOWER}}
+    ports:
+      - "{{POSTGRES_PORT}}:5432"
+    volumes:
+      - {{ENV_PREFIX_LOWER}}-pg:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{ENV_PREFIX_LOWER}} -d {{ENV_PREFIX_LOWER}}"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+volumes:
+  {{ENV_PREFIX_LOWER}}-pg:
