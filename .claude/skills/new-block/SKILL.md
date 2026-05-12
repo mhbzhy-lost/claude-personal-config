@@ -145,8 +145,9 @@ cd ../frontend && pnpm install && pnpm build
 | `blocks/im-conversation-list/` | 多对话列表 | WebSocket + cursor 分页 + 右键菜单 |
 | `blocks/commerce-product-list/` | 商品 grid | 无 WS + offset 分页 + 匿名可读 + 收藏/加购 |
 | `blocks/order-detail/` | 单实体 + 嵌套 | 状态机驱动 + Modal 操作 + 必登录 |
+| `blocks/comment-thread/` | 嵌入式 widget | 树状 reply / 软指针 host / 混合鉴权 / 无 list+detail 双视图 |
 
-新 block 建议在差异维度找新切片（如评论流 / 通知中心 / 通话面板）。
+新 block 建议在差异维度找新切片（如通知中心 / 通话面板 / 媒体画廊）。
 重复造同形态的 block 不会带来额外验证价值。
 
 ## 端口/前缀分配台账
@@ -158,4 +159,5 @@ cd ../frontend && pnpm install && pnpm build
 | im-conversation-list | IMCL | 8080 | 5544 |
 | commerce-product-list | CPL | 8081 | 5545 |
 | order-detail | OD | 8082 | 5546 |
-| **下一个** | **?** | **8083** | **5547** |
+| comment-thread | CT | 8083 | 5547 |
+| **下一个** | **?** | **8084** | **5548** |

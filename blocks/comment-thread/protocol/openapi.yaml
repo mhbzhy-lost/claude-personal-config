@@ -1,0 +1,203 @@
+openapi: 3.1.0
+info:
+  title: Comment Thread Block API
+  version: 0.1.0
+  summary: REST contract for the comment-thread block.
+  description: |
+    Embedded threaded comments anchored to an abstract host resource
+    (article / product / order / ...). Trees up to 3 levels deep.
+    Anonymous read; auth required for write.
+
+servers:
+  - url: /v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Comments
+  - name: Me
+
+paths:
+  /comments:
+    get:
+      tags: [Comments]
+      operationId: listComments
+      summary: List comments for a host resource (flat, client builds tree)
+      description: |
+        Returns all non-deleted comments for `{resource_type, resource_id}`
+        as a flat list. Client groups by `parent_comment_id` to render tree.
+        Sorted oldest-first within each thread.
+      parameters:
+        - in: query
+          name: resource_type
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 50 }
+        - in: query
+          name: resource_id
+          required: true
+          schema: { type: string, pattern: '^[0-9A-HJKMNP-TV-Z]{26}$' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Comment' }
+                  total: { type: integer, minimum: 0 }
+
+    post:
+      tags: [Comments]
+      operationId: createComment
+      summary: Post a new comment (root or reply)
+      description: |
+        Requires auth. `parent_comment_id` optional; when given, must reference
+        an existing comment on the same `{resource_type, resource_id}`, and
+        depth must not exceed 3 levels.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resource_type, resource_id, content]
+              additionalProperties: false
+              properties:
+                resource_type: { type: string, minLength: 1, maxLength: 50 }
+                resource_id:   { type: string, pattern: '^[0-9A-HJKMNP-TV-Z]{26}$' }
+                parent_comment_id:
+                  type: string
+                  pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+                  nullable: true
+                content: { type: string, minLength: 1, maxLength: 10000 }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Comment' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: parent_comment not found / not on same host
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: Depth exceeds 3 / validation error
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /comments/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, pattern: '^[0-9A-HJKMNP-TV-Z]{26}$' }
+    delete:
+      tags: [Comments]
+      operationId: deleteComment
+      summary: Soft-delete own comment
+      description: |
+        Author can delete own comment. Replies are preserved but parent shows
+        as "[deleted]". Returns 403 if attempting to delete others'.
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Not the author
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /me:
+    get:
+      tags: [Me]
+      operationId: getMe
+      summary: Get the current authenticated user
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Not found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Ulid:
+      type: string
+      pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+
+    User:
+      type: object
+      required: [id, name]
+      additionalProperties: false
+      properties:
+        id:         { $ref: '#/components/schemas/Ulid' }
+        name:       { type: string, maxLength: 200 }
+        avatar_url: { type: string, format: uri, nullable: true }
+
+    Comment:
+      type: object
+      required:
+        - id
+        - resource_type
+        - resource_id
+        - author
+        - content
+        - depth
+        - reply_count
+        - is_deleted
+        - created_at
+        - updated_at
+      additionalProperties: false
+      properties:
+        id:                { $ref: '#/components/schemas/Ulid' }
+        resource_type:     { type: string, maxLength: 50 }
+        resource_id:       { $ref: '#/components/schemas/Ulid' }
+        parent_comment_id: { type: string, nullable: true }
+        author:            { $ref: '#/components/schemas/User' }
+        content:           { type: string, maxLength: 10000, description: 'Empty when is_deleted=true' }
+        depth:             { type: integer, minimum: 0, maximum: 3 }
+        reply_count:       { type: integer, minimum: 0, description: 'Direct replies count' }
+        is_deleted:        { type: boolean }
+        created_at:        { type: string, format: date-time }
+        updated_at:        { type: string, format: date-time }
+
+    Problem:
+      type: object
+      required: [type, title, status]
+      additionalProperties: true
+      properties:
+        type:     { type: string, format: uri }
+        title:    { type: string }
+        status:   { type: integer }
+        detail:   { type: string }
+        instance: { type: string }
+        code:     { type: string }
