@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ImclClient } from '../api/client';
+import type { BlockClient } from '../api/client';
 import type { WsEvent } from '../types';
 
 export function useConversationsWebSocket(
-  client: ImclClient,
+  client: BlockClient,
   onEvent: (e: WsEvent) => void,
   onGap: () => void
 ): { connected: boolean } {

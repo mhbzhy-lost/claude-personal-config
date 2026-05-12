@@ -57,24 +57,24 @@ export interface ProductFilters {
   sort?: SortKey;
 }
 
-export interface CplAuthHeader {
+export interface AuthHeader {
   type: 'header';
   headerName: string;
   getValue: () => string | Promise<string>;
 }
 
-export interface CplAuthBearer {
+export interface AuthBearer {
   type: 'bearer';
   getToken: () => string | Promise<string>;
 }
 
-export type CplAuth = CplAuthHeader | CplAuthBearer;
+export type Auth = AuthHeader | AuthBearer;
 
-export interface CplConfig {
+export interface BlockConfig {
   /** Backend base URL, e.g. "http://localhost:8081". Component appends `/v1`. */
   apiBaseUrl: string;
   /** Auth provider; optional — anonymous browsing supported (no user_state). */
-  auth?: CplAuth;
+  auth?: Auth;
   /** Page size for offset pagination. Default 20. */
   pageSize?: number;
   /** Available categories for the filter dropdown. If omitted, hides category filter. */

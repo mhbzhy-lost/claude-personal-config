@@ -73,18 +73,18 @@ export default function MyApp() {
 
 | Prop | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `config` | `ImclConfig` | ✅ | 见下 |
+| `config` | `BlockConfig` | ✅ | 见下 |
 | `selectedId` | `string \| null` | | 受控选中态 |
 | `onSelect` | `(c: Conversation) => void` | | 用户点击会话时触发 |
 | `onWsStateChange` | `(connected: boolean) => void` | | WS 连接状态变化回调 |
 | `renderEmpty` | `() => ReactNode` | | 自定义空态（罕见情况下用） |
 
-### `ImclConfig`
+### `BlockConfig`
 
 ```ts
-interface ImclConfig {
+interface BlockConfig {
   apiBaseUrl: string;        // 后端基础 URL，如 "http://localhost:8080"
-  auth: ImclAuth;            // 鉴权方式
+  auth: Auth;            // 鉴权方式
   pageSize?: number;         // 默认 20
   locale?: {                 // 中文文案覆盖（可选）
     empty?: string;
@@ -95,7 +95,7 @@ interface ImclConfig {
   };
 }
 
-type ImclAuth =
+type Auth =
   | { type: 'header'; headerName: string; getValue: () => string | Promise<string> }
   | { type: 'bearer'; getToken: () => string | Promise<string> };
 ```

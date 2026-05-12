@@ -1,6 +1,6 @@
 import type {
-  CplAuth,
-  CplConfig,
+  Auth,
+  BlockConfig,
   ProductFilters,
   ProductWithState,
   User,
@@ -15,7 +15,7 @@ interface Page<T> {
   has_more: boolean;
 }
 
-async function authHeaders(auth: CplAuth | undefined): Promise<Record<string, string>> {
+async function authHeaders(auth: Auth | undefined): Promise<Record<string, string>> {
   if (!auth) return {};
   if (auth.type === 'header') return { [auth.headerName]: await auth.getValue() };
   return { Authorization: `Bearer ${await auth.getToken()}` };
@@ -36,8 +36,8 @@ async function handle<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
-export class CplClient {
-  constructor(private readonly cfg: CplConfig) {}
+export class BlockClient {
+  constructor(private readonly cfg: BlockConfig) {}
 
   private get base(): string {
     return this.cfg.apiBaseUrl.replace(/\/$/, '') + '/v1';

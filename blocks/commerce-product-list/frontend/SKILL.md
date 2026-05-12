@@ -87,23 +87,23 @@ export default function Shop() {
 
 | Prop | 类型 | 说明 |
 |---|---|---|
-| `config` | `CplConfig` | ✅ 必填 |
+| `config` | `BlockConfig` | ✅ 必填 |
 | `initialFilters` | `ProductFilters` | 初始筛选状态（如预设分类） |
 | `onSelect` | `(p: ProductWithState) => void` | 用户点击商品卡时触发 |
 | `renderEmpty` | `() => ReactNode` | 自定义空态（罕见情况下用） |
 
-### `CplConfig`
+### `BlockConfig`
 
 ```ts
-interface CplConfig {
+interface BlockConfig {
   apiBaseUrl: string;                 // 后端 base URL（不含 /v1）
-  auth?: CplAuth;                     // 可选，不传则匿名
+  auth?: Auth;                     // 可选，不传则匿名
   pageSize?: number;                  // 默认 20
   categories?: { value: string; label: string }[]; // 分类下拉选项
   locale?: { empty, error, retry, loadMore, filterCategory, filterPrice, filterInStock, sort };
 }
 
-type CplAuth =
+type Auth =
   | { type: 'header'; headerName: string; getValue: () => string | Promise<string> }
   | { type: 'bearer'; getToken: () => string | Promise<string> };
 ```

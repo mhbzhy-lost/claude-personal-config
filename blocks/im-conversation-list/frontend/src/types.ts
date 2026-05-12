@@ -104,26 +104,26 @@ export type WsEvent =
       online_status: 'online' | 'offline' | 'away';
     };
 
-export interface ImclAuthHeader {
+export interface AuthHeader {
   /** "header" auth: send a custom header with each request. */
   type: 'header';
   headerName: string;
   getValue: () => string | Promise<string>;
 }
 
-export interface ImclAuthBearer {
+export interface AuthBearer {
   /** "bearer" auth: standard Authorization: Bearer <token>. */
   type: 'bearer';
   getToken: () => string | Promise<string>;
 }
 
-export type ImclAuth = ImclAuthHeader | ImclAuthBearer;
+export type Auth = AuthHeader | AuthBearer;
 
-export interface ImclConfig {
+export interface BlockConfig {
   /** Backend base URL, e.g. "http://localhost:8080". The component appends `/v1`. */
   apiBaseUrl: string;
-  /** Auth provider — see ImclAuth variants. */
-  auth: ImclAuth;
+  /** Auth provider — see Auth variants. */
+  auth: Auth;
   /** Page size for cursor pagination. Default 20. */
   pageSize?: number;
   /** Locale strings (subset). Optional. */

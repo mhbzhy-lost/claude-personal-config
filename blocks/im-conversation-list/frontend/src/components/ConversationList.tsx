@@ -4,10 +4,10 @@ import { ConversationItem } from './ConversationItem';
 import { ContextMenu } from './ContextMenu';
 import { SearchBar } from './SearchBar';
 import { useConversations } from '../hooks/useConversations';
-import type { Conversation, ImclConfig } from '../types';
+import type { Conversation, BlockConfig } from '../types';
 
 export interface ConversationListProps {
-  config: ImclConfig;
+  config: BlockConfig;
   /** Currently selected conversation id (controlled). */
   selectedId?: string | null;
   /** Called when the user picks a conversation. */

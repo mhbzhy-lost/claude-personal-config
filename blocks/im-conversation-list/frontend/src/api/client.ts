@@ -1,4 +1,4 @@
-import type { Conversation, ImclAuth, ImclConfig, Message, User } from '../types';
+import type { Auth, BlockConfig, Conversation, Message, User } from '../types';
 
 interface Page<T> {
   items: T[];
@@ -6,7 +6,7 @@ interface Page<T> {
   has_more: boolean;
 }
 
-async function authHeaders(auth: ImclAuth): Promise<Record<string, string>> {
+async function authHeaders(auth: Auth): Promise<Record<string, string>> {
   if (auth.type === 'header') {
     return { [auth.headerName]: await auth.getValue() };
   }
@@ -30,8 +30,8 @@ async function handle<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
-export class ImclClient {
-  constructor(private readonly cfg: ImclConfig) {}
+export class BlockClient {
+  constructor(private readonly cfg: BlockConfig) {}
 
   private get base(): string {
     return this.cfg.apiBaseUrl.replace(/\/$/, '') + '/v1';

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
-import { CplClient } from '../api/client';
+import { BlockClient } from '../api/client';
 import type {
-  CplConfig,
+  BlockConfig,
   ProductFilters,
   ProductWithState,
   Ulid,
@@ -66,10 +66,10 @@ function reducer(s: State, a: Action): State {
 }
 
 export function useProducts(
-  config: CplConfig,
+  config: BlockConfig,
   initialFilters: ProductFilters = {}
 ): UseProductsResult {
-  const client = useMemo(() => new CplClient(config), [config]);
+  const client = useMemo(() => new BlockClient(config), [config]);
   const pageSize = config.pageSize ?? 20;
   const [filters, setFiltersState] = useState<ProductFilters>(initialFilters);
   const [state, dispatch] = useReducer(reducer, { ...initial, pageSize });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
-import { ImclClient } from '../api/client';
-import type { Conversation, ImclConfig, UseConversationsResult, User, WsEvent } from '../types';
+import { BlockClient } from '../api/client';
+import type { BlockConfig, Conversation, UseConversationsResult, User, WsEvent } from '../types';
 import { useConversationsWebSocket } from './useConversationsWebSocket';
 
 interface State {
@@ -89,8 +89,8 @@ function applyEvent(s: State, e: WsEvent): State {
   }
 }
 
-export function useConversations(config: ImclConfig): UseConversationsResult {
-  const client = useMemo(() => new ImclClient(config), [config]);
+export function useConversations(config: BlockConfig): UseConversationsResult {
+  const client = useMemo(() => new BlockClient(config), [config]);
   const pageSize = config.pageSize ?? 20;
   const [state, dispatch] = useReducer(reducer, initial);
   const [me, setMe] = useState<User | null>(null);

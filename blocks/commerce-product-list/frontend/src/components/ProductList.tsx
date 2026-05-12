@@ -3,10 +3,10 @@ import { App, Button, Col, Empty, Result, Row, Skeleton, Spin } from 'antd';
 import { FilterBar } from './FilterBar';
 import { ProductCard } from './ProductCard';
 import { useProducts } from '../hooks/useProducts';
-import type { CplConfig, ProductFilters, ProductWithState } from '../types';
+import type { BlockConfig, ProductFilters, ProductWithState } from '../types';
 
 export interface ProductListProps {
-  config: CplConfig;
+  config: BlockConfig;
   /** Optional initial filters (e.g. pre-set category). */
   initialFilters?: ProductFilters;
   /** Called when the user clicks a product. */
