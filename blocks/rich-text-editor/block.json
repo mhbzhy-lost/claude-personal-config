@@ -3,17 +3,31 @@
   "slug": "rich-text-editor",
   "title": "富文本编辑器(Tiptap)",
   "title_en": "Rich Text Editor",
-  "description": "TODO: 一句话描述这个 UI chrome block。",
+  "description": "锁定 Tiptap 的富文本编辑器:工具栏 schema(粗体/斜体/标题/列表/引用/代码块/链接/图片/撤销重做)+ 受控 value(HTML 或 JSON)+ 图片上传 hook + 占位符 + 自定义 tool 扩展点。host 锁定后跨项目一致。",
   "kind": "ui-chrome",
-  "capabilities": ["ui-chrome"],
-  "tech_stack": ["react", "antd"],
+  "capabilities": [
+    "ui-chrome",
+    "rich-text-editor",
+    "tiptap",
+    "toolbar-schema",
+    "image-upload",
+    "placeholder",
+    "controlled-value"
+  ],
+  "tech_stack": ["react", "antd", "tiptap"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@rte/rich-text-editor",
-    "main_export": "TODO"
+    "main_export": "RichTextEditor"
   },
-  "anti_use_cases": [],
-  "related_blocks": []
+  "anti_use_cases": [
+    "纯文本输入 → antd Input.TextArea",
+    "Markdown 编辑器(双栏预览) → 找专门 markdown 方案",
+    "代码 IDE(语法高亮 / 自动完成) → Monaco / CodeMirror",
+    "协作实时编辑(Yjs) → 本块未集成 Yjs;扩展点留作 v0.2",
+    "评论框(轻量,无需排版) → 用 antd Input.TextArea"
+  ],
+  "related_blocks": ["file-uploader", "media-gallery"]
 }
