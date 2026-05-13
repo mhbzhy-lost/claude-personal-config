@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "slug": "tree-explorer",
+  "title": "树形浏览器(文件资源管理器风)",
+  "title_en": "Tree Explorer",
+  "description": "TODO: 一句话描述这个 UI chrome block。",
+  "kind": "ui-chrome",
+  "capabilities": ["ui-chrome"],
+  "tech_stack": ["react", "antd"],
+  "copyable_root": "component",
+  "consumer_readme": "component/README.md",
+  "frontend": {
+    "path": "component/frontend",
+    "package_name": "@te/tree-explorer",
+    "main_export": "TODO"
+  },
+  "anti_use_cases": [],
+  "related_blocks": []
+}
