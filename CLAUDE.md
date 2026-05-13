@@ -1,6 +1,6 @@
 # 项目记忆
 
-本仓的已知陷阱、过往 bug 记录于 [memory.md](/Users/leshi.zhy/claude-config/memory.md)，动手前先查阅。
+本仓的已知陷阱、过往 bug 记录于 [memory.md](memory.md)，动手前先查阅。
 
 # Superpowers 流程增强
 

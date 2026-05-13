@@ -88,6 +88,7 @@ resolve_list_file() {
 # Items that should live as symlinks under ~/.claude/
 link_item "CLAUDE.md"
 link_item "guidelines"
+link_item "memory.md"
 
 # claude-skills 特殊处理（按 ~/.claude/skills 当前形态分流）：
 #   - 不存在               → 软链化（link_item，编辑即生效）
