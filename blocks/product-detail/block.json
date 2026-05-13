@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "slug": "product-detail",
+  "title": "商品详情",
+  "title_en": "Product Detail",
+  "description": "TODO: 一句话描述这个 block 的业务模式 + 关键技术特征。",
+  "kind": "business-pattern",
+  "capabilities": [],
+  "tech_stack": ["react", "antd", "fastapi", "postgres"],
+  "copyable_root": "component",
+  "consumer_readme": "component/README.md",
+  "frontend": {
+    "path": "component/frontend",
+    "package_name": "@pd/product-detail",
+    "main_export": "TODO"
+  },
+  "backend": {
+    "path": "component/backend",
+    "env_prefix": "PD",
+    "http_port": 8086,
+    "postgres_port": 5550
+  },
+  "protocol": {
+    "path": "component/protocol",
+    "openapi": "component/protocol/openapi.yaml"
+  },
+  "anti_use_cases": [],
+  "related_blocks": []
+}
