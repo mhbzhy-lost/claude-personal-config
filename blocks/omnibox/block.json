@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "slug": "omnibox",
+  "title": "全局搜索/命令面板(双模式)",
+  "title_en": "Omnibox",
+  "description": "TODO: 一句话描述这个 UI chrome block。",
+  "kind": "ui-chrome",
+  "capabilities": ["ui-chrome"],
+  "tech_stack": ["react", "antd"],
+  "copyable_root": "component",
+  "consumer_readme": "component/README.md",
+  "frontend": {
+    "path": "component/frontend",
+    "package_name": "@ob/omnibox",
+    "main_export": "TODO"
+  },
+  "anti_use_cases": [],
+  "related_blocks": []
+}
