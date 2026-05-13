@@ -127,21 +127,25 @@ sync_claude_skills() {
   # 是真目录 → 走 rsync 白名单模式
   echo "[info] $dst_path 是真目录，进入 rsync 白名单模式"
 
-  # 同步清单：默认 lists/skills.list；用户可在同目录创建 skills.local.list 覆盖。
-  # 加载顺序：local 优先，缺省回退 default；为完全覆盖（不合并）。
+  # 同步清单：用户可在同目录创建 skills.local.list 覆盖。不存在时默认同步
+  # claude-skills/ 下全部 skill（无需维护清单文件）。
   local list_file
   list_file=$(resolve_list_file "skills")
-  if [ -z "$list_file" ]; then
-    echo "[warn] lists/skills.list 与 lists/skills.local.list 均不存在，跳过 skills 同步"
-    return
-  fi
-  echo "[skills] 使用清单: $list_file"
 
   local sync_list=()
-  local line
-  while IFS= read -r line; do
-    sync_list+=("$line")
-  done < <(read_list_file "$list_file")
+  if [ -n "$list_file" ]; then
+    echo "[skills] 使用清单: $list_file"
+    local line
+    while IFS= read -r line; do
+      sync_list+=("$line")
+    done < <(read_list_file "$list_file")
+  else
+    echo "[skills] 无 skills.local.list，默认同步 claude-skills/ 下全部 skill"
+    for d in "$src_path"/*/; do
+      [ -d "$d" ] || continue
+      sync_list+=("$(basename "$d")")
+    done
+  fi
 
   # 已废弃同步清单：曾经同步过、现已从 sync_list 剔除的 skill。
   # 一次性清理，仅当目标的 SKILL.md 与源完全一致（确认是本仓同步残留）才删，
