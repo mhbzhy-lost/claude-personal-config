@@ -44,3 +44,29 @@
 
 - 工作流完成后对照 `writing-plans` 产出逐项核实，确保无遗漏或错位。
 - 存在未提交变更须完成一次提交。
+
+# Block 驱动开发（独立模式）
+
+`block-driven-development` skill 是一条**独立的开发模式**，
+与上面的 Superpowers 流程**完全并列、互不嵌套**。通过 Skill 工具按名调用，
+不依赖具体文件位置。
+用途：在用户一次性交付完整需求后，或通过多轮交互确定需求后，
+**一旦进入执行阶段，人类不再干涉，直到完整交付**——
+端到端跑完从 0 到 1（或新业务接入）的整个开发，检索 block、拷贝、定制、
+单测、e2e、一键部署脚本，全部由 agent 闭环完成。
+
+**模式切换**（互斥）：
+- ✅ 进入 block-driven-development：用户给出含可识别业务模式
+  （IM / 列表 / 详情 / 评论 / 通知 / 订单 / 商品…）的完整需求，
+  并默许 agent 独立推进。此时**不再触发 Superpowers 的 brainstorming /
+  writing-plans / subagent-driven-development 流程**，需求拆解、计划、
+  执行、验证全部按 skill 内 8 阶段进行。
+- ❌ 不进入：bugfix、重构、调参、纯文档、需求残缺或需反复对齐——
+  回到 Superpowers 流程（brainstorming → writing-plans → subagent-driven-development）。
+- ❓ 边界模糊：若任务介于两者之间，或无法判断该走哪条流程，**主动向用户确认**
+  再决策——`AskUserQuestion` 列出"走 block-driven 独立模式 / 走 Superpowers 流程"
+  两个选项，附简短判据，由用户拍板，不擅自代选。
+
+进入后由 skill 自治；主 agent 仅在 Phase 7 e2e 全绿 + Phase 8 一键脚本
+就绪后向用户汇报终态。中途**不主动追问需求**——若必须澄清，记入
+`<workspace>/open-questions.md` 并选最合理默认推进，最后汇报时一并列出。
