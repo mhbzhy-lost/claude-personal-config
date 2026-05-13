@@ -946,7 +946,7 @@ p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n')
         continue
       fi
 
-      echo "[plugins] 安装 $key（未 pin）..."
+      echo "[plugins] 安装 ${key}（未 pin）..."
       if claude plugins install "$key" 2>&1; then
         echo "[plugins] $key 安装完成"
       else
