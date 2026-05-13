@@ -70,6 +70,95 @@ function Page() {
 
 `component/frontend/SKILL.md` 列了所有 Props 字段表 + 严格反模式禁令。
 
+## Recipe:Settings 页(替代独立 settings-page block)
+
+"设置页"本质就是 master-detail 的特化:左侧分组菜单 + 右侧对应表单。
+**不必单独建 block**,用本块 + 一个 dirty-state hook 即可:
+
+```tsx
+import { useState, useRef, useEffect } from 'react';
+import { MasterDetail } from '@md/master-detail';
+import { Form, Input, Button, Modal } from 'antd';
+
+interface SettingSection {
+  key: string;
+  label: string;
+  icon?: ReactNode;
+  render: () => ReactNode;  // host 提供 <Form>...</Form>
+}
+
+const sections: SettingSection[] = [
+  { key: 'account', label: '账户', render: () => <AccountForm /> },
+  { key: 'privacy', label: '隐私', render: () => <PrivacyForm /> },
+  { key: 'notifications', label: '通知', render: () => <NotificationsForm /> },
+  { key: 'billing', label: '账单', render: () => <BillingForm /> },
+];
+
+function SettingsPage() {
+  const [active, setActive] = useState<string | null>('account');
+  const dirtyRef = useRef(false);   // 当前 section 是否有未保存改动
+
+  // 拦截切换:dirty 时弹确认
+  const safeSetActive = (next: string | null) => {
+    if (dirtyRef.current && next !== active) {
+      Modal.confirm({
+        title: '有未保存改动',
+        content: '是否丢弃当前修改并切换?',
+        okText: '丢弃切换',
+        cancelText: '继续编辑',
+        onOk: () => { dirtyRef.current = false; setActive(next); },
+      });
+    } else {
+      setActive(next);
+    }
+  };
+
+  // 路由同步(可选):URL hash ↔ active
+  useEffect(() => {
+    const h = window.location.hash.replace('#', '');
+    if (h && sections.some((s) => s.key === h)) setActive(h);
+  }, []);
+  useEffect(() => {
+    if (active) window.history.replaceState(null, '', `#${active}`);
+  }, [active]);
+
+  return (
+    <MasterDetail<SettingSection>
+      items={sections}
+      getItemId={(s) => s.key}
+      selectedId={active}
+      onSelect={safeSetActive}
+      renderItem={(s, sel) => (
+        <div style={{ padding: '12px 16px', fontWeight: sel ? 600 : 400 }}>
+          {s.icon} {s.label}
+        </div>
+      )}
+      renderDetail={(key) => {
+        const sec = sections.find((s) => s.key === key)!;
+        // 在 host Form onChange 内调 `dirtyRef.current = true`,
+        // 提交成功后调 `dirtyRef.current = false`
+        return sec.render();
+      }}
+      placeholder={<span style={{ padding: 24 }}>选择左侧分组</span>}
+      layout="auto"
+      splitBreakpoint={640}
+      splitRatio={[1, 3]}
+    />
+  );
+}
+```
+
+**关键点**:
+- **menu 数据模型** 用 host 自己的 `SettingSection[]`,不强依赖 antd Menu
+- **dirty-state** 用 `useRef`(非 React state,避免触发重渲),host 在 form
+  内部维护;切换时拦截
+- **路由同步** 用 `window.location.hash`(也可换 react-router)
+- **width ratio** 一般设 `[1, 3]`(左侧菜单窄,右侧表单宽)
+- **窄屏** 自动塌缩为 stack,选中分组后整屏显示表单 + 顶部"返回"
+
+不要为 settings 单建 block——master-detail 已经覆盖核心结构,
+"dirty 拦截 + 路由同步" 是 host 的具体业务,放在 host 端实现更灵活。
+
 ## pkg
 
 | 资源 | 值 |
