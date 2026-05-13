@@ -248,6 +248,15 @@ desired_pretooluse_hooks = [
             }
         ],
     },
+    {
+        "matcher": "Bash",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/hooks/git-commit-hint.sh",
+            }
+        ],
+    },
 ]
 
 # 读现有 settings（不存在则从空对象起手）

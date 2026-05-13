@@ -21,6 +21,7 @@ OPENCODE_JSON="$OPENCODE_CONFIG_DIR/opencode.json"
 # opencode 原生搜索路径含 ~/.claude/skills/<name>/SKILL.md，
 # 由 init_claude.sh 的 sync_claude_skills 维护，无需额外操作。
 echo "[skills] opencode 读取 ~/.claude/skills/，已由 init_claude.sh 维护，无需额外配置"
+echo "[hooks] git-commit-hint（Bash PreToolUse）已由 init_claude.sh 写入 ~/.claude/settings.json，opencode 自动读取"
 
 # ── MCP 变量（与 init_claude.sh 保持一致） ──────────────
 SKILL_CATALOG_DIR="$SRC/mcp/skill-catalog"
