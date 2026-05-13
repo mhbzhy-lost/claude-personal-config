@@ -45,6 +45,16 @@
 - 工作流完成后对照 `writing-plans` 产出逐项核实，确保无遗漏或错位。
 - 存在未提交变更须完成一次提交。
 
+## 5. 异源复审：抓同族盲点
+
+同族（Sonnet / Haiku / Opus）对自身生成代码倾向 normalize 通过，需异源抓盲点。
+
+- 每个 task 的 code-quality reviewer ✅ 之后调用 `external-llm-review` skill 跑异源复审
+- 全部 task 完成的 final code-reviewer ✅ 之后再做一轮整体异源
+- spec-compliance reviewer 不需异源（评 plan 一致性）
+- 同族 fix 没收敛前外源没意义；外源 `BASE..HEAD` 与同族对齐
+- 调用方式、协议切换、综合判断 4 步规则见 [external-llm-review skill](claude-skills/external-llm-review/SKILL.md)
+
 # Block 驱动开发（独立模式）
 
 `block-driven-development` skill 是一条**独立的开发模式**，
