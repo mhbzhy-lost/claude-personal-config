@@ -1,0 +1,99 @@
+/* app-shell-nav — responsive shell. host controls page-level look. */
+
+.asn-shell {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  min-height: 0;
+  background: #f5f5f5;
+}
+
+.asn-shell *,
+.asn-shell *::before,
+.asn-shell *::after {
+  box-sizing: border-box;
+}
+
+.asn-shell--desktop {
+  /* width driven by --asn-sidebar-width inline var */
+}
+
+.asn-sidebar {
+  width: var(--asn-sidebar-width, 240px);
+  flex: 0 0 var(--asn-sidebar-width, 240px);
+  position: relative;
+  background: #fff;
+  border-right: 1px solid #f0f0f0;
+  transition: width 0.18s ease;
+  overflow: hidden;
+}
+
+.asn-sidebar-body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.asn-brand {
+  flex: 0 0 auto;
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.asn-brand[data-collapsed] {
+  padding: 16px 0;
+  text-align: center;
+}
+
+.asn-menu {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.asn-footer {
+  flex: 0 0 auto;
+  padding: 12px 16px;
+  border-top: 1px solid #f0f0f0;
+}
+.asn-footer[data-collapsed] {
+  padding: 12px 0;
+  text-align: center;
+}
+
+.asn-collapse-toggle {
+  position: absolute !important;
+  bottom: 8px;
+  right: 8px;
+  z-index: 1;
+}
+
+.asn-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+/* mobile shell */
+.asn-shell--mobile {
+  flex-direction: column;
+}
+
+.asn-shell--mobile .asn-main {
+  flex: 1;
+  min-height: 0;
+}
+
+.asn-hamburger {
+  position: fixed !important;
+  top: 8px;
+  left: 8px;
+  z-index: 1100;
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-radius: 8px !important;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
