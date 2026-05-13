@@ -1,8 +1,8 @@
-# Superpowers 流程增强
-
-## 项目记忆
+# 项目记忆
 
 本仓的已知陷阱、过往 bug 记录于 [memory.md](memory.md)，动手前先查阅。
+
+# Superpowers 流程增强
 
 ## 1. 反幻觉：每阶段强制知识检索
 

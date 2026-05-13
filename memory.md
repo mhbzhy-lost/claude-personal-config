@@ -20,3 +20,5 @@ echo "安装 ${key}（未 pin）..."
 **已修复出**：`init_claude.sh:949`, `init_opencode.sh:46,55`。若新增脚本含中文 echo 带变量引用，统一用 `${var}` 花括号形式。
 
 **参考**：curl 项目 2016 年类似 bug，`$var` 后紧跟 UTF-8 多字节字符在部分 locale 下被视为变量名延续。
+
+**规避**：zsh 不受此 bug 影响，`$var（` 在 zsh 中可正常展开。若有 zsh 环境，将脚本 shebang 改为 `#!/usr/bin/env zsh` 也可规避。但本仓为兼容性保留 bash，统一用 `${var}` 修复。
