@@ -203,6 +203,85 @@ CLI(无渲染面)时不适用。
 
 ❌ **没写一键脚本就交付**——agent 自己跑通 ≠ 用户能跑通;`up.<ext>` 是流程的强制收口。
 
+# Snippets
+
+## 列表三态(loading / error / empty)合并管理
+
+几乎每个 block 内部都会重复实现"列表 + 三态占位"。在 host 端不必为
+每个列表都重写,统一模式:
+
+```tsx
+// Branch order matters: error first (visible failure beats nothing),
+// then loading on empty (skeleton while loading), then empty state.
+// When items have data, render them and let `loading` show a thin
+// spinner / overlay (not full-screen) so the user keeps the context.
+
+function ListShell<T>({
+  items, loading, error, refresh,
+  renderItem,
+  emptyText = '暂无数据',
+  errorTitle = '加载失败',
+  skeleton,                                  // optional: <Skeleton .../>
+}: {
+  items: T[];
+  loading: boolean;
+  error: Error | null;
+  refresh: () => void;
+  renderItem: (it: T) => ReactNode;
+  emptyText?: ReactNode;
+  errorTitle?: ReactNode;
+  skeleton?: ReactNode;
+}) {
+  if (error && items.length === 0) {
+    return (
+      <Result
+        status="error"
+        title={errorTitle}
+        subTitle={error.message}
+        extra={<Button onClick={refresh}>重试</Button>}
+      />
+    );
+  }
+  if (loading && items.length === 0) {
+    return skeleton ?? <Skeleton active />;
+  }
+  if (!loading && items.length === 0) {
+    return <Empty description={emptyText} />;
+  }
+  return (
+    <>
+      {items.map(renderItem)}
+      {loading && (
+        <div style={{ textAlign: 'center', padding: 12 }}>
+          <Spin size="small" />
+        </div>
+      )}
+    </>
+  );
+}
+```
+
+或者抽成 `useListPlaceholders` hook 返回 `ReactNode | null`:
+
+```tsx
+function useListPlaceholders<T>(opts: {
+  items: T[]; loading: boolean; error: Error | null; refresh: () => void;
+}): ReactNode | null {
+  const { items, loading, error, refresh } = opts;
+  if (error && items.length === 0) return <Result status="error" .../>;
+  if (loading && items.length === 0) return <Skeleton active />;
+  if (!loading && items.length === 0) return <Empty />;
+  return null;  // 让 caller 自己渲 items
+}
+
+// caller:
+const placeholder = useListPlaceholders({ items, loading, error, refresh });
+return placeholder ?? <YourItemsList />;
+```
+
+**为什么不做成独立 block**:这只是 10 行 utility,**包 block 没价值**
+(见本 skill 早期讨论的"包一层 block 的 6 条标准")。
+
 # Reference
 
 - **block-catalog MCP 工具**:`mcp__block-catalog__{list,search,get,copy_to,reindex}_block(s)`
