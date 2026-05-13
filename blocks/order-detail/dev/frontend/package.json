@@ -8,6 +8,8 @@
     "build": "vite build && tsc -p tsconfig.build.json"
   },
   "devDependencies": {
+    "@ant-design/icons": "^6.2.2",
+    "@md/master-detail": "link:../../../master-detail/component/frontend",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",

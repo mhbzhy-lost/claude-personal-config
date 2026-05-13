@@ -2,8 +2,7 @@ import { Button, Empty, Result, Segmented, Skeleton, Spin } from 'antd';
 import { useOrders } from '../hooks/useOrders';
 import { useTokenStyle } from '../utils/tokenStyle';
 import type { BlockConfig, OrderStatus, OrderSummary } from '../types';
-import { formatDateTime, formatPrice } from '../utils/format';
-import { StatusBadge } from './StatusBadge';
+import { OrderRow } from './OrderRow';
 
 export interface OrderListProps {
   config: BlockConfig;
@@ -55,25 +54,8 @@ export function OrderList({ config, selectedId, onSelect }: OrderListProps) {
       )}
       <div className="od-list-scroll">
         {orders.items.map((o) => (
-          <div
-            key={o.id}
-            className={`od-list-item ${selectedId === o.id ? 'od-list-item-selected' : ''}`}
-            onClick={() => onSelect?.(o)}
-          >
-            {o.cover_image && (
-              <img className="od-list-item-img" src={o.cover_image} alt="" loading="lazy" />
-            )}
-            <div className="od-list-item-meta">
-              <div className="od-list-item-row1">
-                <span className="od-list-item-number">{o.order_number}</span>
-                <StatusBadge status={o.status} />
-              </div>
-              <div className="od-list-item-row2">
-                <span className="od-list-item-time">{formatDateTime(o.created_at)}</span>
-                <span className="od-list-item-count">{o.item_count} 件</span>
-                <span className="od-list-item-total">{formatPrice(o.total, o.currency)}</span>
-              </div>
-            </div>
+          <div key={o.id} onClick={() => onSelect?.(o)}>
+            <OrderRow order={o} selected={selectedId === o.id} />
           </div>
         ))}
         {orders.hasMore && (

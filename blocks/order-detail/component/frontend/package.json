@@ -12,9 +12,18 @@
     "./styles.css": "./src/styles.css"
   },
   "files": ["src", "SKILL.md", "tsconfig.json"],
+  "dependencies": {
+    "@ant-design/icons": "^6.2.2"
+  },
   "peerDependencies": {
+    "@md/master-detail": "*",
     "antd": "^5.0.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@md/master-detail": {
+      "optional": true
+    }
   }
 }

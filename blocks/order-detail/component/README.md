@@ -5,7 +5,7 @@
 
 ```
 component/
-├── frontend/    OrderList + OrderDetail + StatusBadge + StatusTimeline
+├── frontend/    OrderList + OrderDetail + OrderMasterDetail + StatusBadge + StatusTimeline
 ├── backend/     FastAPI + 状态机校验 + 退款流程
 └── protocol/    OpenAPI + 生成 TS 类型
 ```
@@ -16,29 +16,48 @@ component/
 cp -r blocks/order-detail/component your-project/sdk/orders
 ```
 
+如需开箱即用的"左列表 + 右详情"双栏，**还需要一并拷贝 `master-detail` block**：
+
+```bash
+cp -r blocks/master-detail/component your-project/sdk/master-detail
+```
+
 ## 前端
+
+### 双栏（推荐）——一行接入
 
 ```tsx
 import { ConfigProvider, App as AntdApp } from 'antd';
-import { OrderList, OrderDetail } from '@od/order-detail';
+import { OrderMasterDetail } from '@od/order-detail';
 import '@od/order-detail/styles.css';
-
-const [selectedId, setSelectedId] = useState(null);
+import '@md/master-detail/styles.css';
 
 <ConfigProvider><AntdApp>
-  <div style={{ display: 'flex' }}>
-    <OrderList
-      config={config}
-      selectedId={selectedId}
-      onSelect={(o) => setSelectedId(o.id)}
-    />
-    <OrderDetail config={config} orderId={selectedId} />
-  </div>
+  <OrderMasterDetail config={config} />
 </AntdApp></ConfigProvider>
 ```
 
-两个组件解耦——你可以只挂 OrderList（路由跳详情页）、只挂 OrderDetail
-（深链直达）或并列双栏布局。`frontend/SKILL.md` 有完整 props。
+`OrderMasterDetail` 内部组合 `@md/master-detail` 的响应式 split/stack 壳：
+宽屏左右双栏、窄屏栈式 + 返回按钮，全部内置。**前提是 host 已经把
+`master-detail` block 也拷过来**。
+
+### 单独使用 list / detail
+
+如果你想自己控制布局（例如详情走独立路由页），直接挂裸组件：
+
+```tsx
+const [selectedId, setSelectedId] = useState(null);
+
+<OrderList
+  config={config}
+  selectedId={selectedId}
+  onSelect={(o) => setSelectedId(o.id)}
+/>
+<OrderDetail config={config} orderId={selectedId} />
+```
+
+`OrderList`、`OrderDetail` 是无侵入入口；`OrderMasterDetail` 是封好的
+双栏页面，三个层级按需选。`frontend/SKILL.md` 有完整 props。
 
 ## 后端
 

@@ -8,6 +8,8 @@
   "capabilities": [
     "list-view",
     "detail-view",
+    "master-detail",
+    "split-view",
     "state-machine",
     "auth-required",
     "order-management",
@@ -20,7 +22,7 @@
   "frontend": {
     "path": "component/frontend",
     "package_name": "@od/order-detail",
-    "main_exports": ["OrderList", "OrderDetail"]
+    "main_exports": ["OrderList", "OrderDetail", "OrderMasterDetail"]
   },
   "backend": {
     "path": "component/backend",
@@ -37,5 +39,5 @@
     "购物车结算 → cart-checkout（待建）",
     "支付宝/微信支付集成（host 侧职责）"
   ],
-  "related_blocks": ["commerce-product-list"]
+  "related_blocks": ["commerce-product-list", "master-detail"]
 }
