@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "slug": "card-flow",
+  "title": "卡片流(网格/瀑布流/单列)",
+  "title_en": "Card Flow",
+  "description": "卡片列表布局壳:三档 layout(grid 等高网格 / waterfall 双列瀑布流 / single 单列堆叠)+ 响应式列数 + render prop 注入卡片。纯 UI chrome,无业务态、无数据获取,host 完全控制 items 与 renderItem。",
+  "kind": "ui-chrome",
+  "capabilities": [
+    "ui-chrome",
+    "card-flow",
+    "grid-layout",
+    "waterfall",
+    "masonry",
+    "single-column",
+    "responsive",
+    "render-prop"
+  ],
+  "tech_stack": ["react", "antd"],
+  "copyable_root": "component",
+  "consumer_readme": "component/README.md",
+  "frontend": {
+    "path": "component/frontend",
+    "package_name": "@cf/card-flow",
+    "main_export": "CardFlow"
+  },
+  "anti_use_cases": [
+    "需要后端 / 业务态 (筛选 / 排序 / per-user 收藏 / 加购) → commerce-product-list",
+    "左列表 + 右详情 → master-detail",
+    "顶部导航壳 → top-navbar",
+    "移动端底部 tab → mobile-tabbar",
+    "树状嵌套(评论 reply) → comment-thread",
+    "需要拖拽列宽 / 虚拟滚动 / 复杂 IDE 三栏 → 找专门方案"
+  ],
+  "related_blocks": ["commerce-product-list", "master-detail"]
+}
