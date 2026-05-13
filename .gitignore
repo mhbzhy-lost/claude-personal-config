@@ -45,6 +45,8 @@ lists/*.local.list
 node_modules/
 **/dist/
 pnpm-lock.yaml.*
+*.tsbuildinfo
+.vite/
 
 # block component symlink-back-to-dev (created by block frontend dev tooling)
 blocks/*/component/frontend/node_modules
