@@ -264,30 +264,21 @@ else:
     print("[mcp] playwright-mcp 已是最新")
 
 # ── LSP ──
-desired_lsp = {
-    "bash": {},
-    "clangd": {},
-    "pyright": {},
-    "sourcekit-lsp": {},
-    "eslint": {},
-}
+# 内置 LSP 仅支持 boolean (true/false) 或 object (disable/custom)。
+# 空对象 {} 违反 schema 会导致 ConfigInvalidError，改用 lsp: true
+# 全局启用。各 LSP 按文件扩展名 + 依赖检测惰性启动，无前提条件者不启动。
 existing_lsp = config.get("lsp")
-
-# lsp 未设置或为 false → 写入指定服务
 if existing_lsp is None or existing_lsp is False:
-    config["lsp"] = desired_lsp
+    config["lsp"] = True
     changed = True
-    print("[lsp] 已启用 bash / clangd / pyright / sourcekit-lsp / eslint")
+    print("[lsp] 全局启用所有内置 LSP（按扩展名+依赖惰性启动）")
 elif existing_lsp is True:
-    # lsp: true 已启用全部内置服务，不做修改
-    print("[lsp] 已全局启用所有内置 LSP（未做限定）")
+    print("[lsp] LSP 已全局启用")
 elif isinstance(existing_lsp, dict):
-    for name in desired_lsp:
-        if name not in existing_lsp:
-            existing_lsp[name] = {}
-            changed = True
-            print(f"[lsp] {name} 已启用")
-    print("[lsp] LSP 配置已合并")
+    # 旧格式（如空对象）无效，回退为 true
+    config["lsp"] = True
+    changed = True
+    print("[lsp] 检测到旧对象格式，回退为全局启用")
 else:
     print("[warn]  lsp 字段类型异常，跳过")
 
