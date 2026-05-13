@@ -11,6 +11,9 @@ importers:
       '@ant-design/icons':
         specifier: ^6.2.2
         version: 6.2.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@cf/card-flow':
+        specifier: link:../../../card-flow/component/frontend
+        version: link:../../../card-flow/component/frontend
       '@eslint/js':
         specifier: ^9.17.0
         version: 9.39.4

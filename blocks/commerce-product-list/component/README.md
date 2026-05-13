@@ -1,7 +1,8 @@
 # commerce-product-list SDK
 
-商品 grid / 瀑布流 SDK——整个 `component/` 目录拷贝到目标项目即可用。
-匿名可读，登录后出现收藏 / 加购按钮。
+商品列表 SDK——整个 `component/` 目录拷贝到目标项目即可用。
+匿名可读,登录后出现收藏 / 加购按钮。布局壳基于 `card-flow` block,
+支持 `grid` / `waterfall` / `single` 三档切换。
 
 ```
 component/
@@ -14,6 +15,8 @@ component/
 
 ```bash
 cp -r blocks/commerce-product-list/component your-project/sdk/products
+# 同时拷贝 card-flow（必需的布局壳依赖）
+cp -r blocks/card-flow/component your-project/sdk/ui-chrome/card-flow
 ```
 
 ## 前端
@@ -22,6 +25,7 @@ cp -r blocks/commerce-product-list/component your-project/sdk/products
 import { ConfigProvider, App as AntdApp } from 'antd';
 import { ProductList } from '@cpl/product-list';
 import '@cpl/product-list/styles.css';
+import '@cf/card-flow/styles.css';
 
 <ConfigProvider><AntdApp>
   <ProductList
@@ -32,9 +36,14 @@ import '@cpl/product-list/styles.css';
       categories: [{ value: 'phone', label: '手机' }, { value: 'laptop', label: '笔记本' }],
     }}
     onSelect={(p) => navigate(`/product/${p.id}`)}
+    // 可选:切布局
+    layout="grid"           // 'grid' (默认) | 'waterfall' | 'single'
+    columns={{ xs: 2, sm: 3, md: 4, lg: 4, xl: 6 }}
   />
 </AntdApp></ConfigProvider>
 ```
+
+**必需的 peer**:`@cf/card-flow`。把 `master-detail` 类比一下:本块负责"商品 + 状态",布局壳来自专门的 UI chrome block,host 须同时拷贝。
 
 完整 API 见 `frontend/SKILL.md`。
 
@@ -60,6 +69,8 @@ type Product = components['schemas']['Product'];
 - **offset 分页**：page + page_size（商品稳定排序，churn 不高，用 offset 而非 cursor）
 - **per-user 状态**：`user_product_state` 表，`is_favorite` 布尔 + `cart_count` 数值
 - **服务端独裁排序**：sort key 由后端决定（price_asc / sold_desc / rating_desc / created_desc）
+- **布局壳与业务解耦**:卡片如何排(等高网格 / 双列瀑布流 / 单列 feed)由
+  `card-flow` block 承担,本块只关心"商品 + 状态";想换布局只改 `layout` prop
 
 ## 端口/前缀
 
