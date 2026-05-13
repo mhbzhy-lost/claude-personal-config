@@ -1,11 +1,13 @@
-// Flat config for jsx-a11y static checks on component/frontend/src.
-// Scope is intentionally minimal: a11y rules only — no style / formatting
-// opinions here. WCAG runtime checks live in examples/basic/a11y.spec.ts
-// (see component/SKILL.md "a11y 测试要求").
+// Flat config for jsx-a11y static checks on the block's component/frontend/src.
+// react-hooks plugin is registered (not enabled) so existing inline
+// `eslint-disable-next-line react-hooks/...` comments don't break the lint.
+// WCAG runtime checks live in examples/basic/a11y.spec.ts (see SKILL.md
+// "a11y 测试要求").
 import js from '@eslint/js';
 import tsParser from '@typescript-eslint/parser';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 import a11y from 'eslint-plugin-jsx-a11y';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
   js.configs.recommended,
@@ -34,6 +36,7 @@ export default [
     plugins: {
       '@typescript-eslint': tsPlugin,
       'jsx-a11y': a11y,
+      'react-hooks': reactHooks,
     },
     rules: {
       ...a11y.configs.recommended.rules,

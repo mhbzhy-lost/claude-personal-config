@@ -54,7 +54,18 @@ export function OrderList({ config, selectedId, onSelect }: OrderListProps) {
       )}
       <div className="od-list-scroll">
         {orders.items.map((o) => (
-          <div key={o.id} onClick={() => onSelect?.(o)}>
+          <div
+            key={o.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect?.(o)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect?.(o);
+              }
+            }}
+          >
             <OrderRow order={o} selected={selectedId === o.id} />
           </div>
         ))}

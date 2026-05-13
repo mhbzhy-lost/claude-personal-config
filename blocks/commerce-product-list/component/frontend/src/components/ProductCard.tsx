@@ -21,7 +21,19 @@ export function ProductCard({
   const state = product.user_state ?? null;
   const outOfStock = product.stock === 0;
   return (
-    <div className={`cpl-card ${outOfStock ? 'cpl-card-oos' : ''}`} onClick={onClick}>
+    <div
+      className={`cpl-card ${outOfStock ? 'cpl-card-oos' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-label={product.name}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+    >
       <div className="cpl-card-image-wrap">
         <img className="cpl-card-image" src={product.cover_image} alt={product.name} loading="lazy" />
         {outOfStock && <div className="cpl-card-oos-overlay">已售罄</div>}
@@ -66,6 +78,7 @@ export function ProductCard({
           </Typography.Text>
         </div>
         {authenticated && !outOfStock && (
+          // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- nested interactive widgets; stopPropagation wrapper, see a11y-exceptions.md
           <div className="cpl-card-cart" onClick={(e) => e.stopPropagation()}>
             <ShoppingCartOutlined />
             <InputNumber

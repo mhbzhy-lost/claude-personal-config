@@ -85,7 +85,7 @@ export function TabbarShell({
           );
         })}
       </div>
-      <nav
+      <div
         className={barCls}
         style={{
           background: t.background,
@@ -106,7 +106,7 @@ export function TabbarShell({
             />
           );
         })}
-      </nav>
+      </div>
     </div>
   );
 }

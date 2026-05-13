@@ -64,7 +64,6 @@ export function useConversationsWebSocket(
       if (timer) window.clearTimeout(timer);
       ws?.close();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
 
   return { connected };

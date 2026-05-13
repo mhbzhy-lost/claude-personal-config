@@ -32,6 +32,7 @@ export function CommentComposer({ placeholder, autoFocus, onSubmit, onCancel }: 
   return (
     <div className="ct-composer">
       <Input.TextArea
+        // eslint-disable-next-line jsx-a11y/no-autofocus -- reply composer auto-focuses on open; see a11y-exceptions.md
         autoFocus={autoFocus}
         placeholder={placeholder ?? '说点什么……'}
         rows={3}

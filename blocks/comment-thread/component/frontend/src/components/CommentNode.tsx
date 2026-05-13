@@ -70,6 +70,7 @@ export function CommentNode({
           )}
           {replyOpen && (
             <CommentComposer
+              // eslint-disable-next-line jsx-a11y/no-autofocus -- reply composer auto-focuses when opening; see a11y-exceptions.md
               autoFocus
               placeholder={`回复 ${comment.author.name}……`}
               onSubmit={async (t) => {
