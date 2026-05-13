@@ -12,7 +12,21 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-SRC="$(cd "$(dirname "$0")" && pwd)"
+# 用 BASH_SOURCE[0] 替代 $0：即使脚本被 source 执行也能正确定位自身目录
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── 确保 OpenCode 已安装 ────────────────────────────────
+if ! command -v opencode >/dev/null 2>&1; then
+  echo "[install] OpenCode 未安装，使用官方脚本安装..."
+  curl -fsSL https://opencode.ai/install | bash
+  if ! command -v opencode >/dev/null 2>&1; then
+    echo "[error] OpenCode 安装失败，请手动安装后重试：https://opencode.ai"
+    exit 1
+  fi
+  echo "[install] OpenCode 安装完成"
+else
+  echo "[ok] OpenCode 已安装 ($(opencode --version 2>/dev/null || echo 'version unknown'))"
+fi
 
 OPENCODE_CONFIG_DIR="$HOME/.config/opencode"
 OPENCODE_JSON="$OPENCODE_CONFIG_DIR/opencode.json"

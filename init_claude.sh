@@ -25,7 +25,22 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-SRC="$(cd "$(dirname "$0")" && pwd)"
+# 用 BASH_SOURCE[0] 替代 $0：即使脚本被 source 执行也能正确定位自身目录
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── 确保 Claude Code 已安装 ──────────────────────────────
+if ! command -v claude >/dev/null 2>&1; then
+  echo "[install] Claude Code 未安装，使用官方脚本安装..."
+  curl -fsSL https://claude.ai/install.sh | bash
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "[error] Claude Code 安装失败，请手动安装后重试：https://docs.anthropic.com/en/docs/claude-code/install"
+    exit 1
+  fi
+  echo "[install] Claude Code 安装完成"
+else
+  echo "[ok] Claude Code 已安装 ($(claude --version 2>/dev/null || echo 'version unknown'))"
+fi
+
 DST="$HOME/.claude"
 
 mkdir -p "$DST"
@@ -407,6 +422,14 @@ if isinstance(existing_user_prompt, list):
             "[settings] 已清理废弃的 UserPromptSubmit hooks"
             f"（{', '.join(s.lstrip('/') for s in deprecated_user_prompt_scripts)}）"
         )
+
+# 注入 CLAUDE_CONFIG_HOME 环境变量，供 skill 引用 claude-config 实际路径
+# （不硬编码 ~/claude-config，支持任意位置 clone）
+env_vars = data.setdefault("env", {})
+if env_vars.get("CLAUDE_CONFIG_HOME") != src_root:
+    env_vars["CLAUDE_CONFIG_HOME"] = src_root
+    changed = True
+    print(f"[settings] 设置 env.CLAUDE_CONFIG_HOME = {src_root}")
 
 if changed:
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
@@ -989,6 +1012,25 @@ elif grep -Fq "claude-launchers.zsh" "$ZSHRC"; then
 else
   printf '\n# claude-launchers (auto-registered by init_claude.sh)\n%s\n' "$LAUNCHERS_LINE" >> "$ZSHRC"
   echo "[linked] claude-launchers registered in ~/.zshrc"
+fi
+
+# ---------------------------------------------------------------------------
+# 注册 CLAUDE_CONFIG_HOME 到 ~/.zshrc
+# 供 skill 中的 ${CLAUDE_CONFIG_HOME} 引用在任意 shell 会话中解析
+# ---------------------------------------------------------------------------
+EXPORT_LINE="export CLAUDE_CONFIG_HOME=\"$SRC\""
+
+if [ ! -f "$ZSHRC" ]; then
+  echo "[skip] ~/.zshrc not found, please export CLAUDE_CONFIG_HOME manually"
+elif grep -Fq "CLAUDE_CONFIG_HOME=" "$ZSHRC"; then
+  if grep -Fxq "$EXPORT_LINE" "$ZSHRC"; then
+    echo "[ok] CLAUDE_CONFIG_HOME already set to $SRC in ~/.zshrc"
+  else
+    echo "[warn] CLAUDE_CONFIG_HOME exists in ~/.zshrc but points elsewhere; please verify manually"
+  fi
+else
+  printf '\n# CLAUDE_CONFIG_HOME (auto-registered by init_claude.sh)\n%s\n' "$EXPORT_LINE" >> "$ZSHRC"
+  echo "[linked] CLAUDE_CONFIG_HOME=$SRC registered in ~/.zshrc"
 fi
 
 # ---------------------------------------------------------------------------

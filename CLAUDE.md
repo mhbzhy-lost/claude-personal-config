@@ -49,11 +49,27 @@
 
 同族模型对自身生成代码倾向 normalize 通过，需异源抓盲点。
 
-- 每个 task 的 code-quality reviewer ✅ 之后调用 `external-llm-review` skill 跑异源复审
-- 全部 task 完成的 final code-reviewer ✅ 之后再做一轮整体异源
-- spec-compliance reviewer 不需异源（评 plan 一致性）
-- 同族 fix 没收敛前外源没意义；外源 `BASE..HEAD` 与同族对齐
+### 触发决策
+
+| superpowers 评审 | 是否需外源 | 理由 |
+| - | - | - |
+| spec-compliance reviewer | 否 | 评的是 plan 一致性，不需异源验证 |
+| code-quality reviewer（每个 task） | **是** | 同族模型对自身生成代码倾向 normalize 通过；需异源抓盲点 |
+| final code-reviewer（所有 task 完成时） | **是** | 整体合并面、跨 task 一致性问题更需异源 |
+
+### 调用约束
+
+- 同族 code-quality ✅ Approved 之后才跑外源（fix 没收敛前外源没意义）
+- 外源 `BASE..HEAD` 与同族评审区间严格对齐
 - 调用方式、协议切换、综合判断 4 步规则见 `external-llm-review` skill
+- 不要每个 task 都用：高风险任务 / 结论不放心 / 项目策略强制要求才上（token 成本不可忽略）
+
+### 何时不必用
+
+- 任务纯文档/配置（spec 评审、yaml 校验等）
+- 模块作用域 < 50 行且没有外部依赖（同族模型已足够）
+- 没配 `.env` 也没 export 凭据（API endpoint 缺失）
+- 项目合规策略不允许把源码 diff 送到外部 endpoint
 
 # Block 驱动开发（独立模式）
 
