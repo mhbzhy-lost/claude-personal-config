@@ -100,7 +100,7 @@ def substitute(text: str, subs: dict[str, str]) -> str:
 
 TEXT_SUFFIXES = {
     ".py", ".toml", ".yaml", ".yml", ".json", ".md", ".ini",
-    ".ts", ".tsx", ".css", ".html", ".sh", ".sql", ".mako", ".tmpl",
+    ".ts", ".tsx", ".js", ".css", ".html", ".sh", ".sql", ".mako", ".tmpl",
     "", ".example", ".gitignore", ".gitkeep", ".spectral",
 }
 
