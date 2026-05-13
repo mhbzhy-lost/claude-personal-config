@@ -263,6 +263,34 @@ if existing_pw != desired_pw:
 else:
     print("[mcp] playwright-mcp 已是最新")
 
+# ── LSP ──
+desired_lsp = {
+    "bash": {},
+    "clangd": {},
+    "pyright": {},
+    "sourcekit-lsp": {},
+    "eslint": {},
+}
+existing_lsp = config.get("lsp")
+
+# lsp 未设置或为 false → 写入指定服务
+if existing_lsp is None or existing_lsp is False:
+    config["lsp"] = desired_lsp
+    changed = True
+    print("[lsp] 已启用 bash / clangd / pyright / sourcekit-lsp / eslint")
+elif existing_lsp is True:
+    # lsp: true 已启用全部内置服务，不做修改
+    print("[lsp] 已全局启用所有内置 LSP（未做限定）")
+elif isinstance(existing_lsp, dict):
+    for name in desired_lsp:
+        if name not in existing_lsp:
+            existing_lsp[name] = {}
+            changed = True
+            print(f"[lsp] {name} 已启用")
+    print("[lsp] LSP 配置已合并")
+else:
+    print("[warn]  lsp 字段类型异常，跳过")
+
 if changed:
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
