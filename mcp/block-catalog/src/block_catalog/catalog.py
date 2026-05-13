@@ -106,7 +106,10 @@ class BlockCatalog:
 
     # ---- search by intent text + tag tolerance ----
 
-    _WORD_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_-]+|[一-鿿]+")
+    # Latin tokens are word runs; CJK tokens are individual chars.
+    # Char-level CJK gives recall on a small catalog without dragging in jieba —
+    # e.g. "评论区" → 评/论/区, each looked up against haystack substring.
+    _WORD_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_-]+|[一-鿿]")
 
     def search(
         self,
