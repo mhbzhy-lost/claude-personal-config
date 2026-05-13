@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "slug": "rich-text-editor",
+  "title": "富文本编辑器(Tiptap)",
+  "title_en": "Rich Text Editor",
+  "description": "TODO: 一句话描述这个 UI chrome block。",
+  "kind": "ui-chrome",
+  "capabilities": ["ui-chrome"],
+  "tech_stack": ["react", "antd"],
+  "copyable_root": "component",
+  "consumer_readme": "component/README.md",
+  "frontend": {
+    "path": "component/frontend",
+    "package_name": "@rte/rich-text-editor",
+    "main_export": "TODO"
+  },
+  "anti_use_cases": [],
+  "related_blocks": []
+}

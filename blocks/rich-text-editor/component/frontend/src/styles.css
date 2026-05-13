@@ -1,0 +1,95 @@
+/* rich-text-editor — toolbar + ProseMirror content surface. */
+
+.rte-shell {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.rte-shell *,
+.rte-shell *::before,
+.rte-shell *::after {
+  box-sizing: border-box;
+}
+
+.rte-toolbar {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+
+.rte-content {
+  flex: 1 1 auto;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.rte-content .ProseMirror {
+  outline: none;
+  min-height: inherit;
+}
+
+.rte-content .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  height: 0;
+}
+
+.rte-content .ProseMirror p { margin: 0 0 8px; }
+.rte-content .ProseMirror h1 { font-size: 22px; margin: 12px 0 6px; }
+.rte-content .ProseMirror h2 { font-size: 18px; margin: 12px 0 6px; }
+.rte-content .ProseMirror h3 { font-size: 16px; margin: 10px 0 6px; }
+
+.rte-content .ProseMirror ul,
+.rte-content .ProseMirror ol {
+  padding-left: 24px;
+  margin: 0 0 8px;
+}
+
+.rte-content .ProseMirror blockquote {
+  border-left: 3px solid #d9d9d9;
+  padding-left: 12px;
+  color: rgba(0, 0, 0, 0.65);
+  margin: 8px 0;
+}
+
+.rte-content .ProseMirror code {
+  background: #f5f5f5;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+.rte-content .ProseMirror pre {
+  background: #1f1f1f;
+  color: #f5f5f5;
+  padding: 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 13px;
+}
+
+.rte-content .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.rte-content .ProseMirror a {
+  color: var(--ant-color-primary, #1677ff);
+  text-decoration: underline;
+}
+
+.rte-content .ProseMirror hr {
+  border: none;
+  border-top: 1px solid #f0f0f0;
+  margin: 12px 0;
+}
