@@ -3,17 +3,31 @@
   "slug": "tree-explorer",
   "title": "树形浏览器(文件资源管理器风)",
   "title_en": "Tree Explorer",
-  "description": "TODO: 一句话描述这个 UI chrome block。",
+  "description": "file-explorer 形态的树形浏览器:TreeNode schema(folder/file kind)+ 受控选中 + 持久化展开 + search 联动(关键词高亮 + 自动展开父节点)+ 右键菜单 schema + 双击打开。基于 antd Tree,加上 file-explorer 特有交互。",
   "kind": "ui-chrome",
-  "capabilities": ["ui-chrome"],
+  "capabilities": [
+    "ui-chrome",
+    "tree-view",
+    "file-explorer",
+    "search",
+    "context-menu",
+    "double-click-open",
+    "persisted-state",
+    "keyboard-nav"
+  ],
   "tech_stack": ["react", "antd"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@te/tree-explorer",
-    "main_export": "TODO"
+    "main_export": "TreeExplorer"
   },
-  "anti_use_cases": [],
-  "related_blocks": []
+  "anti_use_cases": [
+    "扁平列表(无层级) → data-table 或 card-flow",
+    "组织架构带 KPI 卡 → 找 org-chart 方案",
+    "想要拖拽 reparent / drag-to-reorder → 本块 v0.1 未实现",
+    "异步懒加载子节点(大型项目) → 本块需要 host 自己异步替换 data,未抽象 loader 接口"
+  ],
+  "related_blocks": ["master-detail", "data-table"]
 }

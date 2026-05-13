@@ -3,17 +3,31 @@
   "slug": "notification-center",
   "title": "通知中心",
   "title_en": "Notification Center",
-  "description": "TODO: 一句话描述这个 UI chrome block。",
+  "description": "铃铛角标 + 抽屉式通知列表:类型化 icon/颜色(info/success/warning/error/system) + 未读/已读分组 + 单条已读/批量已读 + 删除 + 加载更多。零数据所有权,host 给 items 与所有动作 callback。",
   "kind": "ui-chrome",
-  "capabilities": ["ui-chrome"],
+  "capabilities": [
+    "ui-chrome",
+    "notification-center",
+    "badge",
+    "drawer",
+    "grouped-list",
+    "mark-read",
+    "batch-actions",
+    "type-styling"
+  ],
   "tech_stack": ["react", "antd"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@nc/notification-center",
-    "main_export": "TODO"
+    "main_export": "NotificationCenter"
   },
-  "anti_use_cases": [],
-  "related_blocks": []
+  "anti_use_cases": [
+    "短暂浮层提示(toast) → antd `message` 或 `notification` API",
+    "弹窗确认 → antd `Modal.confirm`",
+    "全屏带状态机的消息中心页面 → 用 master-detail + data-table 拼独立页",
+    "IM 私信流 → im-conversation-list"
+  ],
+  "related_blocks": ["app-shell-nav", "top-navbar"]
 }

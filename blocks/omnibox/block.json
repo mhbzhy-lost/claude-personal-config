@@ -3,17 +3,32 @@
   "slug": "omnibox",
   "title": "全局搜索/命令面板(双模式)",
   "title_en": "Omnibox",
-  "description": "TODO: 一句话描述这个 UI chrome block。",
+  "description": "全局搜索 / 命令面板,modal 与 inline 双模式:modal(Cmd-K 全屏弹窗)、inline(头部 input + 下拉)。分类结果 + 键盘导航 + 默认状态(recent/trending)。纯 UI chrome,host 控制 query 与结果计算。",
   "kind": "ui-chrome",
-  "capabilities": ["ui-chrome"],
+  "capabilities": [
+    "ui-chrome",
+    "search",
+    "command-palette",
+    "keyboard-nav",
+    "grouped-results",
+    "hotkey",
+    "modal",
+    "dropdown"
+  ],
   "tech_stack": ["react", "antd"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@ob/omnibox",
-    "main_export": "TODO"
+    "main_export": "Omnibox"
   },
-  "anti_use_cases": [],
-  "related_blocks": []
+  "anti_use_cases": [
+    "简单单选下拉 → 直接用 antd Select",
+    "纯自动补全(单一类型结果) → 直接用 antd AutoComplete",
+    "页面内表单字段筛选 → 直接用 antd Input + onChange",
+    "大量结果需虚拟滚动 → 本块未做窗口化",
+    "复杂多步流程(向导)→ 找 modal-flow / wizard 方案"
+  ],
+  "related_blocks": ["app-shell-nav"]
 }
