@@ -1,0 +1,161 @@
+/* event-timeline — vertical event stream with grouped headers + dot rail. */
+
+.et-shell {
+  box-sizing: border-box;
+  background: #fff;
+}
+
+.et-shell *,
+.et-shell *::before,
+.et-shell *::after {
+  box-sizing: border-box;
+}
+
+.et-filter {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.et-filter__label {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+  margin-right: 4px;
+}
+
+.et-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.et-empty {
+  padding: 32px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* group */
+.et-group {
+  margin-bottom: 12px;
+}
+
+.et-group__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fafafa;
+  padding: 6px 16px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(0, 0, 0, 0.55);
+  font-weight: 600;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+/* list */
+.et-list {
+  margin: 0;
+  padding: 8px 16px 0;
+  list-style: none;
+  position: relative;
+}
+
+.et-list::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 24px;
+  width: 1px;
+  background: #f0f0f0;
+}
+
+/* item */
+.et-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  outline: none;
+  transition: background 0.1s ease;
+  border-radius: 4px;
+}
+
+.et-item--clickable {
+  cursor: pointer;
+}
+
+.et-item--clickable:hover,
+.et-item--clickable:focus-visible {
+  background: #fafafa;
+}
+
+.et-item__rail {
+  flex: 0 0 auto;
+  width: 16px;
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.et-item__dot {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #999;
+  background: #fff;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+}
+
+.et-item__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.et-item__row1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.et-item__actor {
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.et-item__title {
+  flex: 1;
+  color: rgba(0, 0, 0, 0.65);
+  min-width: 0;
+}
+
+.et-item__time {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.et-item__detail {
+  margin-top: 4px;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.55);
+  background: #fafafa;
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+
+.et-loadmore {
+  text-align: center;
+  padding: 12px;
+}
