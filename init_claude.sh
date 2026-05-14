@@ -101,7 +101,10 @@ resolve_list_file() {
 }
 
 # Items that should live as symlinks under ~/.claude/
-link_item "CLAUDE.md"
+# 注意：CLAUDE.md 取自 claude/ 子目录而非仓库根。
+# 仓库根的 CLAUDE.md 是本仓 repo-only 覆盖（Claude Code 自动按 cwd 加载），
+# 不应被全局软链。
+link_item "claude/CLAUDE.md" "CLAUDE.md"
 link_item "guidelines"
 link_item "memory.md"
 
