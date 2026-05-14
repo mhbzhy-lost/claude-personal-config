@@ -10,12 +10,17 @@
     "navigation",
     "mobile-friendly"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@ui/top-navbar",
+    "main_exports": ["NavBar", "NavBarPage"]
+  },
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@tn/top-navbar-mp",
     "main_exports": ["NavBar", "NavBarPage"]
   },
   "anti_use_cases": [

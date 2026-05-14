@@ -15,7 +15,7 @@
     "auth-required",
     "1-on-1-chat"
   ],
-  "tech_stack": ["react", "antd", "fastapi", "postgres", "websocket"],
+  "tech_stack": ["react", "antd", "fastapi", "postgres", "websocket", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
@@ -39,5 +39,10 @@
     "嵌入式评论 → comment-thread",
     "客服分配/工单 → support-ticket（待建）"
   ],
-  "related_blocks": ["im-conversation-list"]
+  "related_blocks": ["im-conversation-list"],
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@chat/im-chat-detail-mp",
+    "main_export": "ChatDetail"
+  }
 }

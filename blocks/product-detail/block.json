@@ -6,13 +6,13 @@
   "description": "TODO: 一句话描述这个 block 的业务模式 + 关键技术特征。",
   "kind": "business-pattern",
   "capabilities": [],
-  "tech_stack": ["react", "antd", "fastapi", "postgres"],
+  "tech_stack": ["react", "antd", "fastapi", "postgres", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@pd/product-detail",
-    "main_export": "TODO"
+    "main_export": "ProductDetail"
   },
   "backend": {
     "path": "component/backend",
@@ -25,5 +25,10 @@
     "openapi": "component/protocol/openapi.yaml"
   },
   "anti_use_cases": [],
-  "related_blocks": []
+  "related_blocks": [],
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@pd/product-detail-mp",
+    "main_export": "ProductDetail"
+  }
 }

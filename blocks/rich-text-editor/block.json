@@ -14,7 +14,7 @@
     "placeholder",
     "controlled-value"
   ],
-  "tech_stack": ["react", "antd", "tiptap"],
+  "tech_stack": ["react", "antd", "tiptap", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
@@ -29,5 +29,10 @@
     "协作实时编辑(Yjs) → 本块未集成 Yjs;扩展点留作 v0.2",
     "评论框(轻量,无需排版) → 用 antd Input.TextArea"
   ],
-  "related_blocks": ["file-uploader", "media-gallery"]
+  "related_blocks": ["file-uploader", "media-gallery"],
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@rte/rich-text-editor-mp",
+    "main_export": "RichTextEditor"
+  }
 }

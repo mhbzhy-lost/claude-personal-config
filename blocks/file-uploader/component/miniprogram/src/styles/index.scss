@@ -1,0 +1,13 @@
+/* file-uploader miniprogram */
+
+.fu-mp-shell {
+  box-sizing: border-box;
+}
+
+.fu-mp-dropzone {
+  transition: border-color 0.2s;
+}
+
+.fu-mp-item:last-child {
+  border-bottom: none;
+}

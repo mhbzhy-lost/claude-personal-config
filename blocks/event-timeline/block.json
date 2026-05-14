@@ -14,12 +14,17 @@
     "type-styling",
     "audit-log"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@et/event-timeline",
+    "main_export": "EventTimeline"
+  },
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@et/event-timeline-mp",
     "main_export": "EventTimeline"
   },
   "anti_use_cases": [

@@ -15,7 +15,7 @@
     "drawer",
     "persisted-state"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
@@ -30,5 +30,10 @@
     "纯 Drawer 浮层(非主导航) → 直接用 antd Drawer",
     "需要 dock 风格的 IDE 三栏(可拖拽尺寸) → 不适配"
   ],
-  "related_blocks": ["top-navbar", "mobile-tabbar"]
+  "related_blocks": ["top-navbar", "mobile-tabbar"],
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@asn/app-shell-nav-mp",
+    "main_export": "AppShellNav"
+  }
 }

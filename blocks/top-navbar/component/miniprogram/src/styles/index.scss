@@ -1,0 +1,75 @@
+.tn-mp-navbar {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.tn-mp-navbar__inner {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 4px;
+}
+
+.tn-mp-navbar__left,
+.tn-mp-navbar__right {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.tn-mp-navbar__right {
+  justify-content: flex-end;
+  gap: 4px;
+  padding-right: 8px;
+}
+
+.tn-mp-navbar__left {
+  padding-left: 4px;
+}
+
+.tn-mp-navbar__back {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #1677ff;
+}
+
+.tn-mp-navbar__title {
+  flex: 2;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f1f1f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 8px;
+}
+
+.tn-mp-navbar--transparent {
+  background: transparent;
+  border-bottom: none;
+}
+
+.tn-mp-navbar--transparent .tn-mp-navbar__title-text {
+  color: #fff;
+  /* text-shadow not supported in mini programs; host can override */
+}
+
+.tn-mp-navbar-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.tn-mp-navbar-page__content {
+  flex: 1;
+  overflow-y: auto;
+}

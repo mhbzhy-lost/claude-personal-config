@@ -17,12 +17,17 @@
     "search",
     "responsive"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@dt/data-table",
+    "main_export": "DataTable"
+  },
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@dt/data-table-mp",
     "main_export": "DataTable"
   },
   "anti_use_cases": [

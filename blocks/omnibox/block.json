@@ -15,12 +15,17 @@
     "modal",
     "dropdown"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@ob/omnibox",
+    "main_export": "Omnibox"
+  },
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@ob/omnibox-mp",
     "main_export": "Omnibox"
   },
   "anti_use_cases": [

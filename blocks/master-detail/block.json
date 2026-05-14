@@ -14,12 +14,17 @@
     "controlled-selection",
     "render-prop"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@md/master-detail",
+    "main_export": "MasterDetail"
+  },
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@md/master-detail-mp",
     "main_export": "MasterDetail"
   },
   "anti_use_cases": [

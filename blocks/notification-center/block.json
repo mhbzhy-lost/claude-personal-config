@@ -15,12 +15,17 @@
     "batch-actions",
     "type-styling"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@nc/notification-center",
+    "main_export": "NotificationCenter"
+  },
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@nc/notification-center-mp",
     "main_export": "NotificationCenter"
   },
   "anti_use_cases": [

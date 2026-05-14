@@ -14,7 +14,7 @@
     "stats-display",
     "auth-optional"
   ],
-  "tech_stack": ["react", "antd", "fastapi", "postgres"],
+  "tech_stack": ["react", "antd", "fastapi", "postgres", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
@@ -38,5 +38,10 @@
     "用户资料编辑表单 → host 自己拼(本块只触发 onEdit)",
     "聊天对手资料浮卡 → 用 antd Popover 自己拼"
   ],
-  "related_blocks": ["im-chat-detail", "comment-thread"]
+  "related_blocks": ["im-chat-detail", "comment-thread"],
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@up/user-profile-mp",
+    "main_export": "UserProfile"
+  }
 }

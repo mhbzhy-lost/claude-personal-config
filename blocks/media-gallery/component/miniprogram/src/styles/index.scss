@@ -1,0 +1,20 @@
+/* media-gallery miniprogram — Shell layout, no card chrome. */
+
+.mg-mp-shell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mg-mp-thumb {
+  cursor: pointer;
+}
+
+.mg-mp-viewer-overlay {
+  animation: mg-mp-fade-in 0.2s ease;
+}
+
+@keyframes mg-mp-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

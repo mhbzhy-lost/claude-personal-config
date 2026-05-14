@@ -1,0 +1,23 @@
+.md-mp-master-detail {
+  box-sizing: border-box;
+  background: #fff;
+}
+
+.md-mp-master-detail__empty,
+.md-mp-master-detail__placeholder {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(0, 0, 0, 0.45);
+  padding: 24px;
+}
+
+.md-mp-master-detail__row--selected {
+  background-color: #e6f4ff;
+}
+
+.md-mp-master-detail__back {
+  flex: 0 0 auto;
+  border-bottom: 1px solid #f0f0f0;
+}

@@ -16,12 +16,17 @@
     "filtering",
     "modal-confirm"
   ],
-  "tech_stack": ["react", "antd", "fastapi", "postgres"],
+  "tech_stack": ["react", "antd", "fastapi", "postgres", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@od/order-detail",
+    "main_exports": ["OrderList", "OrderDetail", "OrderMasterDetail"]
+  },
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@od/order-detail-mp",
     "main_exports": ["OrderList", "OrderDetail", "OrderMasterDetail"]
   },
   "backend": {

@@ -18,13 +18,18 @@
     "filtering",
     "sorting"
   ],
-  "tech_stack": ["react", "antd", "fastapi", "postgres"],
+  "tech_stack": ["react", "antd", "fastapi", "postgres", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@cpl/product-list",
     "main_export": "ProductList"
+  },
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@cpl/commerce-product-list-mp",
+    "main_export": "CommerceProductList"
   },
   "backend": {
     "path": "component/backend",

@@ -15,12 +15,17 @@
     "responsive",
     "render-prop"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@cf/card-flow",
+    "main_export": "CardFlow"
+  },
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@cf/card-flow-mp",
     "main_export": "CardFlow"
   },
   "anti_use_cases": [

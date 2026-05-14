@@ -15,12 +15,17 @@
     "persisted-state",
     "keyboard-nav"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@te/tree-explorer",
+    "main_export": "TreeExplorer"
+  },
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@te/tree-explorer-mp",
     "main_export": "TreeExplorer"
   },
   "anti_use_cases": [

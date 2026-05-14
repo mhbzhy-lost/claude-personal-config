@@ -13,7 +13,7 @@
     "comment-discussion",
     "mixed-auth"
   ],
-  "tech_stack": ["react", "antd", "fastapi", "postgres"],
+  "tech_stack": ["react", "antd", "fastapi", "postgres", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
@@ -37,5 +37,10 @@
     "论坛主题列表 + 详情双视图 → forum-thread（待建）",
     "实时聊天室 → im-chat-detail"
   ],
-  "related_blocks": []
+  "related_blocks": [],
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@ct/comment-thread-mp",
+    "main_export": "CommentsThread"
+  }
 }

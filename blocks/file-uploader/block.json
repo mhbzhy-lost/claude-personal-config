@@ -16,7 +16,7 @@
     "progress-tracking",
     "image-preview"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
@@ -30,5 +30,10 @@
     "分块大文件上传(>1GB) → 本块未实现 chunk/resumable 协议",
     "服务端直接对接 OSS/S3 STS 临时 token 流程 → 由 host 在 upload fn 内实现"
   ],
-  "related_blocks": ["media-gallery"]
+  "related_blocks": ["media-gallery"],
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@fu/file-uploader-mp",
+    "main_export": "FileUploader"
+  }
 }

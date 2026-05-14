@@ -14,7 +14,7 @@
     "keyboard-nav",
     "metadata-sidebar"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
@@ -28,5 +28,10 @@
     "复杂照片编辑(裁剪/滤镜)→ 找专门方案",
     "需要 EXIF 自动解析 → host 在 meta 内手动传"
   ],
-  "related_blocks": ["card-flow", "file-uploader"]
+  "related_blocks": ["card-flow", "file-uploader"],
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@mg/media-gallery-mp",
+    "main_export": "MediaGallery"
+  }
 }

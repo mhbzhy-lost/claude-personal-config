@@ -12,12 +12,17 @@
     "keep-alive",
     "mobile-friendly"
   ],
-  "tech_stack": ["react", "antd"],
+  "tech_stack": ["react", "antd", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
     "path": "component/frontend",
     "package_name": "@ui/mobile-tabbar",
+    "main_export": "TabbarShell"
+  },
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@mt/mobile-tabbar-mp",
     "main_export": "TabbarShell"
   },
   "anti_use_cases": [

@@ -15,7 +15,7 @@
     "auth-required",
     "multi-conversation"
   ],
-  "tech_stack": ["react", "antd", "fastapi", "postgres", "websocket"],
+  "tech_stack": ["react", "antd", "fastapi", "postgres", "websocket", "wechat-miniprogram", "taro"],
   "copyable_root": "component",
   "consumer_readme": "component/README.md",
   "frontend": {
@@ -40,5 +40,10 @@
     "嵌入式评论 → comment-thread",
     "商品/订单列表 → commerce-product-list / order-detail"
   ],
-  "related_blocks": ["im-chat-detail"]
+  "related_blocks": ["im-chat-detail"],
+  "miniprogram": {
+    "path": "component/miniprogram",
+    "package_name": "@cl/im-conversation-list-mp",
+    "main_export": "ConversationList"
+  }
 }
