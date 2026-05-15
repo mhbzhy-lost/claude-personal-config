@@ -12,6 +12,7 @@ chat-completions endpoint, and prints the model's structured review to stdout.
 Usage:
     python reviewer.py <BASE_SHA> <HEAD_SHA> \
         [--worktree PATH] [--spec FILE] [--max-diff N]
+        [--cache-mode off|qwen-explicit] [--cache-prefix FILE] [--cache-diff]
 
 Sandbox warning: this script POSTs source diffs to an external endpoint. Run only
 when that endpoint is authorized for the project's compliance posture. See SKILL.md.
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
 import os
 import subprocess
 import sys
@@ -28,6 +30,14 @@ from pathlib import Path
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
+
+_CACHE_MODES = ("off", "qwen-explicit")
+_REDACTED = "[redacted]"
+_SENSITIVE_BODY_PATTERNS = (
+    re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s\"',}]+"),
+    re.compile(r"(?i)(bearer\s+)[^\s\"',}]+"),
+    re.compile(r"(?i)(\"(?:api[_-]?key|token|access[_-]?token|secret)\"\s*:\s*\")[^\"]+(\")"),
+)
 
 
 _REVIEW_SYSTEM_PROMPT = """你是一名资深代码评审者。被评审代码可能涉及多种语言、框架与外部依赖。
@@ -63,6 +73,161 @@ _REVIEW_SYSTEM_PROMPT = """你是一名资深代码评审者。被评审代码�
 """
 
 
+def _text_block(text: str, *, cache: bool = False) -> dict[str, object]:
+    block: dict[str, object] = {"type": "text", "text": text}
+    if cache:
+        block["cache_control"] = {"type": "ephemeral"}
+    return block
+
+
+def _join_prompt_blocks(blocks: list[str]) -> str:
+    return "\n\n".join(block.strip() for block in blocks if block.strip())
+
+
+def build_plain_user_prompt(
+    *,
+    user_prompt: str,
+    spec_block: str,
+    cache_prefix_blocks: list[str],
+) -> str:
+    stable_blocks = [block for block in [*cache_prefix_blocks, spec_block] if block.strip()]
+    return _join_prompt_blocks([*stable_blocks, user_prompt])
+
+
+def build_chat_messages(
+    *,
+    user_prompt: str,
+    spec_block: str,
+    cache_prefix_blocks: list[str],
+    cache_mode: str,
+    cache_diff: bool,
+) -> list[dict[str, object]]:
+    """Build OpenAI Chat Completions messages.
+
+    Qwen explicit cache is expressed with content-block `cache_control` markers.
+    By default only stable context is cache-marked; the diff is dynamic and is
+    marked only when the caller explicitly asks for it.
+    """
+    stable_blocks = [block for block in [*cache_prefix_blocks, spec_block] if block.strip()]
+
+    if cache_mode == "off":
+        return [
+            {"role": "system", "content": _REVIEW_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": build_plain_user_prompt(
+                    user_prompt=user_prompt,
+                    spec_block=spec_block,
+                    cache_prefix_blocks=cache_prefix_blocks,
+                ),
+            },
+        ]
+
+    if cache_mode != "qwen-explicit":
+        raise ValueError(f"unsupported cache mode: {cache_mode}")
+
+    user_content = []
+    for index, block in enumerate(stable_blocks):
+        user_content.append(
+            _text_block(block.strip(), cache=index == len(stable_blocks) - 1)
+        )
+    user_content.append(_text_block(user_prompt, cache=cache_diff))
+
+    return [
+        {"role": "system", "content": _REVIEW_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def format_cache_usage(usage: object) -> str | None:
+    if usage is None:
+        return None
+
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached_tokens = getattr(details, "cached_tokens", None) if details else None
+    creation_tokens = (
+        getattr(details, "cache_creation_input_tokens", None) if details else None
+    )
+    prompt_tokens = getattr(usage, "prompt_tokens", None)
+
+    if cached_tokens is None and creation_tokens is None:
+        return None
+
+    return (
+        "[external-llm-review] cache_usage"
+        f" prompt_tokens={prompt_tokens}"
+        f" cached_tokens={cached_tokens}"
+        f" cache_creation_input_tokens={creation_tokens}"
+    )
+
+
+def extract_chat_content(resp: object) -> str:
+    choices = getattr(resp, "choices", None)
+    if not choices:
+        raise RuntimeError("chat completion returned empty choices")
+    message = getattr(choices[0], "message", None)
+    return getattr(message, "content", None) or ""
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def read_text_block(path: str, *, label: str, allowed_roots: list[Path]) -> str:
+    resolved_path = Path(path).resolve()
+    resolved_roots = [root.resolve() for root in allowed_roots]
+    if not any(_is_relative_to(resolved_path, root) for root in resolved_roots):
+        allowed = ", ".join(str(root) for root in resolved_roots)
+        raise ValueError(f"{path} is outside allowed roots: {allowed}")
+    return f"## {label}: {resolved_path}\n\n{resolved_path.read_text(encoding='utf-8')}\n"
+
+
+def response_body_text(body: object) -> str:
+    if isinstance(body, bytes):
+        text = body.decode("utf-8", errors="replace")
+    else:
+        text = str(body)
+
+    for pattern in _SENSITIVE_BODY_PATTERNS:
+        text = pattern.sub(redact_sensitive_match, text)
+    return text
+
+
+def redact_sensitive_match(match: re.Match[str]) -> str:
+    groups = match.groups()
+    if len(groups) >= 2:
+        return f"{groups[0]}{_REDACTED}{groups[-1]}"
+    if groups:
+        return f"{groups[0]}{_REDACTED}"
+    return _REDACTED
+
+
+def describe_api_exception(exc: Exception) -> str:
+    parts = [str(exc)]
+    response = getattr(exc, "response", None)
+    if response is not None:
+        status_code = getattr(response, "status_code", None)
+        body = getattr(response, "text", None) or getattr(response, "content", None)
+        if status_code is not None:
+            parts.append(f"status_code={status_code}")
+        if body:
+            body_text = response_body_text(body)
+            parts.append(f"response_body={body_text[:500]}")
+    request_id = getattr(exc, "request_id", None)
+    if request_id:
+        parts.append(f"request_id={request_id}")
+    return " ".join(parts)
+
+
+
+def env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("base_sha", help="git base commit (e.g. main, 76bddc5)")
@@ -71,6 +236,24 @@ async def main() -> int:
     parser.add_argument("--spec", help="optional spec/requirements file path")
     parser.add_argument("--max-diff", type=int, default=80000,
                         help="char cap on diff sent to model (default 80000)")
+    parser.add_argument(
+        "--cache-mode",
+        choices=_CACHE_MODES,
+        default=None,
+        help="prompt cache mode (default: EXTERNAL_LLM_CACHE_MODE or off)",
+    )
+    parser.add_argument(
+        "--cache-prefix",
+        action="append",
+        default=[],
+        help="stable context file to place before the diff and cache in qwen-explicit mode; repeatable",
+    )
+    parser.add_argument(
+        "--cache-diff",
+        action="store_true",
+        default=False,
+        help="also mark the diff block cacheable in qwen-explicit mode",
+    )
     args = parser.parse_args()
 
     skill_dir = Path(__file__).resolve().parent
@@ -80,10 +263,29 @@ async def main() -> int:
     api_key = os.environ.get("EXTERNAL_LLM_API_KEY", "").strip()
     model = os.environ.get("EXTERNAL_LLM_MODEL", "").strip()
     api_format = os.environ.get("EXTERNAL_LLM_API_FORMAT", "chat").strip().lower()
+    cache_mode = (
+        args.cache_mode
+        or os.environ.get("EXTERNAL_LLM_CACHE_MODE", "off").strip().lower()
+    )
+    cache_diff = args.cache_diff or env_flag("EXTERNAL_LLM_CACHE_DIFF")
 
     if api_format not in ("chat", "responses", "anthropic"):
         print(
             f"ERROR: EXTERNAL_LLM_API_FORMAT must be 'chat'|'responses'|'anthropic', got {api_format!r}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if cache_mode not in _CACHE_MODES:
+        print(
+            f"ERROR: EXTERNAL_LLM_CACHE_MODE/--cache-mode must be one of {_CACHE_MODES}, got {cache_mode!r}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if cache_mode != "off" and api_format != "chat":
+        print(
+            "ERROR: explicit cache currently supports only EXTERNAL_LLM_API_FORMAT=chat",
             file=sys.stderr,
         )
         return 1
@@ -114,27 +316,45 @@ async def main() -> int:
         diff = diff[: args.max_diff]
         truncated = True
 
+    allowed_context_roots = [Path(args.worktree), skill_dir]
+
     spec_block = ""
     if args.spec:
         try:
-            spec_block = (
-                f"\n## Spec / Requirements\n\n{Path(args.spec).read_text()}\n"
+            spec_block = read_text_block(
+                args.spec,
+                label="Spec / Requirements",
+                allowed_roots=allowed_context_roots,
             )
-        except OSError as e:
+        except (OSError, ValueError) as e:
             print(f"WARN: could not read --spec {args.spec}: {e}", file=sys.stderr)
+
+    cache_prefix_blocks = []
+    for cache_prefix in args.cache_prefix:
+        try:
+            cache_prefix_blocks.append(
+                read_text_block(
+                    cache_prefix,
+                    label="Cache Prefix",
+                    allowed_roots=allowed_context_roots,
+                )
+            )
+        except (OSError, ValueError) as e:
+            print(f"WARN: could not read --cache-prefix {cache_prefix}: {e}", file=sys.stderr)
 
     user_prompt = f"""## Git Diff ({args.base_sha[:7]}..{args.head_sha[:7]}{', truncated' if truncated else ''})
 
 ```diff
 {diff}
 ```
-{spec_block}
+
 请按系统提示要求的格式输出评审结果。
 """
 
     print(
         f"[external-llm-review] model={model} base={base_url} format={api_format}"
-        f" diff_chars={len(diff)}{' (truncated)' if truncated else ''}",
+        f" diff_chars={len(diff)}{' (truncated)' if truncated else ''}"
+        f" cache_mode={cache_mode}{' cache_diff=true' if cache_diff else ''}",
         file=sys.stderr,
     )
 
@@ -145,7 +365,16 @@ async def main() -> int:
                     model=model,
                     max_tokens=8192,
                     system=_REVIEW_SYSTEM_PROMPT,
-                    messages=[{"role": "user", "content": user_prompt}],
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": build_plain_user_prompt(
+                                user_prompt=user_prompt,
+                                spec_block=spec_block,
+                                cache_prefix_blocks=cache_prefix_blocks,
+                            ),
+                        }
+                    ],
                     temperature=0.2,
                     timeout=180,
                 )
@@ -158,7 +387,11 @@ async def main() -> int:
                     resp = await oclient.responses.create(
                         model=model,
                         instructions=_REVIEW_SYSTEM_PROMPT,
-                        input=user_prompt,
+                        input=build_plain_user_prompt(
+                            user_prompt=user_prompt,
+                            spec_block=spec_block,
+                            cache_prefix_blocks=cache_prefix_blocks,
+                        ),
                         temperature=0.2,
                         timeout=180,
                     )
@@ -166,16 +399,25 @@ async def main() -> int:
                 else:
                     resp = await oclient.chat.completions.create(
                         model=model,
-                        messages=[
-                            {"role": "system", "content": _REVIEW_SYSTEM_PROMPT},
-                            {"role": "user", "content": user_prompt},
-                        ],
+                        messages=build_chat_messages(
+                            user_prompt=user_prompt,
+                            spec_block=spec_block,
+                            cache_prefix_blocks=cache_prefix_blocks,
+                            cache_mode=cache_mode,
+                            cache_diff=cache_diff,
+                        ),
                         temperature=0.2,
                         timeout=180,
                     )
-                    content = resp.choices[0].message.content or ""
+                    cache_usage = format_cache_usage(resp.usage)
+                    if cache_usage:
+                        print(cache_usage, file=sys.stderr)
+                    content = extract_chat_content(resp)
     except Exception as exc:
-        print(f"ERROR: {api_format}.create failed: {exc}", file=sys.stderr)
+        print(
+            f"ERROR: {api_format}.create failed: {describe_api_exception(exc)}",
+            file=sys.stderr,
+        )
         return 4
     print(content)
     return 0

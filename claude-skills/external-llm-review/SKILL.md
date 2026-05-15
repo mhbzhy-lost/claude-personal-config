@@ -45,7 +45,10 @@ EXTERNAL_LLM_API_FORMAT=anthropic uv run --no-project \
     <BASE_SHA> <HEAD_SHA> \
     [--worktree PATH] \
     [--spec docs/superpowers/specs/foo.md] \
-    [--max-diff 80000]
+    [--max-diff 80000] \
+    [--cache-mode off|qwen-explicit] \
+    [--cache-prefix docs/review-context.md] \
+    [--cache-diff]
 ```
 
 **参数：**
@@ -54,8 +57,34 @@ EXTERNAL_LLM_API_FORMAT=anthropic uv run --no-project \
 - `--worktree` —— 默认 `.`；评 worktree 时填 `.worktrees/<task>`
 - `--spec` —— 把 spec 文件附给模型做"对契约"评审
 - `--max-diff` —— diff 字符上限（默认 80000，防网关 413）
+- `--cache-mode` —— prompt cache 模式；默认 `EXTERNAL_LLM_CACHE_MODE` 或 `off`
+- `--cache-prefix` —— 稳定上下文文件，置于 diff 前；可重复传多个
+- `--cache-diff` —— 显式把 diff 也纳入 cache marker；默认关闭，仅适合同一 diff 多轮 review
 
 **stdout 输出**：模型返回的 review markdown（Strengths / Critical / Important / Minor / Assessment）。**stderr** 是诊断信息。
+
+## Qwen 显式缓存
+
+当 endpoint 是 Qwen / DashScope OpenAI-compatible Chat Completions 且需要显式缓存时：
+
+```bash
+EXTERNAL_LLM_API_FORMAT=chat \
+EXTERNAL_LLM_CACHE_MODE=qwen-explicit \
+uv run --no-project \
+  --with "openai>=1.50" --with "anthropic>=0.40" --with python-dotenv \
+  python ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py \
+  main HEAD \
+  --spec docs/superpowers/specs/foo.md
+```
+
+实现策略：
+
+- 只在 `chat` 协议启用 `qwen-explicit`；`responses` / `anthropic` 路径保持原样。
+- 默认缓存稳定上下文：系统评审规则、`--spec`、`--cache-prefix` 文件。
+- 默认不缓存 git diff。只有当同一任务围绕同一份 diff 多轮 review/追问时，才用 `--cache-diff` 或 `EXTERNAL_LLM_CACHE_DIFF=true`。
+- 若响应 usage 暴露缓存统计，stderr 会打印 `cached_tokens` 与 `cache_creation_input_tokens`，便于判断命中率。
+
+依据阿里云 Model Studio Context Cache 文档：OpenAI-compatible 请求可在 message content block 上添加 `cache_control: {"type":"ephemeral"}`；显式缓存有效期 5 分钟，单请求最多 4 个 cache marker，最小 cacheable prompt 为 1024 tokens。
 
 ## 综合判断规则（拿到外源输出后必须做的）
 
@@ -109,7 +138,7 @@ EXTERNAL_LLM_API_FORMAT=anthropic uv run --no-project \
 - 使用 `openai.AsyncOpenAI` / `anthropic.AsyncAnthropic`：`base_url` 切换到任意兼容端点，`api_key` 从环境变量读
 - 系统提示固化在脚本里：要求输出 Strengths / Critical / Important / Minor / Assessment
 - 用户提示包含 git diff 文本 + 可选 spec 文本
+- `qwen-explicit` 缓存通过 OpenAI Chat Completions content block 的 `cache_control` marker 表达
 - temperature=0.2（评审任务希望稳定）
 - 失败时打印 stderr 并退出非零
-
 
