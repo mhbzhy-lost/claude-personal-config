@@ -12,13 +12,13 @@ This directory contains Codex shared agent runtime resources derived from
 - `skills.list`
   Whitelist of `claude-skills/` entries that are safe to expose directly as
   native Codex skills under `$HOME/.agents/skills`.
-- `vendor/superpowers`
-  Vendored upstream submodule. `init_codex.sh` registers it as a local Codex
-  marketplace and enables the `superpowers` plugin from that local source.
+- `superpowers-bootstrap.md`
+  Handwritten Codex-side bootstrap prompt for using Superpowers workflows
+  without relying on plugin `SessionStart` injection.
 
 ## Shared links created by `init_codex.sh`
 
-- `~/AGENTS.md`
+- `~/.codex/agents.md`
   Links directly to `claude/CLAUDE.md` after that file was made host-neutral
   enough for shared use.
 - `~/.codex/memory.md`
@@ -31,6 +31,9 @@ This directory contains Codex shared agent runtime resources derived from
   `skill-catalog` MCP server because the source tree is organized by tech stack
   and contains far more material than should be injected directly into the
   model's skill list.
+- `vendor/superpowers` is not registered as a Codex marketplace. Superpowers
+  runs through the native-skill fallback:
+  `vendor/superpowers/skills/* -> $HOME/.agents/skills/*`.
 - Hook scripts are reused from `../hooks/`, but hook registration is rendered
   into Codex's own configuration surface.
 - App-only preferences are not managed here. That includes appearance,

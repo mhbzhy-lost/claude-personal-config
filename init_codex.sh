@@ -4,10 +4,11 @@
 # 将 claude-config 中可直接复用到 Codex 的共享 agent runtime 资源接到
 # Codex 约定位置。脚本本身通过 shell 执行，但生成的是可被 Codex CLI、
 # Codex app、IDE extension 共同消费的配置层：
-#   - `claude/CLAUDE.md`          -> `~/AGENTS.md`
+#   - `claude/CLAUDE.md`          -> `~/.codex/agents.md`
 #   - `memory.md`                 -> `~/.codex/memory.md`
 #   - `claude-skills/<name>`      -> `~/.agents/skills/<name>`（共享 skill 白名单）
-#   - `vendor/superpowers`        -> 注册为本地 marketplace 并启用 plugin
+#   - `vendor/superpowers/skills` -> `~/.agents/skills/<name>`（Codex local plugin
+#                                      skills 暂不暴露时的 fallback）
 #   - `codex/hooks.json`          -> 渲染到 `~/.codex/hooks.json`
 #   - `mcp/*`                     -> 合并到 `~/.codex/config.toml`
 #
@@ -24,7 +25,8 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 USER_SKILLS_DIR="$HOME/.agents/skills"
-GLOBAL_AGENTS_PATH="$HOME/AGENTS.md"
+CODEX_AGENTS_PATH="$CODEX_HOME/agents.md"
+LEGACY_GLOBAL_AGENTS_PATH="$HOME/AGENTS.md"
 CODEX_MEMORY_PATH="$CODEX_HOME/memory.md"
 HOOKS_TEMPLATE="$SRC/codex/hooks.json"
 HOOKS_OUTPUT="$CODEX_HOME/hooks.json"
@@ -60,10 +62,6 @@ link_path() {
     cur="$(readlink "$dst_path")"
     if [ "$cur" = "$src_path" ]; then
       echo "[ok] $dst_path -> $src_path"
-    elif [ "$dst_path" = "$GLOBAL_AGENTS_PATH" ] && [ "$cur" = "$SRC/codex/AGENTS.md" ]; then
-      rm -f "$dst_path"
-      ln -s "$src_path" "$dst_path"
-      echo "[migrated] $dst_path -> $src_path"
     else
       echo "[warn] $dst_path is a symlink pointing to $cur (expected $src_path). Please verify and fix manually."
     fi
@@ -73,6 +71,17 @@ link_path() {
     mkdir -p "$(dirname "$dst_path")"
     ln -s "$src_path" "$dst_path"
     echo "[linked] $dst_path -> $src_path"
+  fi
+}
+
+cleanup_legacy_global_agents() {
+  if [ -L "$LEGACY_GLOBAL_AGENTS_PATH" ]; then
+    local cur
+    cur="$(readlink "$LEGACY_GLOBAL_AGENTS_PATH")"
+    if [ "$cur" = "$SRC/claude/CLAUDE.md" ] || [ "$cur" = "$SRC/codex/AGENTS.md" ]; then
+      rm -f "$LEGACY_GLOBAL_AGENTS_PATH"
+      echo "[cleanup] removed legacy $LEGACY_GLOBAL_AGENTS_PATH -> $cur"
+    fi
   fi
 }
 
@@ -120,6 +129,28 @@ sync_codex_skills() {
 
     link_path "$src_skill" "$dst_skill"
   done < <(read_list_file "$list_file")
+}
+
+sync_superpowers_skills_fallback() {
+  local src_dir="$SRC/vendor/superpowers/skills"
+
+  if [ ! -d "$src_dir" ]; then
+    echo "[warn] superpowers skills dir not found at $src_dir; skipping fallback skills"
+    return
+  fi
+
+  mkdir -p "$USER_SKILLS_DIR"
+
+  local src_skill dst_skill skill_name
+  for src_skill in "$src_dir"/*; do
+    [ -d "$src_skill" ] || continue
+    [ -f "$src_skill/SKILL.md" ] || continue
+
+    skill_name="$(basename "$src_skill")"
+    dst_skill="$USER_SKILLS_DIR/$skill_name"
+
+    link_path "$src_skill" "$dst_skill"
+  done
 }
 
 render_hooks_json() {
@@ -226,7 +257,6 @@ write_codex_managed_config() {
 
   local skill_catalog_python="$SRC/mcp/skill-catalog/.venv/bin/python"
   local block_catalog_python="$SRC/mcp/block-catalog/.venv/bin/python"
-  local superpowers_source="$SRC/vendor/superpowers"
   local embedding_model="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
   local ollama_port="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
   local ollama_host_url="http://127.0.0.1:${ollama_port}"
@@ -238,7 +268,6 @@ write_codex_managed_config() {
   SRC="$SRC" \
   SKILL_CATALOG_PYTHON="$skill_catalog_python" \
   BLOCK_CATALOG_PYTHON="$block_catalog_python" \
-  SUPERPOWERS_SOURCE="$superpowers_source" \
   EMBEDDING_MODEL="$embedding_model" \
   OLLAMA_HOST_URL="$ollama_host_url" \
   ENABLE_INTENT_ENHANCEMENT="$enable_intent_enhancement" \
@@ -253,7 +282,6 @@ end_marker = os.environ["END_MARKER"]
 src = os.environ["SRC"]
 skill_catalog_python = os.environ["SKILL_CATALOG_PYTHON"]
 block_catalog_python = os.environ["BLOCK_CATALOG_PYTHON"]
-superpowers_source = os.environ["SUPERPOWERS_SOURCE"]
 embedding_model = os.environ["EMBEDDING_MODEL"]
 ollama_host_url = os.environ["OLLAMA_HOST_URL"]
 enable_intent_enhancement = os.environ["ENABLE_INTENT_ENHANCEMENT"]
@@ -265,6 +293,32 @@ managed_pattern = re.compile(
     re.S,
 )
 stripped = managed_pattern.sub("", raw).rstrip()
+
+
+def remove_table(text, table_name):
+    lines = text.splitlines()
+    table_line = f"[{table_name}]"
+
+    try:
+        start = next(i for i, line in enumerate(lines) if line.strip() == table_line)
+    except StopIteration:
+        return text
+
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        stripped_line = lines[i].strip()
+        if stripped_line.startswith("[") and stripped_line.endswith("]"):
+            end = i
+            break
+
+    del lines[start:end]
+    while start < len(lines) and lines[start] == "":
+        del lines[start]
+    return "\n".join(lines)
+
+
+stripped = remove_table(stripped, "marketplaces.superpowers-dev").rstrip()
+stripped = remove_table(stripped, 'plugins."superpowers@superpowers-dev"').rstrip()
 
 for needle in (
     '[mcp_servers."skill-catalog"]',
@@ -287,21 +341,6 @@ if '[features]' not in stripped:
     ])
 elif 'multi_agent' not in stripped:
     print('[warn] existing [features] table found outside managed block; not auto-setting multi_agent')
-
-if '[marketplaces.superpowers-dev]' not in stripped:
-    managed_sections.extend([
-        '[marketplaces.superpowers-dev]',
-        'source_type = "local"',
-        f'source = "{superpowers_source}"',
-        '',
-    ])
-
-if '[plugins."superpowers@superpowers-dev"]' not in stripped:
-    managed_sections.extend([
-        '[plugins."superpowers@superpowers-dev"]',
-        'enabled = true',
-        '',
-    ])
 
 managed_sections.extend([
 f'''[mcp_servers."skill-catalog"]
@@ -330,9 +369,11 @@ PY
 ensure_codex_installed
 mkdir -p "$CODEX_HOME" "$USER_SKILLS_DIR"
 
-link_path "$SRC/claude/CLAUDE.md" "$GLOBAL_AGENTS_PATH"
+link_path "$SRC/claude/CLAUDE.md" "$CODEX_AGENTS_PATH"
+cleanup_legacy_global_agents
 link_path "$SRC/memory.md" "$CODEX_MEMORY_PATH"
 sync_codex_skills
+sync_superpowers_skills_fallback
 render_hooks_json
 ensure_skill_catalog_venv
 ensure_block_catalog_venv
