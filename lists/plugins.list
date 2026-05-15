@@ -22,10 +22,9 @@
 # 选 SHA 的提示：通常用对应版本的 release commit；从 upstream 仓
 # `git rev-parse v5.1.0^{}` 或 GitHub release 页面拷贝。
 
-# superpowers 与 CLAUDE.md 的工作流增强强绑定（brainstorming/writing-plans/
-# subagent-driven-development 等命令名/skill 路径），升级前需对齐 CLAUDE.md。
-# 当前 pin: f2cbfbef (= obra/superpowers v5.1.0 release commit)
-superpowers:claude-plugins-official:f2cbfbefebbfef77321e4c9abc9e949826bea9d7
+# superpowers 完全走本仓 vendored submodule（vendor/superpowers）注册出来的本地
+# marketplace `superpowers-dev`。版本由 git submodule 锁定，不再单独 pin SHA。
+superpowers:superpowers-dev
 
 # 以下不 pin，跟随 marketplace HEAD（首装拿到啥就是啥，不自动升级）
 plugin-dev:claude-plugins-official       # Plugin 脚手架（plugin.json/skills/agents）

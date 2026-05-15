@@ -7,6 +7,7 @@
 #   - `claude/CLAUDE.md`          -> `~/AGENTS.md`
 #   - `memory.md`                 -> `~/.codex/memory.md`
 #   - `claude-skills/<name>`      -> `~/.agents/skills/<name>`（共享 skill 白名单）
+#   - `vendor/superpowers`        -> 注册为本地 marketplace 并启用 plugin
 #   - `codex/hooks.json`          -> 渲染到 `~/.codex/hooks.json`
 #   - `mcp/*`                     -> 合并到 `~/.codex/config.toml`
 #
@@ -225,6 +226,7 @@ write_codex_managed_config() {
 
   local skill_catalog_python="$SRC/mcp/skill-catalog/.venv/bin/python"
   local block_catalog_python="$SRC/mcp/block-catalog/.venv/bin/python"
+  local superpowers_source="$SRC/vendor/superpowers"
   local embedding_model="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
   local ollama_port="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
   local ollama_host_url="http://127.0.0.1:${ollama_port}"
@@ -236,6 +238,7 @@ write_codex_managed_config() {
   SRC="$SRC" \
   SKILL_CATALOG_PYTHON="$skill_catalog_python" \
   BLOCK_CATALOG_PYTHON="$block_catalog_python" \
+  SUPERPOWERS_SOURCE="$superpowers_source" \
   EMBEDDING_MODEL="$embedding_model" \
   OLLAMA_HOST_URL="$ollama_host_url" \
   ENABLE_INTENT_ENHANCEMENT="$enable_intent_enhancement" \
@@ -250,6 +253,7 @@ end_marker = os.environ["END_MARKER"]
 src = os.environ["SRC"]
 skill_catalog_python = os.environ["SKILL_CATALOG_PYTHON"]
 block_catalog_python = os.environ["BLOCK_CATALOG_PYTHON"]
+superpowers_source = os.environ["SUPERPOWERS_SOURCE"]
 embedding_model = os.environ["EMBEDDING_MODEL"]
 ollama_host_url = os.environ["OLLAMA_HOST_URL"]
 enable_intent_enhancement = os.environ["ENABLE_INTENT_ENHANCEMENT"]
@@ -273,9 +277,34 @@ for needle in (
         )
         raise SystemExit(0)
 
-managed_block = f"""
-{begin_marker}
-[mcp_servers."skill-catalog"]
+managed_sections = [begin_marker]
+
+if '[features]' not in stripped:
+    managed_sections.extend([
+        '[features]',
+        'multi_agent = true',
+        '',
+    ])
+elif 'multi_agent' not in stripped:
+    print('[warn] existing [features] table found outside managed block; not auto-setting multi_agent')
+
+if '[marketplaces.superpowers-dev]' not in stripped:
+    managed_sections.extend([
+        '[marketplaces.superpowers-dev]',
+        'source_type = "local"',
+        f'source = "{superpowers_source}"',
+        '',
+    ])
+
+if '[plugins."superpowers@superpowers-dev"]' not in stripped:
+    managed_sections.extend([
+        '[plugins."superpowers@superpowers-dev"]',
+        'enabled = true',
+        '',
+    ])
+
+managed_sections.extend([
+f'''[mcp_servers."skill-catalog"]
 command = "{skill_catalog_python}"
 args = ["-m", "skill_catalog.server"]
 env = {{ SKILL_LIBRARY_PATH = "{src}/skills", SKILL_CATALOG_EMBEDDING_MODEL = "{embedding_model}", SKILL_CATALOG_OLLAMA_HOST = "{ollama_host_url}", ENABLE_INTENT_ENHANCEMENT = "{enable_intent_enhancement}" }}
@@ -286,8 +315,11 @@ command = "{block_catalog_python}"
 args = ["-m", "block_catalog.server"]
 env = {{ BLOCK_LIBRARY_PATH = "{src}/blocks" }}
 enabled = true
-{end_marker}
-""".strip()
+''',
+end_marker,
+])
+
+managed_block = "\n".join(part for part in managed_sections if part is not None).strip()
 
 final = stripped + ("\n\n" if stripped else "") + managed_block + "\n"
 config_path.write_text(final)

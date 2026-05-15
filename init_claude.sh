@@ -778,11 +778,20 @@ fi
 if command -v claude >/dev/null 2>&1; then
   PLUGINS_JSON="$DST/plugins/installed_plugins.json"
 
-  # 确保 marketplace 已注册
+  # 确保官方 marketplace 已注册（供其余 plugin 使用）
   if [ ! -f "$DST/plugins/known_marketplaces.json" ] \
       || ! grep -q '"claude-plugins-official"' "$DST/plugins/known_marketplaces.json" 2>/dev/null; then
     echo "[plugins] 注册 marketplace claude-plugins-official ..."
     claude plugins marketplace add claude-plugins-official github anthropics/claude-plugins-official 2>/dev/null || true
+  fi
+
+  # 确保 vendored superpowers marketplace 已注册
+  if [ -d "$SRC/vendor/superpowers/.claude-plugin" ] || [ -f "$SRC/vendor/superpowers/.claude-plugin/marketplace.json" ]; then
+    if [ ! -f "$DST/plugins/known_marketplaces.json" ] \
+        || ! grep -q '"superpowers-dev"' "$DST/plugins/known_marketplaces.json" 2>/dev/null; then
+      echo "[plugins] 注册本地 marketplace superpowers-dev ..."
+      claude plugins marketplace add "$SRC/vendor/superpowers" 2>/dev/null || true
+    fi
   fi
 
   # 插件清单：默认 lists/plugins.list；存在 lists/plugins.local.list 则优先（覆盖）。
@@ -972,6 +981,15 @@ p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n')
       fi
 
       key="$plugin_name@$marketplace"
+
+      # 迁移兼容：superpowers 现在统一走 vendored 本地 marketplace。
+      # 若旧的官方 marketplace 安装仍在，先移除，避免同名 plugin 双装。
+      if [ "$plugin_name" = "superpowers" ] && [ "$marketplace" = "superpowers-dev" ]; then
+        if [ -f "$PLUGINS_JSON" ] && grep -q '"superpowers@claude-plugins-official"' "$PLUGINS_JSON" 2>/dev/null; then
+          echo "[plugins] 移除旧的 superpowers@claude-plugins-official ..."
+          claude plugins uninstall superpowers@claude-plugins-official 2>/dev/null || true
+        fi
+      fi
 
       # Pinned plugin：走 git clone + checkout SHA 路径
       if [ -n "$sha" ]; then

@@ -12,6 +12,9 @@ This directory contains Codex shared agent runtime resources derived from
 - `skills.list`
   Whitelist of `claude-skills/` entries that are safe to expose directly as
   native Codex skills under `$HOME/.agents/skills`.
+- `vendor/superpowers`
+  Vendored upstream submodule. `init_codex.sh` registers it as a local Codex
+  marketplace and enables the `superpowers` plugin from that local source.
 
 ## Shared links created by `init_codex.sh`
 
@@ -28,8 +31,6 @@ This directory contains Codex shared agent runtime resources derived from
   `skill-catalog` MCP server because the source tree is organized by tech stack
   and contains far more material than should be injected directly into the
   model's skill list.
-- `opencode-plugins/` is not reused here. Codex plugins are a different
-  packaging model.
 - Hook scripts are reused from `../hooks/`, but hook registration is rendered
   into Codex's own configuration surface.
 - App-only preferences are not managed here. That includes appearance,

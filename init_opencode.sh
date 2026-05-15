@@ -278,7 +278,7 @@ else:
     print("[mcp] playwright-mcp 已是最新")
 
 # ── Plugin ──
-desired_plugins = ["superpowers@git+https://github.com/obra/superpowers.git#v5.1.0"]
+desired_plugins = [f"{src}/vendor/superpowers"]
 existing_plugins = config.get("plugin")
 if existing_plugins != desired_plugins:
     if existing_plugins is not None:
