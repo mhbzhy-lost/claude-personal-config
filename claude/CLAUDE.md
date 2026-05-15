@@ -1,10 +1,12 @@
 # 全局记忆
 
-已知陷阱、过往 bug 记录于 `~/.claude/memory.md`。**两个强制查阅时机**：
+已知陷阱、过往 bug 记录于当前宿主的 memory 文件
+（Claude Code: `~/.claude/memory.md`；Codex: `~/.codex/memory.md`）。**两个强制查阅时机**：
 
 1. **动手前**——开工任何 coding / 调试 / 排查任务前，必须执行可观测动作：
-   `cat ~/.claude/memory.md` 通读全文 + 主动报告匹配到的相关条目（或显式说明
-   "无匹配条目"）。仅在心里"想了想 memory"不算履行。
+   `cat <host-memory-file>` 通读全文 + 主动报告匹配到的相关条目（或显式说明
+   "无匹配条目"）。其中 `<host-memory-file>` 指当前宿主对应的 memory 路径。
+   仅在心里"想了想 memory"不算履行。
 2. **遇到报错 / 测试失败 / 异常行为时**——在做新的根因分析或修复尝试之前：
    - 命中已记录的坑 → 直接按记录中的解法走
    - 未命中 → 启动 bug-analysis 流程，分析定型后回写到 memory.md
@@ -77,8 +79,8 @@ bugfix 流程硬约束，优先级高于 §5 的"高风险任务才上"。
 
 同一问题连续 3 次修复尝试失败或无新进展，禁止继续沿当前思路硬试，必须先做调研：
 
-1. 重跑 `/knowledge-retrieval` 检索相关 skill 与 `~/.claude/memory.md` 已记录陷阱
-2. 用 `WebSearch` / `WebFetch` 查官方 issue tracker / changelog / 社区讨论，
+1. 重跑 `knowledge-retrieval` skill 检索相关知识与当前宿主 memory 文件中已记录的陷阱
+2. 用当前宿主提供的 Web 搜索 / 抓取工具查官方 issue tracker / changelog / 社区讨论，
    确认是否存在同类问题及上游解法
 3. 综合检索结果重做根因分析，更新 `bug-analysis.md` 后再继续修复
 
@@ -92,12 +94,12 @@ bugfix 流程硬约束，优先级高于 §5 的"高风险任务才上"。
 
 ## 1. 反幻觉：每阶段强制知识检索 + Web 补充调研
 
-- `brainstorming` 与 `writing-plans` 阶段必须调用 `/knowledge-retrieval`
+- `brainstorming` 与 `writing-plans` 阶段必须调用 `knowledge-retrieval`
   （前者侧重选型与架构，后者侧重落地模式与 task 拆分）
-- 每个 implementer subagent 动手前必须自己跑 `/knowledge-retrieval`；
+- 每个 implementer subagent 动手前必须自己跑 `knowledge-retrieval`；
   约束写入 dispatch prompt，主 agent 不代办
-- **Web 补充调研**：`/knowledge-retrieval` 之后，命中以下任一情形必须再用
-  `WebSearch` / `WebFetch` 拉最新资料：
+- **Web 补充调研**：`knowledge-retrieval` 之后，命中以下任一情形必须再用
+  当前宿主提供的 Web 搜索 / 抓取工具拉最新资料：
   - 涉及第三方框架 / SDK / API 的版本号、breaking changes、deprecation
   - < 1 年内发布或仍在活跃迭代的协议、库、规范
   - 安全相关（CVE、token 格式、auth flow、加密协议变更）
@@ -179,8 +181,9 @@ bugfix 流程硬约束，优先级高于 §5 的"高风险任务才上"。
 
 ## 7. TDD 开发准则
 
-**执行流参照 `superpowers:test-driven-development` skill** 的 RED-GREEN-REFACTOR
-完整规范，coding 任务原则上严格按 skill 流程执行。
+**执行流参照当前环境中的 TDD skill / workflow** 的 RED-GREEN-REFACTOR
+完整规范；若存在 `superpowers:test-driven-development`，优先按其流程执行。
+coding 任务原则上严格按该流程执行。
 
 **本仓豁免条款**（满足任一可免走 TDD）：
 

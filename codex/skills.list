@@ -1,0 +1,9 @@
+# Codex-native skill whitelist
+#
+# These entries are symlinked from `claude-skills/` into `$HOME/.agents/skills`
+# by `init_codex.sh`.
+
+knowledge-retrieval
+git-commit
+external-llm-review
+wcag-check

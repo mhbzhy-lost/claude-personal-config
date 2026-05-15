@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__skill-catalog__resolve",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"__CLAUDE_CONFIG_HOME__/hooks/skill-resolve-preflight.sh\"",
+            "statusMessage": "Checking skill-catalog resolve inputs"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"__CLAUDE_CONFIG_HOME__/hooks/git-commit-hint.sh\"",
+            "statusMessage": "Checking git commit workflow"
+          }
+        ]
+      }
+    ]
+  }
+}

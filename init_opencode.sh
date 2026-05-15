@@ -277,6 +277,19 @@ if existing_pw != desired_pw:
 else:
     print("[mcp] playwright-mcp 已是最新")
 
+# ── Plugin ──
+desired_plugins = ["superpowers@git+https://github.com/obra/superpowers.git#v5.1.0"]
+existing_plugins = config.get("plugin")
+if existing_plugins != desired_plugins:
+    if existing_plugins is not None:
+        print("[plugin] plugin 已有配置，更新为最新")
+    else:
+        print("[plugin] plugin 新增")
+    config["plugin"] = desired_plugins
+    changed = True
+else:
+    print("[plugin] plugin 已是最新")
+
 # ── LSP ──
 # 内置 LSP 仅支持 boolean (true/false) 或 object (disable/custom)。
 # 空对象 {} 违反 schema 会导致 ConfigInvalidError，改用 lsp: true
