@@ -13,7 +13,7 @@
 # claude-skills/ 暴露给 ~/.claude/skills，承载 Claude Code 原生 user-invocable
 # Skill（如 /git-commit、/knowledge-retrieval）。两种暴露模式：
 #   1. 整目录软链 ~/.claude/skills → claude-skills/（默认；编辑即生效）
-#   2. 真目录 + 按 lists/skills.list 逐 skill rsync --delete（清单白名单
+#   2. 真目录 + 按 claude/skills.list 逐 skill rsync --delete（清单白名单
 #      模式，能与用户其他 skill 共存）
 # 策略：~/.claude/skills 不存在 → 走 link_item 软链化；已是指向本仓的软链
 # → 保留不动；已是真目录 → 走 rsync 模式（不主动转回软链）；已是软链但
@@ -89,14 +89,14 @@ read_list_file() {
   done < "$file"
 }
 
-# 解析清单文件路径：优先 lists/<name>.local.list（用户私有，git 不追踪），
-# 不存在则回退 lists/<name>.list（默认，随仓库提交）。两份都缺时输出空。
+# 解析 Claude 清单文件路径：优先 claude/<name>.local.list（用户私有，git 不追踪），
+# 不存在则回退 claude/<name>.list（默认，随仓库提交）。两份都缺时输出空。
 resolve_list_file() {
   local name="$1"
-  if [ -f "$SRC/lists/${name}.local.list" ]; then
-    printf '%s\n' "$SRC/lists/${name}.local.list"
-  elif [ -f "$SRC/lists/${name}.list" ]; then
-    printf '%s\n' "$SRC/lists/${name}.list"
+  if [ -f "$SRC/claude/${name}.local.list" ]; then
+    printf '%s\n' "$SRC/claude/${name}.local.list"
+  elif [ -f "$SRC/claude/${name}.list" ]; then
+    printf '%s\n' "$SRC/claude/${name}.list"
   fi
 }
 
@@ -112,7 +112,7 @@ link_item "memory.md"
 #   - 不存在               → 软链化（link_item，编辑即生效）
 #   - 已是指向 claude-skills/ 的软链 → 保留不动
 #   - 是软链但指向其他位置 → 警告，人工核对
-#   - 是真目录             → 按 lists/skills.list 逐 skill rsync --delete
+#   - 是真目录             → 按 claude/skills.list 逐 skill rsync --delete
 #                            （白名单模式，与用户自管 skill 共存）
 sync_claude_skills() {
   local src_path="$SRC/claude-skills"
@@ -794,10 +794,10 @@ if command -v claude >/dev/null 2>&1; then
     fi
   fi
 
-  # 插件清单：默认 lists/plugins.list；存在 lists/plugins.local.list 则优先（覆盖）。
+  # 插件清单：默认 claude/plugins.list；存在 claude/plugins.local.list 则优先（覆盖）。
   PLUGINS_LIST_FILE=$(resolve_list_file "plugins")
   if [ -z "$PLUGINS_LIST_FILE" ]; then
-    echo "[warn] lists/plugins.list 与 lists/plugins.local.list 均不存在，跳过插件安装"
+    echo "[warn] claude/plugins.list 与 claude/plugins.local.list 均不存在，跳过插件安装"
   else
     echo "[plugins] 使用清单: $PLUGINS_LIST_FILE"
 
@@ -1081,12 +1081,12 @@ if [ -f "$ZSHRC" ] && grep -Fq "claude_ccr_wrapper_v5" "$ZSHRC"; then
 fi
 
 # ---------------------------------------------------------------------------
-# 提示 settings/.env 状态（含 deepseek/qwen 凭据，不入 git）
+# 提示 claude/settings/.env 状态（含 deepseek/qwen 凭据，不入 git）
 # ---------------------------------------------------------------------------
-ENV_FILE="$SRC/settings/.env"
+ENV_FILE="$SRC/claude/settings/.env"
 if [ ! -f "$ENV_FILE" ]; then
-  echo "[hint] $ENV_FILE 不存在；请从 settings/.env.example 复制并填入 token："
-  echo "       cp $SRC/settings/.env.example $ENV_FILE && \$EDITOR $ENV_FILE"
+  echo "[hint] $ENV_FILE 不存在；请从 claude/settings/.env.example 复制并填入 token："
+  echo "       cp $SRC/claude/settings/.env.example $ENV_FILE && \$EDITOR $ENV_FILE"
 fi
 
 # ---------------------------------------------------------------------------

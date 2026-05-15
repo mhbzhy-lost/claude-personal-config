@@ -13,7 +13,7 @@ claude() {
 # --- claude-qwen --------------------------------------------------------------
 claude-qwen() {
   (
-    local env_file="$HOME/claude-config/settings/.env"
+    local env_file="$HOME/claude-config/claude/settings/.env"
     if [[ -f "$env_file" ]]; then
       set -a; source "$env_file"; set +a
     fi
@@ -22,7 +22,7 @@ claude-qwen() {
       return 1
     fi
     export ANTHROPIC_AUTH_TOKEN="$ANTHROPIC_AUTH_TOKEN_QWEN"
-    local settings="$HOME/claude-config/settings/settings-qwen.json"
+    local settings="$HOME/claude-config/claude/settings/settings-qwen.json"
     if (( $# == 0 )); then
       command claude --settings "$settings" --continue --fork-session
     else
@@ -34,7 +34,7 @@ claude-qwen() {
 # --- claude-deepseek ----------------------------------------------------------
 claude-deepseek() {
   (
-    local env_file="$HOME/claude-config/settings/.env"
+    local env_file="$HOME/claude-config/claude/settings/.env"
     if [[ -f "$env_file" ]]; then
       set -a; source "$env_file"; set +a
     fi
@@ -43,7 +43,7 @@ claude-deepseek() {
       return 1
     fi
     export ANTHROPIC_AUTH_TOKEN="$ANTHROPIC_AUTH_TOKEN_DEEPSEEK"
-    local settings="$HOME/claude-config/settings/settings-deepseek.json"
+    local settings="$HOME/claude-config/claude/settings/settings-deepseek.json"
     if (( $# == 0 )); then
       command claude --settings "$settings" --continue --fork-session
     else

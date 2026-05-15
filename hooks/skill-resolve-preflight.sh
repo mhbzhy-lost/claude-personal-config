@@ -69,7 +69,7 @@ reason = (
     "纯语言题（如'写一段 C++ 模板'）可仅填 language。"
     "合法闭集参见 SubagentStart 注入的 %skill 规范；"
     "若未触发 %skill 注入，请勿调用 mcp__skill-catalog__list_skills —— "
-    "具体流程见 guidelines/knowledge-retrieval-process.md。"
+    "具体流程见 claude-skills/knowledge-retrieval/references/knowledge-retrieval-process.md。"
 )
 out = {
     "hookSpecificOutput": {

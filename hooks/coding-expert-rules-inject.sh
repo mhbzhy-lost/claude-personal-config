@@ -3,7 +3,7 @@
 #
 # Target sub-agents: coding-expert, coding-expert-light, coding-expert-heavy
 # (via matcher in settings.json).
-# Reads guidelines/knowledge-retrieval-process.md (or $CODING_EXPERT_RULES_PATH)
+# Reads the knowledge-retrieval injected reference (or $CODING_EXPERT_RULES_PATH)
 # and returns its body as additionalContext so sub-agents do not need to
 # manually Read the file at startup.
 #
@@ -28,7 +28,7 @@ printf '[%s] hook fired pid=%s ppid=%s\n' \
 # 定位项目根目录（相对于 hook 脚本位置）
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
-RULES_PATH="${CODING_EXPERT_RULES_PATH:-$SRC_ROOT/guidelines/knowledge-retrieval-process.md}"
+RULES_PATH="${CODING_EXPERT_RULES_PATH:-$SRC_ROOT/claude-skills/knowledge-retrieval/references/knowledge-retrieval-process.md}"
 
 if [[ ! -f "$RULES_PATH" ]]; then
   echo "[coding-expert-rules-inject] ERROR: rules not found at $RULES_PATH" >&2

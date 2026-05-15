@@ -28,8 +28,8 @@ mcp/skill-catalog/.ollama-models/
 mcp/skill-catalog/.ollama-runtime/
 mcp/skill-catalog/.embeddings-cache/
 
-# Claude Code provider 凭据（settings/.env 含 ANTHROPIC_AUTH_TOKEN_*，不入 git）
-settings/.env
+# Claude Code provider 凭据（claude/settings/.env 含 ANTHROPIC_AUTH_TOKEN_*，不入 git）
+claude/settings/.env
 
 # 用户自定义清单：覆盖 lists/*.list 默认值，仅本机生效
 lists/*.local.list
