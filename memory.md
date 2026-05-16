@@ -107,3 +107,12 @@ node -e "const m=require('node_modules/<lib>/lib/<sub>/index.js'); console.log(O
 2. 改假设不重置熔断计数——同一症状下的所有尝试合并算
 3. 用任何第三方 SDK 之前先 `cat node_modules/<lib>/README.md` 或 `node -e require()` 探 exports
 4. retrieval 不是"找 fix 的地方"，是"动手前建立 prior 概率"——开工前用，不是卡壳后用
+
+## Python heredoc / shell 拼接中文长文本的编码与引用坑
+
+**现象**：用 `python3 - <<'PY'` 执行包含中文字符串的脚本时，可能报 `SyntaxError: Non-UTF-8 code starting with ... but no encoding declared`；改用 `python3 -c "..."` 时，如果说明文本里含反引号，zsh 会先做命令替换，出现 `command not found` 或 glob qualifier 错误。
+
+**根因**：长 Markdown/中文内容直接嵌入 shell 命令会同时踩 Python 源码编码和 shell 引用/命令替换规则；失败常发生在解析阶段，尚未进入文件 I/O。
+
+**规避**：写中文长文本优先用 `apply_patch`；若必须跨沙箱用脚本写外部路径，让 shell 只传 ASCII（如 base64 载荷），再由 Python 解码并 `write_text(..., encoding='utf-8')`。不要把包含中文、反引号或大量 Markdown 的正文直接塞进 heredoc / `python -c` 命令字符串。
+

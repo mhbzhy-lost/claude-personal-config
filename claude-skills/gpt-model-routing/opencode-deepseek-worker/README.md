@@ -12,7 +12,7 @@ plugins, skills, sessions, or Superpowers context.
 ```text
 Codex / GPT-5.5
   -> task capsule
-  -> claude-skills/opencode-deepseek-worker/bin/run.sh
+  -> claude-skills/gpt-model-routing/opencode-deepseek-worker/bin/run.sh
   -> clean OpenCode XDG dirs + isolated git worktree
   -> opencode run
   -> diff + write-scope guard + validation result
@@ -21,7 +21,7 @@ Codex / GPT-5.5
 ## Usage
 
 ```bash
-claude-skills/opencode-deepseek-worker/bin/run.sh \
+claude-skills/gpt-model-routing/opencode-deepseek-worker/bin/run.sh \
   --repo /path/to/repo \
   --task /tmp/task-capsule.md \
   --write-scope src/auth,tests/auth \
