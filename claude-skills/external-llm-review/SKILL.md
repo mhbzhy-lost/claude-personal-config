@@ -39,7 +39,9 @@ API 须兼容以下三种协议之一（`EXTERNAL_LLM_API_FORMAT` 切换）：
 
 ```bash
 cd <repo-root>   # 工作树根
-EXTERNAL_LLM_API_FORMAT=anthropic uv run --no-project \
+EXTERNAL_LLM_API_FORMAT=chat \
+EXTERNAL_LLM_CACHE_MODE=qwen-explicit \
+uv run --no-project \
     --with "openai>=1.50" --with "anthropic>=0.40" --with python-dotenv \
     python ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py \
     <BASE_SHA> <HEAD_SHA> \
@@ -57,7 +59,7 @@ EXTERNAL_LLM_API_FORMAT=anthropic uv run --no-project \
 - `--worktree` —— 默认 `.`；评 worktree 时填 `.worktrees/<task>`
 - `--spec` —— 把 spec 文件附给模型做"对契约"评审
 - `--max-diff` —— diff 字符上限（默认 80000，防网关 413）
-- `--cache-mode` —— prompt cache 模式；默认 `EXTERNAL_LLM_CACHE_MODE` 或 `off`
+- `--cache-mode` —— prompt cache 模式；使用规范默认走带 cache 调用：支持显式 cache 的 `chat` endpoint（如 Qwen / DashScope）设置 `EXTERNAL_LLM_CACHE_MODE=qwen-explicit`，不支持的协议才退回 `off`
 - `--cache-prefix` —— 稳定上下文文件，置于 diff 前；可重复传多个
 - `--cache-diff` —— 显式把 diff 也纳入 cache marker；默认关闭，仅适合同一 diff 多轮 review
 
@@ -65,7 +67,7 @@ EXTERNAL_LLM_API_FORMAT=anthropic uv run --no-project \
 
 ## Qwen 显式缓存
 
-当 endpoint 是 Qwen / DashScope OpenAI-compatible Chat Completions 且需要显式缓存时：
+默认按“多轮 review 很常见”处理：当 endpoint 是 Qwen / DashScope OpenAI-compatible Chat Completions 时，优先启用显式缓存，降低连续 review / fix / re-review 的重复上下文成本：
 
 ```bash
 EXTERNAL_LLM_API_FORMAT=chat \
@@ -79,6 +81,7 @@ uv run --no-project \
 
 实现策略：
 
+- 使用规范默认启用 `qwen-explicit`；仅当 endpoint 不支持显式缓存、合规要求不允许、或排查 cache 行为本身时，才显式设为 `off`。
 - 只在 `chat` 协议启用 `qwen-explicit`；`responses` / `anthropic` 路径保持原样。
 - 默认缓存稳定上下文：系统评审规则、`--spec`、`--cache-prefix` 文件。
 - 默认不缓存 git diff。只有当同一任务围绕同一份 diff 多轮 review/追问时，才用 `--cache-diff` 或 `EXTERNAL_LLM_CACHE_DIFF=true`。
@@ -141,4 +144,3 @@ EXTERNAL_LLM_API_FORMAT=anthropic uv run --no-project \
 - `qwen-explicit` 缓存通过 OpenAI Chat Completions content block 的 `cache_control` marker 表达
 - temperature=0.2（评审任务希望稳定）
 - 失败时打印 stderr 并退出非零
-
