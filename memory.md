@@ -197,3 +197,40 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PA
 ```
 
 同时避免 zsh 特殊变量名（见 `status/path` 章节）。
+
+## Codex MCP 配置指向缺失 .venv/bin/python 会 ENOENT
+
+**现象**：远端启动 `codex` 时出现：
+
+```text
+MCP client for `block-catalog` failed to start: MCP startup failed: No such file or directory (os error 2)
+MCP client for `skill-catalog` failed to start: MCP startup failed: No such file or directory (os error 2)
+```
+
+**根因**：`~/.codex/config.toml` 的 `mcp_servers.<name>.command` 使用绝对路径指向
+某个 MCP 项目的 `.venv/bin/python`。如果 `.venv` 没创建、被清理、或目录存在但
+`bin/python` 缺失，Codex 在 spawn 阶段直接收到 OS `ENOENT`，还没进入 Python
+模块导入。
+
+**诊断**：
+
+```sh
+grep -A5 'mcp_servers' ~/.codex/config.toml
+test -x /path/to/mcp/.venv/bin/python || echo missing
+/path/to/mcp/.venv/bin/python -c 'import importlib.util; print(importlib.util.find_spec("pkg.server"))'
+```
+
+不要用 `python -m pkg.server` 做导入验证，因为 MCP server 模块可能在 import/startup
+阶段读取 env 并退出。用 `importlib.util.find_spec` 验证模块可发现性更安全。
+
+**修复**：在 MCP 项目目录重建 venv 并 editable 安装。若 `.venv` 目录存在但不完整，
+用 `--clear`：
+
+```sh
+cd /path/to/mcp/skill-catalog
+uv venv --clear --python 3.14 .venv
+.venv/bin/python -m pip install -e .
+```
+
+若项目声明 `requires-python >=3.11`，不要用 macOS `/usr/bin/python3`（常见为
+3.9.x）；优先用 `uv` 管理的 Python。
