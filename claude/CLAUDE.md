@@ -128,6 +128,9 @@ bugfix 流程硬约束，优先级高于 §5 的"高风险任务才上"。
 - 使用 `superpowers:subagent-driven-development` / `dispatching-parallel-agents`
   时，implementer / worker 默认走 `opencode-deepseek-worker` skill，由
   `opencode + deepseekv4pro` 在隔离 worktree 中执行实际任务并产出候选 diff。
+- 派发前必须先按 `opencode-deepseek-worker` skill 的职责描述判断是否适用；
+  不在其职责范围内的任务，不得强行派给 DeepSeek worker，必须 fallback 回主对话
+  当前使用的模型执行。
 - reviewer / final reviewer 不走 DeepSeek worker；仍由当前宿主按 review skill
   与外源复审规则执行。
 - 主 agent 负责拆 task、写清 write scope / validation、审查 worker diff、合并
@@ -241,4 +244,3 @@ coding 任务原则上严格按该流程执行。
   等环境特征时，先排查环境再回到 RED 判定
 - e2e 的 mock 边界：有副作用的外部依赖（付费、邮件、短信）必须 stub；
   只读类外部 API 按真实成本与稳定性决定
-
