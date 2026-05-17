@@ -11,6 +11,8 @@
 #                                      skills 暂不暴露时的 fallback）
 #   - `codex/hooks.json`          -> 渲染到 `~/.codex/hooks.json`
 #   - `mcp/*`                     -> 合并到 `~/.codex/config.toml`
+#   - `mcp/skill-catalog/vendor/ollama` 与 `bge-m3` embedding 模型
+#                                  -> skill-catalog MCP 启动所需的本地运行时
 #
 # 设计原则：
 #   - 幂等：重复执行不应产生额外副作用
@@ -251,6 +253,146 @@ ensure_block_catalog_venv() {
   fi
 }
 
+manifest_path_for_ollama_model() {
+  local models_dir="$1"
+  local model="$2"
+  local name tag
+
+  if [[ "$model" == *:* ]]; then
+    name="${model%%:*}"
+    tag="${model##*:}"
+  else
+    name="$model"
+    tag="latest"
+  fi
+
+  echo "$models_dir/manifests/registry.ollama.ai/library/$name/$tag"
+}
+
+ensure_skill_catalog_ollama() {
+  local ollama_version="${OLLAMA_VERSION:-v0.21.0}"
+  local embedding_model="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
+  local ollama_port="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
+  local ollama_host_url="http://127.0.0.1:${ollama_port}"
+  local ollama_dir="$SRC/mcp/skill-catalog/vendor/ollama"
+  local ollama_bin="$ollama_dir/ollama"
+  local ollama_models_dir="$SRC/mcp/skill-catalog/.ollama-models"
+  local ollama_runtime_dir="$SRC/mcp/skill-catalog/.ollama-runtime"
+
+  mkdir -p "$ollama_dir" "$ollama_models_dir" "$ollama_runtime_dir"
+
+  if [ -x "$ollama_bin" ]; then
+    echo "[ok] ollama binary already ready: $ollama_bin"
+  else
+    local os
+    os="$(uname -s)"
+    case "$os" in
+      Darwin)
+        local tmpfile="$ollama_dir/ollama-darwin.tgz"
+        echo "[ollama] downloading $ollama_version for macOS..."
+        if curl -fL -o "$tmpfile" "https://github.com/ollama/ollama/releases/download/$ollama_version/ollama-darwin.tgz"; then
+          tar -xzf "$tmpfile" -C "$ollama_dir"
+          rm -f "$tmpfile"
+          echo "[ok] ollama binary downloaded to $ollama_dir"
+        else
+          rm -f "$tmpfile"
+          echo "[warn] ollama binary download failed; skill-catalog MCP may fail until rerun"
+          return
+        fi
+        ;;
+      Linux)
+        local arch ollama_arch tmpfile tarfile
+        arch="$(uname -m)"
+        case "$arch" in
+          x86_64) ollama_arch="amd64" ;;
+          aarch64|arm64) ollama_arch="arm64" ;;
+          *)
+            echo "[warn] unsupported Linux arch for local ollama: $arch"
+            return
+            ;;
+        esac
+
+        tmpfile="$ollama_dir/ollama-linux.tar.zst"
+        tarfile="${tmpfile%.zst}"
+        echo "[ollama] downloading $ollama_version for Linux $ollama_arch..."
+        if ! curl -fL -o "$tmpfile" "https://github.com/ollama/ollama/releases/download/$ollama_version/ollama-linux-$ollama_arch.tar.zst"; then
+          rm -f "$tmpfile"
+          echo "[warn] ollama binary download failed; skill-catalog MCP may fail until rerun"
+          return
+        fi
+        if ! command -v zstd >/dev/null 2>&1; then
+          rm -f "$tmpfile"
+          echo "[warn] zstd is required to unpack Linux ollama; install zstd and rerun"
+          return
+        fi
+        zstd -d "$tmpfile" -o "$tarfile"
+        tar -xf "$tarfile" -C "$ollama_dir"
+        rm -f "$tmpfile" "$tarfile"
+        echo "[ok] ollama binary downloaded to $ollama_dir"
+        ;;
+      *)
+        echo "[warn] unsupported OS for local ollama: $os"
+        return
+        ;;
+    esac
+  fi
+
+  if [ ! -x "$ollama_bin" ]; then
+    echo "[warn] ollama binary is not executable at $ollama_bin"
+    return
+  fi
+
+  local manifest
+  manifest="$(manifest_path_for_ollama_model "$ollama_models_dir" "$embedding_model")"
+  if [ -e "$manifest" ]; then
+    echo "[ok] ollama model $embedding_model already ready"
+    return
+  fi
+
+  local temp_daemon_pid=""
+  local daemon_already_running=false
+
+  if curl -sf --max-time 1 "$ollama_host_url/api/tags" >/dev/null 2>&1; then
+    daemon_already_running=true
+    echo "[ollama] daemon already running at $ollama_host_url; reusing it to pull $embedding_model"
+  else
+    echo "[ollama] starting temporary daemon to pull $embedding_model..."
+    OLLAMA_HOST="127.0.0.1:$ollama_port" \
+    OLLAMA_MODELS="$ollama_models_dir" \
+    OLLAMA_KEEP_ALIVE="5m" \
+    nohup "$ollama_bin" serve > "$ollama_runtime_dir/ollama-init.log" 2>&1 &
+    temp_daemon_pid=$!
+
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      if curl -sf --max-time 1 "$ollama_host_url/api/tags" >/dev/null 2>&1; then
+        echo "[ok] temporary ollama daemon ready (pid=$temp_daemon_pid)"
+        break
+      fi
+      sleep 1
+    done
+  fi
+
+  echo "[ollama] pulling model $embedding_model..."
+  if OLLAMA_HOST="$ollama_host_url" OLLAMA_MODELS="$ollama_models_dir" "$ollama_bin" pull "$embedding_model"; then
+    echo "[ok] ollama model $embedding_model ready"
+  else
+    echo "[warn] failed to pull ollama model $embedding_model; check network and rerun"
+  fi
+
+  if [ "$daemon_already_running" = "false" ] && [ -n "$temp_daemon_pid" ]; then
+    kill -TERM "$temp_daemon_pid" 2>/dev/null || true
+    for i in 1 2 3 4 5; do
+      if ! kill -0 "$temp_daemon_pid" 2>/dev/null; then
+        break
+      fi
+      sleep 1
+    done
+    kill -9 "$temp_daemon_pid" 2>/dev/null || true
+    echo "[ok] temporary ollama daemon stopped"
+  fi
+}
+
 write_codex_managed_config() {
   mkdir -p "$CODEX_HOME"
   touch "$CONFIG_PATH"
@@ -377,6 +519,7 @@ sync_superpowers_skills_fallback
 render_hooks_json
 ensure_skill_catalog_venv
 ensure_block_catalog_venv
+ensure_skill_catalog_ollama
 write_codex_managed_config
 
 echo "[done] init_codex.sh completed"
