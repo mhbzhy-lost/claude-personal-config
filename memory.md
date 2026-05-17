@@ -116,3 +116,84 @@ node -e "const m=require('node_modules/<lib>/lib/<sub>/index.js'); console.log(O
 
 **规避**：写中文长文本优先用 `apply_patch`；若必须跨沙箱用脚本写外部路径，让 shell 只传 ASCII（如 base64 载荷），再由 Python 解码并 `write_text(..., encoding='utf-8')`。不要把包含中文、反引号或大量 Markdown 的正文直接塞进 heredoc / `python -c` 命令字符串。
 
+## zsh 脚本避免覆盖特殊参数 status/path
+
+**现象**：远端 zsh wrapper 中使用 `status=$?` 会报 `read-only variable: status`；
+函数中使用 `local path="$1"` 后，即使 `PATH` 原本包含 `/bin`，函数内仍可能报
+`command not found: cp`。
+
+**根因**：zsh 有若干特殊参数。`status` 是上一条命令退出码的只读参数；`path`
+是与 `PATH` 绑定的数组。把普通业务变量命名为 `status` 或 `path` 会覆盖/触发
+这些特殊语义，破坏状态保存或命令查找。
+
+**规避**：zsh 脚本里不要用 `status`、`path` 作普通变量名。保存退出码用
+`exit_code`，文件路径变量用 `target_file`、`file_path`、`script_path` 等。
+
+## 远程 SSH 脚本执行的 zsh/macOS 坑
+
+**场景**：通过 `ssh host 'zsh -s' <<'REMOTE'` 或封装脚本在远端 macOS 上安装
+Homebrew 工具、改 `.zshrc`、配置开发环境。
+
+**坑 1：不要把长脚本直接流给远端 shell 的 stdin。**
+
+如果脚本中途执行 `brew install`、安装器或其他可能读 stdin 的子进程，子进程可能
+消费后续脚本文本，导致后半段配置静默不执行。更稳的模式是先把脚本写入远端临时
+文件，再执行该文件：
+
+```sh
+tmp_script="$(mktemp -t setup-name)"
+trap 'rm -f "${tmp_script}"' EXIT
+cat >"${tmp_script}"
+zsh "${tmp_script}"
+```
+
+**坑 2：macOS/BSD `mktemp` 和 GNU 行为不同。**
+
+macOS 上优先用 `mktemp -t name`。不要依赖 GNU 风格的后缀模板，如
+`mktemp /tmp/name.XXXXXX.zsh`，否则可能在远端生成失败或行为不一致。
+
+**坑 3：zsh glob 无匹配默认报错。**
+
+清理 `~/.pyenv.disabled.*` 这类路径时，如果没有匹配项，zsh 会报
+`no matches found`。需要用 zsh null-glob qualifier：
+
+```zsh
+for pyenv_dir in "${HOME}/.pyenv" "${HOME}"/.pyenv.disabled.*(N); do
+  ...
+done
+```
+
+**坑 4：非交互 shell 不应加载需要 TTY/ZLE 的插件。**
+
+`fzf` key-bindings、`uv` completion、任何调用 `zle` 的脚本都应加 TTY guard：
+
+```zsh
+if [[ -t 0 && -t 1 ]]; then
+  ...
+fi
+```
+
+否则远端非交互验证可能出现 `(eval):1: can't change option: zle`，或在没有终端时
+阻塞/输出噪声。托管 `.zshrc` 也应区分基础环境和交互增强：`PATH/proxy/LANG`
+可在非交互加载，prompt、completion、key binding 只在交互 shell 加载。
+
+**坑 5：修改 `.zshrc` 要可重复、可回滚、尽量原子。**
+
+不要直接覆盖用户整份 `.zshrc`。更稳做法：
+
+- 先备份原文件
+- 把大段配置写入 `~/.zshrc.d/<name>.zsh`
+- 在 `.zshrc` 中只维护一段有 marker 的 source block
+- 重跑时先删除旧 marker block 再追加新 block
+- 用临时文件 + `mv` 替换 `.zshrc`，不要 `cat tmp > ~/.zshrc` 截断式写入
+
+**坑 6：远端命令的 `PATH` 不可信。**
+
+远端非登录 shell、用户旧 dotfile 或 zsh 特殊变量污染都可能导致 `cp/mv/awk/rm`
+解析异常。远程脚本开头显式设置基础路径：
+
+```zsh
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+```
+
+同时避免 zsh 特殊变量名（见 `status/path` 章节）。
