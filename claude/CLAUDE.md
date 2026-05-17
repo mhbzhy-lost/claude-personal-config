@@ -126,15 +126,12 @@ bugfix 流程硬约束，优先级高于 §5 的"高风险任务才上"。
 ## 3. subagents worker 执行策略
 
 - 使用 `superpowers:subagent-driven-development` / `dispatching-parallel-agents`
-  时，implementer / worker 默认走 `opencode-deepseek-worker` skill，由
-  `opencode + deepseekv4pro` 在隔离 worktree 中执行实际任务并产出候选 diff。
-- 派发前必须先按 `opencode-deepseek-worker` skill 的职责描述判断是否适用；
-  不在其职责范围内的任务，不得强行派给 DeepSeek worker，必须 fallback 回主对话
-  当前使用的模型执行。
+  时，implementer / worker 默认走 `opencode-deepseek-worker` skill；是否适用、
+  如何派发、如何验收，全部以该 skill 文档声明为准。
+- 不在 `opencode-deepseek-worker` skill 职责范围内的任务，不得强行派给该
+  worker，必须 fallback 回主对话当前使用的模型执行。
 - reviewer / final reviewer 不走 DeepSeek worker；仍由当前宿主按 review skill
   与外源复审规则执行。
-- 主 agent 负责拆 task、写清 write scope / validation、审查 worker diff、合并
-  approved 变更并在主 checkout 重跑验证；不得把架构决策或最终判断交给 worker。
 
 ## 4. 不阻塞：subagent 后台执行
 

@@ -150,17 +150,14 @@ bugfix 流程硬约束，优先级高于 §5 的"高风险任务才上"。
 ## 3. subagents worker 执行策略
 
 - 使用 `superpowers:subagent-driven-development` / `dispatching-parallel-agents`
-  时，implementer / worker 默认走 `opencode-deepseek-worker` skill，由
-  `opencode + deepseekv4pro` 在隔离 worktree 中执行实际任务并产出候选 diff。
-- 派发前必须先按 `opencode-deepseek-worker` skill 的职责描述判断是否适用；
-  不在其职责范围内的任务，不得强行派给 DeepSeek worker，必须 fallback 回主对话
-  当前使用的模型执行。
+  时，implementer / worker 默认走 `opencode-deepseek-worker` skill；是否适用、
+  如何派发、如何验收，全部以该 skill 文档声明为准。
+- 不在 `opencode-deepseek-worker` skill 职责范围内的任务，不得强行派给该
+  worker，必须 fallback 回主对话当前使用的模型执行。
 - reviewer / final reviewer 不走 DeepSeek worker；仍由当前宿主按 review skill
   与外源复审规则执行。
-- 主 agent 负责拆 task、写清 write scope / validation、审查 worker diff、合并
-  approved 变更并在主 checkout 重跑验证；不得把架构决策或最终判断交给 worker。
 
-> **原因**：旧的统一模型分档入口不再维护；当前可复用价值集中在 OpenCode DeepSeek worker 的执行协议。把 implementer / worker 默认交给 `opencode-deepseek-worker` 可以让 Superpowers 的实际编码执行有固定产线，同时保留主 agent 的任务拆分、review、合并和验证职责。但默认不是无条件强派：职责边界之外的任务交给 DeepSeek 会把不适合候选 diff 产线的问题硬塞进 worker，反而降低判断质量。因此必须先按 skill 描述判定，超界时回退到主对话当前模型。DeepSeek worker 只产候选 diff，不承担架构和最终判断，避免把执行能力误当成审查能力。
+> **原因**：CLAUDE.md 只保留调度入口和 fallback 原则，避免复述 `opencode-deepseek-worker` 的职责、派发和验收细节。这样 worker skill 文档演进时，只需要改一处；全局规则仍能约束 agent 先遵循该 skill 的声明，超界时回退到主对话当前模型。
 
 ## 4. 不阻塞：subagent 后台执行
 
