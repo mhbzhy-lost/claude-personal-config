@@ -6,6 +6,50 @@ import reviewer
 
 
 class QwenExplicitCacheMessagesTest(unittest.TestCase):
+    def test_exhaustive_protocol_asks_for_broad_single_pass_report(self):
+        protocol = reviewer.build_review_protocol(
+            review_depth="exhaustive",
+            review_round=1,
+            max_issues=25,
+        )
+
+        self.assertIn("最多报告 25 个问题", protocol)
+        self.assertIn("不要只报告 top 3", protocol)
+        self.assertIn("逐项检查清单", protocol)
+        self.assertIn("已检查但未发现问题", protocol)
+
+    def test_second_round_protocol_limits_scope(self):
+        protocol = reviewer.build_review_protocol(
+            review_depth="exhaustive",
+            review_round=2,
+            max_issues=25,
+        )
+
+        self.assertIn("第二轮", protocol)
+        self.assertIn("只验证上一轮已修复项", protocol)
+        self.assertIn("不要扩展到无关历史问题", protocol)
+
+    def test_review_user_prompt_includes_protocol_before_diff(self):
+        prompt = reviewer.build_review_user_prompt(
+            base_sha="abcdef123",
+            head_sha="123456abc",
+            diff="+changed",
+            truncated=False,
+            review_depth="exhaustive",
+            review_round=1,
+            max_issues=25,
+        )
+
+        self.assertLess(prompt.index("## Review Protocol"), prompt.index("## Git Diff"))
+        self.assertIn("最多报告 25 个问题", prompt)
+        self.assertIn("+changed", prompt)
+
+    def test_parser_rejects_review_round_above_two(self):
+        parser = reviewer.build_arg_parser()
+
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["base", "head", "--review-round", "3"])
+
     def test_default_chat_messages_are_plain_strings(self):
         messages = reviewer.build_chat_messages(
             user_prompt="review this diff",

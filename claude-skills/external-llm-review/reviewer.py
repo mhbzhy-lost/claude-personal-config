@@ -12,6 +12,8 @@ chat-completions endpoint, and prints the model's structured review to stdout.
 Usage:
     python reviewer.py <BASE_SHA> <HEAD_SHA> \
         [--worktree PATH] [--spec FILE] [--max-diff N]
+        [--review-depth standard|exhaustive] [--review-round 1|2]
+        [--max-issues N] [--max-output-tokens N]
         [--cache-mode off|qwen-explicit] [--cache-prefix FILE] [--cache-diff]
 
 Sandbox warning: this script POSTs source diffs to an external endpoint. Run only
@@ -32,6 +34,8 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 _CACHE_MODES = ("off", "qwen-explicit")
+_REVIEW_DEPTHS = ("standard", "exhaustive")
+_REVIEW_ROUNDS = (1, 2)
 _REDACTED = "[redacted]"
 _SENSITIVE_BODY_PATTERNS = (
     re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s\"',}]+"),
@@ -50,6 +54,11 @@ _REVIEW_SYSTEM_PROMPT = """你是一名资深代码评审者。被评审代码�
 5. 子进程 / 网络错误诊断：stderr / response body 要保留到错误信息里，便于排查
 6. 安全 / 数据泄露：敏感字段（凭据 / 用户输入）不要进日志或异常 message
 
+评审方式：
+- 不要只报告 top 3。先系统性扫描候选风险，再合并同类项，最后按严重度输出。
+- 同类问题应归并为一条模式级 issue，并列出受影响文件/路径。
+- 如果某个检查维度未发现问题，必须在 Checklist Coverage 中说明已检查。
+
 输出格式（严格遵守）：
 
 ### Strengths
@@ -66,10 +75,86 @@ _REVIEW_SYSTEM_PROMPT = """你是一名资深代码评审者。被评审代码�
 #### Minor (Nice to Have)
 [风格 / 微优化]
 
+### Checklist Coverage
+[列出已检查但未发现问题的维度；若 diff 不适用，也说明 N/A]
+
 ### Assessment
 
 **Ready to merge?** Yes | No | With fixes
 **Reasoning:** 一两句话说明判断依据。
+"""
+
+
+def build_review_protocol(
+    *,
+    review_depth: str,
+    review_round: int,
+    max_issues: int,
+) -> str:
+    if review_depth not in _REVIEW_DEPTHS:
+        raise ValueError(f"unsupported review depth: {review_depth}")
+    if review_round not in _REVIEW_ROUNDS:
+        raise ValueError(f"review_round must be 1 or 2, got {review_round}")
+
+    shared = f"""## Review Protocol
+
+- 最多报告 {max_issues} 个问题；不要只报告 top 3。
+- 先枚举候选风险，再合并重复/同模式问题，最后按 Critical / Important / Minor 分类。
+- 同一模式影响多个文件时，归并为一条 issue，并列出代表性 file:line 与受影响范围。
+- 对每条 Critical / Important 给出可验证证据：file:line、触发条件、为什么现有测试/逻辑挡不住。
+- 必须输出 Checklist Coverage，列出已检查但未发现问题的维度；不适用项写 N/A。
+
+逐项检查清单：
+1. 实现是否真正满足 spec / bug-analysis 的根因与影响范围
+2. 入口参数、help、dry-run 是否会误触发网络/写文件/远端副作用
+3. 临时文件、trap、exec、cleanup、stdin/stdout/stderr 处理是否可靠
+4. shell 兼容性：bash/zsh 特殊变量、set -euo pipefail、mktemp、glob、TTY/非 TTY
+5. 子进程 / 网络错误是否保留 stderr / response body / 可诊断上下文
+6. 幂等性、重复执行、部分失败、回滚/备份是否安全
+7. 输入边界、路径穿越、敏感信息泄露、权限边界是否合理
+8. 并发/异步/缓存/状态共享是否引入竞态或陈旧状态
+9. 新增测试是否覆盖根因路径和影响范围，而不是只覆盖表面失败
+"""
+
+    if review_depth == "standard":
+        depth_note = "- 本轮是 standard review：优先报告证据明确、影响实际运行的缺陷。"
+    else:
+        depth_note = "- 本轮是 exhaustive review：尽量在单次报告中暴露完整问题面，不要留到后续轮次再补充。"
+
+    if review_round == 1:
+        round_note = """- 第一轮：做完整横向扫描，目标是在本轮暴露主要问题面。
+- 不要因为已找到几个问题就停止；继续扫完整个 diff 和检查清单。"""
+    else:
+        round_note = """- 第二轮：只验证上一轮已修复项、修复引入的新 diff、以及仍然直接阻断合并的 Critical/Important。
+- 不要扩展到无关历史问题；除非它会被本轮改动实际触发或构成 Critical 风险。"""
+
+    return "\n".join([shared.rstrip(), depth_note, round_note]).strip()
+
+
+def build_review_user_prompt(
+    *,
+    base_sha: str,
+    head_sha: str,
+    diff: str,
+    truncated: bool,
+    review_depth: str,
+    review_round: int,
+    max_issues: int,
+) -> str:
+    protocol = build_review_protocol(
+        review_depth=review_depth,
+        review_round=review_round,
+        max_issues=max_issues,
+    )
+    return f"""{protocol}
+
+## Git Diff ({base_sha[:7]}..{head_sha[:7]}{', truncated' if truncated else ''})
+
+```diff
+{diff}
+```
+
+请按系统提示要求的格式输出评审结果。
 """
 
 
@@ -229,6 +314,16 @@ def env_flag(name: str) -> bool:
 
 
 async def main() -> int:
+    parser = build_arg_parser()
+    args = parser.parse_args()
+
+    skill_dir = Path(__file__).resolve().parent
+    load_dotenv(skill_dir / ".env")
+
+    return await run_review(args=args, skill_dir=skill_dir)
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("base_sha", help="git base commit (e.g. main, 76bddc5)")
     parser.add_argument("head_sha", help="git head commit (the changes to review)")
@@ -236,6 +331,31 @@ async def main() -> int:
     parser.add_argument("--spec", help="optional spec/requirements file path")
     parser.add_argument("--max-diff", type=int, default=80000,
                         help="char cap on diff sent to model (default 80000)")
+    parser.add_argument(
+        "--review-depth",
+        choices=_REVIEW_DEPTHS,
+        default=None,
+        help="review depth (default: EXTERNAL_LLM_REVIEW_DEPTH or exhaustive)",
+    )
+    parser.add_argument(
+        "--review-round",
+        type=int,
+        choices=_REVIEW_ROUNDS,
+        default=1,
+        help="review round for this diff; only 1 or 2 are supported",
+    )
+    parser.add_argument(
+        "--max-issues",
+        type=int,
+        default=25,
+        help="maximum number of issues the reviewer should report (default 25)",
+    )
+    parser.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=12000,
+        help="maximum model output tokens (default 12000; set <=0 to omit)",
+    )
     parser.add_argument(
         "--cache-mode",
         choices=_CACHE_MODES,
@@ -254,11 +374,10 @@ async def main() -> int:
         default=False,
         help="also mark the diff block cacheable in qwen-explicit mode",
     )
-    args = parser.parse_args()
+    return parser
 
-    skill_dir = Path(__file__).resolve().parent
-    load_dotenv(skill_dir / ".env")
 
+async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
     base_url = os.environ.get("EXTERNAL_LLM_API_BASE", "").strip().rstrip("/")
     api_key = os.environ.get("EXTERNAL_LLM_API_KEY", "").strip()
     model = os.environ.get("EXTERNAL_LLM_MODEL", "").strip()
@@ -266,6 +385,10 @@ async def main() -> int:
     cache_mode = (
         args.cache_mode
         or os.environ.get("EXTERNAL_LLM_CACHE_MODE", "off").strip().lower()
+    )
+    review_depth = (
+        args.review_depth
+        or os.environ.get("EXTERNAL_LLM_REVIEW_DEPTH", "exhaustive").strip().lower()
     )
     cache_diff = args.cache_diff or env_flag("EXTERNAL_LLM_CACHE_DIFF")
 
@@ -281,6 +404,17 @@ async def main() -> int:
             f"ERROR: EXTERNAL_LLM_CACHE_MODE/--cache-mode must be one of {_CACHE_MODES}, got {cache_mode!r}",
             file=sys.stderr,
         )
+        return 1
+
+    if review_depth not in _REVIEW_DEPTHS:
+        print(
+            f"ERROR: EXTERNAL_LLM_REVIEW_DEPTH/--review-depth must be one of {_REVIEW_DEPTHS}, got {review_depth!r}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.max_issues < 1:
+        print("ERROR: --max-issues must be >= 1", file=sys.stderr)
         return 1
 
     if cache_mode != "off" and api_format != "chat":
@@ -342,19 +476,22 @@ async def main() -> int:
         except (OSError, ValueError) as e:
             print(f"WARN: could not read --cache-prefix {cache_prefix}: {e}", file=sys.stderr)
 
-    user_prompt = f"""## Git Diff ({args.base_sha[:7]}..{args.head_sha[:7]}{', truncated' if truncated else ''})
-
-```diff
-{diff}
-```
-
-请按系统提示要求的格式输出评审结果。
-"""
+    user_prompt = build_review_user_prompt(
+        base_sha=args.base_sha,
+        head_sha=args.head_sha,
+        diff=diff,
+        truncated=truncated,
+        review_depth=review_depth,
+        review_round=args.review_round,
+        max_issues=args.max_issues,
+    )
 
     print(
         f"[external-llm-review] model={model} base={base_url} format={api_format}"
         f" diff_chars={len(diff)}{' (truncated)' if truncated else ''}"
-        f" cache_mode={cache_mode}{' cache_diff=true' if cache_diff else ''}",
+        f" cache_mode={cache_mode}{' cache_diff=true' if cache_diff else ''}"
+        f" review_depth={review_depth} review_round={args.review_round}"
+        f" max_issues={args.max_issues}",
         file=sys.stderr,
     )
 
@@ -363,7 +500,7 @@ async def main() -> int:
             async with AsyncAnthropic(api_key=api_key, base_url=base_url) as aclient:
                 resp = await aclient.messages.create(
                     model=model,
-                    max_tokens=8192,
+                    max_tokens=args.max_output_tokens if args.max_output_tokens > 0 else 8192,
                     system=_REVIEW_SYSTEM_PROMPT,
                     messages=[
                         {
@@ -384,6 +521,9 @@ async def main() -> int:
         else:
             async with AsyncOpenAI(api_key=api_key, base_url=base_url) as oclient:
                 if api_format == "responses":
+                    response_kwargs = {}
+                    if args.max_output_tokens > 0:
+                        response_kwargs["max_output_tokens"] = args.max_output_tokens
                     resp = await oclient.responses.create(
                         model=model,
                         instructions=_REVIEW_SYSTEM_PROMPT,
@@ -394,9 +534,13 @@ async def main() -> int:
                         ),
                         temperature=0.2,
                         timeout=180,
+                        **response_kwargs,
                     )
                     content = (resp.output_text or "").strip()
                 else:
+                    chat_kwargs = {}
+                    if args.max_output_tokens > 0:
+                        chat_kwargs["max_tokens"] = args.max_output_tokens
                     resp = await oclient.chat.completions.create(
                         model=model,
                         messages=build_chat_messages(
@@ -408,6 +552,7 @@ async def main() -> int:
                         ),
                         temperature=0.2,
                         timeout=180,
+                        **chat_kwargs,
                     )
                     cache_usage = format_cache_usage(resp.usage)
                     if cache_usage:

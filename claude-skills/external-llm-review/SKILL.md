@@ -48,6 +48,10 @@ uv run --no-project \
     [--worktree PATH] \
     [--spec docs/superpowers/specs/foo.md] \
     [--max-diff 80000] \
+    [--review-depth standard|exhaustive] \
+    [--review-round 1|2] \
+    [--max-issues 25] \
+    [--max-output-tokens 12000] \
     [--cache-mode off|qwen-explicit] \
     [--cache-prefix docs/review-context.md] \
     [--cache-diff]
@@ -59,11 +63,63 @@ uv run --no-project \
 - `--worktree` —— 默认 `.`；评 worktree 时填 `.worktrees/<task>`
 - `--spec` —— 把 spec 文件附给模型做"对契约"评审
 - `--max-diff` —— diff 字符上限（默认 80000，防网关 413）
+- `--review-depth` —— 评审深度；默认 `exhaustive`，要求单轮尽量暴露完整问题面；需要快速 smoke review 时才设 `standard`
+- `--review-round` —— 当前 diff 的评审轮次，只允许 `1` 或 `2`；默认 `1`
+- `--max-issues` —— 单轮最多报告的问题数，默认 `25`；同类问题应归并为模式级 issue
+- `--max-output-tokens` —— 模型输出 token 上限，默认 `12000`，用于支撑穷举式报告
 - `--cache-mode` —— prompt cache 模式；使用规范默认走带 cache 调用：支持显式 cache 的 `chat` endpoint（如 Qwen / DashScope）设置 `EXTERNAL_LLM_CACHE_MODE=qwen-explicit`，不支持的协议才退回 `off`
 - `--cache-prefix` —— 稳定上下文文件，置于 diff 前；可重复传多个
 - `--cache-diff` —— 显式把 diff 也纳入 cache marker；默认关闭，仅适合同一 diff 多轮 review
 
-**stdout 输出**：模型返回的 review markdown（Strengths / Critical / Important / Minor / Assessment）。**stderr** 是诊断信息。
+**stdout 输出**：模型返回的 review markdown（Strengths / Critical / Important / Minor / Checklist Coverage / Assessment）。**stderr** 是诊断信息。
+
+## 轮次上限与穷举机制
+
+外源 review **同一 diff 最多 2 轮**，不得为了追求 `Ready to merge: Yes` 无限循环。
+
+### Round 1：穷举式横扫
+
+默认调用即 Round 1：
+
+```bash
+EXTERNAL_LLM_API_FORMAT=chat \
+EXTERNAL_LLM_CACHE_MODE=qwen-explicit \
+uv run --no-project \
+  --with "openai>=1.50" --with "anthropic>=0.40" --with python-dotenv \
+  python ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py \
+  main HEAD \
+  --review-depth exhaustive \
+  --review-round 1 \
+  --max-issues 25 \
+  --spec docs/superpowers/specs/foo.md
+```
+
+Round 1 prompt 会强制 reviewer：
+
+- 不只报告 top 3，而是先枚举候选风险、归并同类项、再分级
+- 按 checklist 扫参数/help 副作用、stdin/trap/cleanup、shell 兼容、错误诊断、幂等/回滚、输入边界、并发/缓存、测试覆盖
+- 输出 `Checklist Coverage`，明确哪些维度已检查但未发现问题
+
+### Round 2：只验修复与新增风险
+
+只有当 Round 1 发现需要修改的 Critical / Important，且修复后验证全部通过，才跑 Round 2：
+
+```bash
+python ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py \
+  <BASE_SHA> <NEW_HEAD_SHA> \
+  --review-depth exhaustive \
+  --review-round 2 \
+  --max-issues 25 \
+  --spec bug-analysis.md
+```
+
+Round 2 只检查：
+
+- Round 1 已修复项是否真正修好
+- 修复本身新增的 diff 是否引入新失败模式
+- 仍然直接阻断合并的 Critical / Important
+
+Round 2 后如果仍有非 Critical 的 Important / Minor，由主代理按证据和项目上下文 triage；**不得默认跑第 3 轮**。只有用户明确要求继续外源 review，才允许第 3 次调用。
 
 ## Qwen 显式缓存
 
