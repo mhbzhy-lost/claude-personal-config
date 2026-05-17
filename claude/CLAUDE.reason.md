@@ -147,14 +147,17 @@ bugfix 流程硬约束，优先级高于 §5 的"高风险任务才上"。
 > - submodule guard：在子模块内执行 `worktree add` 会建到子模块的独立 .git 里，与 superproject 的协调不兼容。
 > - sandbox 降级：权限受限的环境下不应硬卡，降级到串行至少能跑完。
 
-## 3. subagents 模型分档
+## 3. subagents worker 执行策略
 
-- 派遣 subagent / reviewer / worker 前，必须参考 `gpt-model-routing` skill 判断
-  该角色应使用的模型档位与调度方式。
-- 本共享提示词只规定“派遣时要查分档规范”，不在此处复制具体模型映射；后续接入
-  其他模型族或工具时，统一更新对应专用 skill。
+- 使用 `superpowers:subagent-driven-development` / `dispatching-parallel-agents`
+  时，implementer / worker 默认走 `opencode-deepseek-worker` skill，由
+  `opencode + deepseekv4pro` 在隔离 worktree 中执行实际任务并产出候选 diff。
+- reviewer / final reviewer 不走 DeepSeek worker；仍由当前宿主按 review skill
+  与外源复审规则执行。
+- 主 agent 负责拆 task、写清 write scope / validation、审查 worker diff、合并
+  approved 变更并在主 checkout 重跑验证；不得把架构决策或最终判断交给 worker。
 
-> **原因**：模型/工具分档是宿主和模型族相关的策略，直接写进三端共用提示词会让 Claude、Codex、OpenCode 互相污染；但 subagent 派遣点是所有 superpowers 流程都会经过的统一入口，所以共享层只保留“派遣前查专用分档规范”这个硬约束。具体 GPT-5.5、GPT-5.4、DeepSeek worker 等映射集中到 `gpt-model-routing`，后续接入其他模型族时只改专用 skill，避免在全局提示词里维护多份分叉规则。
+> **原因**：旧的统一模型分档入口不再维护；当前可复用价值集中在 OpenCode DeepSeek worker 的执行协议。把 implementer / worker 默认交给 `opencode-deepseek-worker` 可以让 Superpowers 的实际编码执行有固定产线，同时保留主 agent 的任务拆分、review、合并和验证职责。DeepSeek worker 只产候选 diff，不承担架构和最终判断，避免把执行能力误当成审查能力。
 
 ## 4. 不阻塞：subagent 后台执行
 

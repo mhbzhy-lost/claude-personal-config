@@ -123,12 +123,15 @@ bugfix 流程硬约束，优先级高于 §5 的"高风险任务才上"。
   - 路径写入各 subagent prompt；subagent 在已就绪的 worktree 内执行任务
   - 并发结束后合并工作树；自动合并失败的冲突提请用户决策
 
-## 3. subagents 模型分档
+## 3. subagents worker 执行策略
 
-- 派遣 subagent / reviewer / worker 前，必须参考 `gpt-model-routing` skill 判断
-  该角色应使用的模型档位与调度方式。
-- 本共享提示词只规定“派遣时要查分档规范”，不在此处复制具体模型映射；后续接入
-  其他模型族或工具时，统一更新对应专用 skill。
+- 使用 `superpowers:subagent-driven-development` / `dispatching-parallel-agents`
+  时，implementer / worker 默认走 `opencode-deepseek-worker` skill，由
+  `opencode + deepseekv4pro` 在隔离 worktree 中执行实际任务并产出候选 diff。
+- reviewer / final reviewer 不走 DeepSeek worker；仍由当前宿主按 review skill
+  与外源复审规则执行。
+- 主 agent 负责拆 task、写清 write scope / validation、审查 worker diff、合并
+  approved 变更并在主 checkout 重跑验证；不得把架构决策或最终判断交给 worker。
 
 ## 4. 不阻塞：subagent 后台执行
 
@@ -238,5 +241,4 @@ coding 任务原则上严格按该流程执行。
   等环境特征时，先排查环境再回到 RED 判定
 - e2e 的 mock 边界：有副作用的外部依赖（付费、邮件、短信）必须 stub；
   只读类外部 API 按真实成本与稳定性决定
-
 
