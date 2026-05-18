@@ -31,6 +31,9 @@ CODEX_AGENTS_PATH="$CODEX_HOME/agents.md"
 LEGACY_GLOBAL_AGENTS_PATH="$HOME/AGENTS.md"
 CODEX_MEMORY_PATH="$CODEX_HOME/memory.md"
 HOOKS_TEMPLATE="$SRC/codex/hooks.json"
+CODEX_HOOKS_DIR="$SRC/codex/hooks"
+CODEX_SKILL_PREFLIGHT_HOOK_REL="codex/hooks/skill-resolve-preflight.sh"
+CODEX_GIT_COMMIT_HOOK_REL="codex/hooks/git-commit-hint.sh"
 HOOKS_OUTPUT="$CODEX_HOME/hooks.json"
 CONFIG_PATH="$CODEX_HOME/config.toml"
 BEGIN_MARKER="# >>> claude-config codex init >>>"
@@ -160,6 +163,16 @@ render_hooks_json() {
     echo "[warn] hooks template not found at $HOOKS_TEMPLATE; skipping hooks rendering"
     return
   fi
+
+  local required_hook
+  for required_hook in \
+    "$SRC/$CODEX_SKILL_PREFLIGHT_HOOK_REL" \
+    "$SRC/$CODEX_GIT_COMMIT_HOOK_REL"; do
+    if [ ! -f "$required_hook" ]; then
+      echo "[warn] Codex hook script not found at $required_hook; skipping hooks rendering"
+      return
+    fi
+  done
 
   mkdir -p "$CODEX_HOME"
   SRC="$SRC" HOOKS_TEMPLATE="$HOOKS_TEMPLATE" HOOKS_OUTPUT="$HOOKS_OUTPUT" python3 <<'PY'

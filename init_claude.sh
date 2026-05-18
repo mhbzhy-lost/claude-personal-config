@@ -223,7 +223,7 @@ fi
 # ---------------------------------------------------------------------------
 SETTINGS_JSON="$DST/settings.json"
 
-# 探测 python 解释器（与 hooks/stack-list-inject.sh 相同策略）
+# 探测 python 解释器（沿用旧 hooks/stack-list-inject.sh 策略）
 if command -v python3 >/dev/null 2>&1 \
     && python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,7) else 1)' 2>/dev/null; then
   PY="python3"
@@ -267,7 +267,7 @@ desired_pretooluse_hooks = [
         "hooks": [
             {
                 "type": "command",
-                "command": f"{src_root}/hooks/skill-resolve-preflight.sh",
+                "command": f"{src_root}/claude/hooks/skill-resolve-preflight.sh",
             }
         ],
     },
@@ -276,7 +276,7 @@ desired_pretooluse_hooks = [
         "hooks": [
             {
                 "type": "command",
-                "command": f"{src_root}/hooks/git-commit-hint.sh",
+                "command": f"{src_root}/claude/hooks/git-commit-hint.sh",
             }
         ],
     },

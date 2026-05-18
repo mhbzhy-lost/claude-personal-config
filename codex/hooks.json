@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"__CLAUDE_CONFIG_HOME__/hooks/skill-resolve-preflight.sh\"",
+            "command": "bash \"__CLAUDE_CONFIG_HOME__/codex/hooks/skill-resolve-preflight.sh\"",
             "statusMessage": "Checking skill-catalog resolve inputs"
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"__CLAUDE_CONFIG_HOME__/hooks/git-commit-hint.sh\"",
+            "command": "bash \"__CLAUDE_CONFIG_HOME__/codex/hooks/git-commit-hint.sh\"",
             "statusMessage": "Checking git commit workflow"
           }
         ]

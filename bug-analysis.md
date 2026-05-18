@@ -1,68 +1,72 @@
-# Bug Analysis: init_codex.sh remove_table NameError
+# Codex git commit hook 兼容性问题根因分析
 
 ## 现象
 
-运行 `bash init_codex.sh` 在写入 `~/.codex/config.toml` 阶段失败：
+在 Codex 中执行 `git commit` 时，`hooks/git-commit-hint.sh` 会正确拦截并提示
+需要完成 `git-commit` 与 `external-llm-review` 流程；但提示中的放行方式要求：
 
-```text
-Traceback (most recent call last):
-  File "<stdin>", line 22, in <module>
-NameError: name 'remove_table' is not defined
-```
+> 在本次 Bash 工具的 description 字段中包含 `skip-git-commit-hint`
+
+Codex 的 `exec_command` 工具没有 `description` 字段，实际可传字段是 `cmd` /
+`workdir` / `yield_time_ms` 等。因此即使流程已完成，也无法按提示放行，只能绕过
+`git commit` 子命令匹配。
 
 ## 调用链
 
-用户要求移除 Superpowers wrapper 后，我修改 `init_codex.sh` 的
-`write_codex_managed_config()`。脚本执行到该函数时，通过 heredoc 启动内联
-Python。Python 读取 `~/.codex/config.toml`，移除 managed block 后，立刻调用
-`remove_table()` 清理遗留的 `marketplaces.superpowers-dev` 和
-`plugins."superpowers@superpowers-dev"` 表。此时函数定义还在调用语句之后，解释器
-尚未执行到 `def remove_table(...)`，因此抛出 `NameError`。
+1. `init_codex.sh` 读取 `HOOKS_TEMPLATE="$SRC/codex/hooks.json"`。
+2. `render_hooks_json()` 将 `__CLAUDE_CONFIG_HOME__` 替换为本仓路径，写入
+   `~/.codex/hooks.json`。
+3. 当前 `codex/hooks.json` 在 `PreToolUse` 的 `Bash` matcher 下调用：
+   `bash "__CLAUDE_CONFIG_HOME__/hooks/git-commit-hint.sh"`。
+4. `hooks/git-commit-hint.sh` 解析 hook stdin JSON，读取
+   `payload.tool_name == "Bash"`、`tool_input.command` 和
+   `tool_input.description`。
+5. 当 `tool_input.command` 匹配 `git commit`，且 `tool_input.description`
+   不含 `skip-git-commit-hint` 时，hook 返回 deny。
+6. Codex 的工具调用无法提供该 `description` 字段，导致完成流程后仍无法使用
+   官方提示中的方式放行。
 
 ## 根因假设
 
-1. `remove_table()` 定义顺序错误，调用发生在定义之前。
-2. heredoc 中函数名拼写不一致。
-3. shell 环境变量传递缺失导致 Python 段提前进入错误分支。
+1. **Claude Code 与 Codex hook payload / tool schema 不一致**：Claude Code Bash
+   有 `description` 字段，Codex `exec_command` 没有对应字段。
+2. **Codex hook 模板复用了 Claude Code 专用脚本**：`codex/hooks.json` 直接指向
+   `hooks/git-commit-hint.sh`，没有 Codex 专用放行协议。
+3. **hook 提示文本没有按宿主区分**：Codex 中仍提示 “description 字段”，造成
+   不可执行的修复指令。
 
 ## 验证方式
 
-查看 `init_codex.sh` 行号：调用在第 296-297 行，函数定义在第 300 行开始。
-错误信息精确指向 `remove_table` 未定义，排除环境变量和拼写分支问题。
+- 读取 `hooks/git-commit-hint.sh`：确认只从 `tool_input.description` 读取放行标记。
+- 读取 `codex/hooks.json` 与 `~/.codex/hooks.json`：确认 Codex 侧仍使用
+  `hooks/git-commit-hint.sh`。
+- 实际复现：在 Codex 中带命令注释 `# skip-git-commit-hint` 执行 `git commit`
+  仍被拦截，证明当前 hook 不检查命令文本中的放行标记。
 
 ## 根因确认
 
-根因是内联 Python 中 `remove_table()` 的定义位置晚于首次调用。
+根因是 Codex 侧复用了 Claude Code 专用 git commit hook；该 hook 的放行协议依赖
+`tool_input.description`，而 Codex 的命令工具没有这个可写字段。
 
 ## 影响范围
 
-任何执行 `write_codex_managed_config()` 的 `bash init_codex.sh` 调用都会失败，导致
-Codex managed config 无法刷新，也无法自动清理旧的 `superpowers-dev` marketplace
-配置。
+- 所有通过 `init_codex.sh` 渲染 `~/.codex/hooks.json` 的 Codex 环境。
+- 所有需要在 Codex 中执行 `git commit` 的工作流，尤其是已完成 review / 豁免后
+  需要合法提交的场景。
+- 未来其他复用 Claude Code hook、且依赖 Claude Code 特有 tool input 字段的
+  Codex hook。
 
-## 修复方案
+## 修复方向
 
-把 `remove_table()` 函数定义移动到首次调用之前，并保持清理逻辑只删除
-`marketplaces.superpowers-dev` 和 `plugins."superpowers@superpowers-dev"` 两个表。
+新增 Codex 专用 hook，例如 `codex/hooks/git-commit-hint.sh`，并将 Claude Code
+专用 hook 迁移到 `claude/hooks/`：
 
-该修复只改变内联 Python 的声明顺序，不改变配置生成内容，不会影响 MCP server
-表生成和 skills 链接流程。
+- 兼容 Codex hook payload：从 `tool_input.command` 或 `tool_input.cmd` 读取命令。
+- 放行协议改为 Codex 可表达的方式：命令文本中包含
+  `skip-git-commit-hint` 即放行。
+- deny 文案明确说明 Codex 中应把标记放在命令文本里，而不是 description 字段。
+- 更新 `codex/hooks.json` 指向 Codex 专用 hook。
+- 更新 `init_codex.sh`，明确 Codex hook 使用专用入口，并在渲染前校验该 hook 存在。
+- 更新 `init_claude.sh` 与 Claude settings 模板，引用 `claude/hooks/`。
 
-## 验证计划
-
-- `bash -n init_codex.sh`
-- `bash init_codex.sh`
-- `rg "superpowers-dev|superpowers@superpowers-dev" ~/.codex/config.toml init_codex.sh`
-- `test ! -e codex/marketplaces`
-
-## 修复结果
-
-已将 `remove_table()` 调用移动到函数定义之后。
-
-验证结果：
-
-- `bash -n init_codex.sh` 通过
-- `bash init_codex.sh` 通过并写回 `~/.codex/config.toml`
-- `~/.codex/config.toml` 不再包含 `marketplaces.superpowers-dev` 或
-  `plugins."superpowers@superpowers-dev"`
-- `codex/marketplaces` 不存在
+此修复改变 hook 文件布局，但保留 Claude Code hook 的现有行为。

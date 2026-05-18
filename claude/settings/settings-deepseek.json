@@ -133,7 +133,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-rules-inject.sh"
+            "command": "/Users/mhbzhy/claude-config/claude/hooks/coding-expert-rules-inject.sh"
           }
         ]
       },
@@ -142,7 +142,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-rules-inject.sh"
+            "command": "/Users/mhbzhy/claude-config/claude/hooks/coding-expert-rules-inject.sh"
           }
         ]
       },
@@ -151,7 +151,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/mhbzhy/claude-config/hooks/coding-expert-rules-inject.sh"
+            "command": "/Users/mhbzhy/claude-config/claude/hooks/coding-expert-rules-inject.sh"
           }
         ]
       }
@@ -162,7 +162,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/mhbzhy/claude-config/hooks/skill-resolve-preflight.sh"
+            "command": "/Users/mhbzhy/claude-config/claude/hooks/skill-resolve-preflight.sh"
           }
         ]
       }

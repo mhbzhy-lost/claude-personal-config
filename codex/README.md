@@ -34,8 +34,9 @@ This directory contains Codex shared agent runtime resources derived from
 - `vendor/superpowers` is not registered as a Codex marketplace. Superpowers
   runs through the native-skill fallback:
   `vendor/superpowers/skills/* -> $HOME/.agents/skills/*`.
-- Hook scripts are reused from `../hooks/`, but hook registration is rendered
-  into Codex's own configuration surface.
+- Codex hook scripts live under `codex/hooks/`, separate from Claude Code
+  hooks under `claude/hooks/`; hook registration is rendered into Codex's own
+  configuration surface.
 - App-only preferences are not managed here. That includes appearance,
   notifications, browser-use allowlists, and other GUI-only settings.
 
