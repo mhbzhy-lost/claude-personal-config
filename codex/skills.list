@@ -7,4 +7,5 @@ knowledge-retrieval
 git-commit
 external-llm-review
 opencode-deepseek-worker
+claude-code-worker
 wcag-check

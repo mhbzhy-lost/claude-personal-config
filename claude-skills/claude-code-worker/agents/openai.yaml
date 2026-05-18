@@ -1,0 +1,4 @@
+interface:
+  display_name: "Claude Code Worker"
+  short_description: "Run isolated Claude workers via private API."
+  default_prompt: "Use $claude-code-worker to dispatch a bounded patch task through the configured private Claude Code endpoint."
