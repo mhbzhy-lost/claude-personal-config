@@ -13,7 +13,7 @@ Usage:
     python reviewer.py <BASE_SHA> <HEAD_SHA> \
         [--worktree PATH] [--spec FILE] [--max-diff N]
         [--review-depth standard|exhaustive] [--review-round 1|2]
-        [--max-issues N] [--max-output-tokens N]
+        [--max-issues N] [--max-output-tokens N] [--api-timeout-seconds N]
         [--cache-mode off|qwen-explicit] [--cache-prefix FILE] [--cache-diff]
 
 Sandbox warning: this script POSTs source diffs to an external endpoint. Run only
@@ -250,8 +250,33 @@ def extract_chat_content(resp: object) -> str:
     choices = getattr(resp, "choices", None)
     if not choices:
         raise RuntimeError("chat completion returned empty choices")
-    message = getattr(choices[0], "message", None)
-    return getattr(message, "content", None) or ""
+    choice = choices[0]
+    message = getattr(choice, "message", None)
+    content = getattr(message, "content", None) or ""
+    if content:
+        return content
+
+    finish_reason = getattr(choice, "finish_reason", None)
+    usage = getattr(resp, "usage", None)
+    completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+    details = getattr(usage, "completion_tokens_details", None) if usage else None
+    reasoning_tokens = _usage_detail(details, "reasoning_tokens")
+    reasoning_len = len(getattr(message, "reasoning_content", "") or "")
+    raise RuntimeError(
+        "chat completion returned empty content"
+        f" finish_reason={finish_reason}"
+        f" completion_tokens={completion_tokens}"
+        f" reasoning_tokens={reasoning_tokens}"
+        f" reasoning_content_len={reasoning_len}"
+    )
+
+
+def _usage_detail(details: object, name: str) -> object:
+    if details is None:
+        return None
+    if isinstance(details, dict):
+        return details.get(name)
+    return getattr(details, name, None)
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
@@ -353,8 +378,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-output-tokens",
         type=int,
-        default=12000,
-        help="maximum model output tokens (default 12000; set <=0 to omit)",
+        default=16000,
+        help="maximum model output tokens (default 16000; set <=0 to omit)",
+    )
+    parser.add_argument(
+        "--api-timeout-seconds",
+        type=int,
+        default=180,
+        help="hard timeout around the provider API call (default 180; set <=0 to disable)",
     )
     parser.add_argument(
         "--cache-mode",
@@ -491,73 +522,85 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
         f" diff_chars={len(diff)}{' (truncated)' if truncated else ''}"
         f" cache_mode={cache_mode}{' cache_diff=true' if cache_diff else ''}"
         f" review_depth={review_depth} review_round={args.review_round}"
-        f" max_issues={args.max_issues}",
+        f" max_issues={args.max_issues}"
+        f" api_timeout_seconds={args.api_timeout_seconds}",
         file=sys.stderr,
     )
 
     try:
-        if api_format == "anthropic":
-            async with AsyncAnthropic(api_key=api_key, base_url=base_url) as aclient:
-                resp = await aclient.messages.create(
-                    model=model,
-                    max_tokens=args.max_output_tokens if args.max_output_tokens > 0 else 8192,
-                    system=_REVIEW_SYSTEM_PROMPT,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": build_plain_user_prompt(
+        hard_timeout = args.api_timeout_seconds if args.api_timeout_seconds > 0 else None
+        request_timeout = hard_timeout or 180
+        async with asyncio.timeout(hard_timeout):
+            if api_format == "anthropic":
+                async with AsyncAnthropic(api_key=api_key, base_url=base_url) as aclient:
+                    resp = await aclient.messages.create(
+                        model=model,
+                        max_tokens=args.max_output_tokens if args.max_output_tokens > 0 else 8192,
+                        system=_REVIEW_SYSTEM_PROMPT,
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": build_plain_user_prompt(
+                                    user_prompt=user_prompt,
+                                    spec_block=spec_block,
+                                    cache_prefix_blocks=cache_prefix_blocks,
+                                ),
+                            }
+                        ],
+                        temperature=0.2,
+                        timeout=request_timeout,
+                    )
+                    content = "".join(
+                        block.text for block in resp.content
+                        if getattr(block, "type", None) == "text"
+                    )
+            else:
+                async with AsyncOpenAI(api_key=api_key, base_url=base_url) as oclient:
+                    if api_format == "responses":
+                        response_kwargs = {}
+                        if args.max_output_tokens > 0:
+                            response_kwargs["max_output_tokens"] = args.max_output_tokens
+                        resp = await oclient.responses.create(
+                            model=model,
+                            instructions=_REVIEW_SYSTEM_PROMPT,
+                            input=build_plain_user_prompt(
                                 user_prompt=user_prompt,
                                 spec_block=spec_block,
                                 cache_prefix_blocks=cache_prefix_blocks,
                             ),
-                        }
-                    ],
-                    temperature=0.2,
-                    timeout=180,
-                )
-                content = "".join(
-                    block.text for block in resp.content if getattr(block, "type", None) == "text"
-                )
-        else:
-            async with AsyncOpenAI(api_key=api_key, base_url=base_url) as oclient:
-                if api_format == "responses":
-                    response_kwargs = {}
-                    if args.max_output_tokens > 0:
-                        response_kwargs["max_output_tokens"] = args.max_output_tokens
-                    resp = await oclient.responses.create(
-                        model=model,
-                        instructions=_REVIEW_SYSTEM_PROMPT,
-                        input=build_plain_user_prompt(
-                            user_prompt=user_prompt,
-                            spec_block=spec_block,
-                            cache_prefix_blocks=cache_prefix_blocks,
-                        ),
-                        temperature=0.2,
-                        timeout=180,
-                        **response_kwargs,
-                    )
-                    content = (resp.output_text or "").strip()
-                else:
-                    chat_kwargs = {}
-                    if args.max_output_tokens > 0:
-                        chat_kwargs["max_tokens"] = args.max_output_tokens
-                    resp = await oclient.chat.completions.create(
-                        model=model,
-                        messages=build_chat_messages(
-                            user_prompt=user_prompt,
-                            spec_block=spec_block,
-                            cache_prefix_blocks=cache_prefix_blocks,
-                            cache_mode=cache_mode,
-                            cache_diff=cache_diff,
-                        ),
-                        temperature=0.2,
-                        timeout=180,
-                        **chat_kwargs,
-                    )
-                    cache_usage = format_cache_usage(resp.usage)
-                    if cache_usage:
-                        print(cache_usage, file=sys.stderr)
-                    content = extract_chat_content(resp)
+                            temperature=0.2,
+                            timeout=request_timeout,
+                            **response_kwargs,
+                        )
+                        content = (resp.output_text or "").strip()
+                    else:
+                        chat_kwargs = {}
+                        if args.max_output_tokens > 0:
+                            chat_kwargs["max_tokens"] = args.max_output_tokens
+                        resp = await oclient.chat.completions.create(
+                            model=model,
+                            messages=build_chat_messages(
+                                user_prompt=user_prompt,
+                                spec_block=spec_block,
+                                cache_prefix_blocks=cache_prefix_blocks,
+                                cache_mode=cache_mode,
+                                cache_diff=cache_diff,
+                            ),
+                            temperature=0.2,
+                            timeout=request_timeout,
+                            **chat_kwargs,
+                        )
+                        cache_usage = format_cache_usage(resp.usage)
+                        if cache_usage:
+                            print(cache_usage, file=sys.stderr)
+                        content = extract_chat_content(resp)
+    except TimeoutError:
+        print(
+            f"ERROR: {api_format}.create exceeded api_timeout_seconds="
+            f"{args.api_timeout_seconds}",
+            file=sys.stderr,
+        )
+        return 4
     except Exception as exc:
         print(
             f"ERROR: {api_format}.create failed: {describe_api_exception(exc)}",

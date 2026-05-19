@@ -114,6 +114,38 @@ class QwenExplicitCacheMessagesTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "empty choices"):
             reviewer.extract_chat_content(Response())
 
+    def test_extract_chat_content_rejects_empty_content_with_reasoning_diagnostics(self):
+        class UsageDetails:
+            reasoning_tokens = 32
+
+        class Usage:
+            completion_tokens = 32
+            completion_tokens_details = UsageDetails()
+
+        class Message:
+            content = ""
+            reasoning_content = "thinking..."
+
+        class Choice:
+            message = Message()
+            finish_reason = "length"
+
+        class Response:
+            choices = [Choice()]
+            usage = Usage()
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "empty content.*finish_reason=length.*reasoning_tokens=32",
+        ):
+            reviewer.extract_chat_content(Response())
+
+    def test_arg_parser_defaults_to_reasoning_safe_output_budget(self):
+        parser = reviewer.build_arg_parser()
+        args = parser.parse_args(["base", "head"])
+
+        self.assertEqual(args.max_output_tokens, 16000)
+
     def test_read_text_block_rejects_paths_outside_allowed_roots(self):
         with TemporaryDirectory() as root, TemporaryDirectory() as outside:
             secret_path = Path(outside) / "secret.txt"

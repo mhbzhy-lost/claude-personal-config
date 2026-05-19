@@ -51,7 +51,8 @@ uv run --no-project \
     [--review-depth standard|exhaustive] \
     [--review-round 1|2] \
     [--max-issues 25] \
-    [--max-output-tokens 12000] \
+    [--max-output-tokens 16000] \
+    [--api-timeout-seconds 180] \
     [--cache-mode off|qwen-explicit] \
     [--cache-prefix docs/review-context.md] \
     [--cache-diff]
@@ -66,7 +67,8 @@ uv run --no-project \
 - `--review-depth` —— 评审深度；默认 `exhaustive`，要求单轮尽量暴露完整问题面；需要快速 smoke review 时才设 `standard`
 - `--review-round` —— 当前 diff 的评审轮次，只允许 `1` 或 `2`；默认 `1`
 - `--max-issues` —— 单轮最多报告的问题数，默认 `25`；同类问题应归并为模式级 issue
-- `--max-output-tokens` —— 模型输出 token 上限，默认 `12000`，用于支撑穷举式报告
+- `--max-output-tokens` —— 模型输出 token 上限，默认 `16000`，用于支撑 reasoning 模型和穷举式报告
+- `--api-timeout-seconds` —— provider API 调用外层硬超时，默认 `180`；设 `<=0` 可关闭
 - `--cache-mode` —— prompt cache 模式；使用规范默认走带 cache 调用：支持显式 cache 的 `chat` endpoint（如 Qwen / DashScope）设置 `EXTERNAL_LLM_CACHE_MODE=qwen-explicit`，不支持的协议才退回 `off`
 - `--cache-prefix` —— 稳定上下文文件，置于 diff 前；可重复传多个
 - `--cache-diff` —— 显式把 diff 也纳入 cache marker；默认关闭，仅适合同一 diff 多轮 review
@@ -200,3 +202,4 @@ EXTERNAL_LLM_API_FORMAT=anthropic uv run --no-project \
 - `qwen-explicit` 缓存通过 OpenAI Chat Completions content block 的 `cache_control` marker 表达
 - temperature=0.2（评审任务希望稳定）
 - 失败时打印 stderr 并退出非零
+- Chat Completions 返回空 `message.content` 时退出非零，并打印 `finish_reason` / `reasoning_tokens` / `reasoning_content_len`，避免 reasoning 模型把 token 预算耗在推理区后被误判为 review 成功
