@@ -1,6 +1,6 @@
 ---
 name: external-llm-review
-description: 用 OpenAI / Responses / Anthropic Messages 三类兼容协议调用外部 LLM 做代码评审，作为 Claude 同族 review 的异源交叉验证。同族 code-quality ✅ 通过后跑此 skill，输出 Strengths / Critical / Important / Minor / Assessment，并按"综合判断 4 步"消化，避免误报和盲点。
+description: 用 OpenAI / Responses / Anthropic Messages 兼容协议或显式 opt-in 的 Claude Code CLI 调外部 LLM 做代码评审，作为 Claude 同族 review 的异源交叉验证。同族 code-quality ✅ 通过后跑此 skill，输出 Strengths / Critical / Important / Minor / Assessment，并按"综合判断 4 步"消化，避免误报和盲点。
 ---
 
 # External LLM Cross-Model Code Review
@@ -20,13 +20,54 @@ cp ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/.env.example \
 
 或在 shell `export EXTERNAL_LLM_*=...` 然后直接调（reviewer.py 用 python-dotenv，`.env` 缺时不报错，env vars 优先）。
 
-API 须兼容以下三种协议之一（`EXTERNAL_LLM_API_FORMAT` 切换）：
+默认后端是裸 API 请求，须兼容以下三种协议之一（`EXTERNAL_LLM_API_FORMAT` 切换）：
 
 - `chat` — OpenAI Chat Completions（POST `<base>/chat/completions`）
 - `responses` — OpenAI Responses API（POST `<base>/responses`）
 - `anthropic` — Anthropic Messages（POST `<base>/v1/messages`，base **不**带 `/v1`）
 
 **不同协议的 endpoint 可能分别计 quota**。某条路径触发 `Allocated quota exceeded` 或网关 4xx 时可切换协议重试。已配通 Claude Code 自定义网关（即 settings 已成功跑 sonnet/opus）的环境，本 skill 直接复用同一网关的 anthropic 路径通常即可工作。
+
+### Claude Code CLI 模式（仅 Claude review）
+
+有些企业 endpoint 不支持裸 SDK/HTTP 请求，但可以通过 Claude Code CLI 接入。这种情况下才显式启用 CLI 后端：
+
+```bash
+EXTERNAL_LLM_REVIEW_BACKEND=claude-code-cli
+```
+
+或在命令行传：
+
+```bash
+--backend claude-code-cli
+```
+
+硬边界：
+
+- `claude-code-cli` **仅用于 Claude / Sonnet / Opus / Haiku 模型 review**。`deepseek-*`、`qwen-*`、`glm-*`、Ollama、本地 OpenAI-compatible 模型仍然走默认 `api` 后端。
+- 不会按 endpoint 或 `EXTERNAL_LLM_API_FORMAT=anthropic` 自动切到 CLI；必须显式设置 `EXTERNAL_LLM_REVIEW_BACKEND=claude-code-cli` 或 `--backend claude-code-cli`。
+- 若 CLI 后端收到非 Claude 模型名，脚本直接报错，提示改回 `--backend api`。
+
+CLI 模式从同一个 skill-local `.env` 读取 Claude Code 变量：
+
+```bash
+ANTHROPIC_BASE_URL=https://your-approved-anthropic-compatible-gateway
+ANTHROPIC_API_KEY=...
+# 或 ANTHROPIC_AUTH_TOKEN=...
+ANTHROPIC_MODEL=claude-sonnet-4-6
+EXTERNAL_LLM_REVIEW_BACKEND=claude-code-cli
+```
+
+也支持在 `EXTERNAL_LLM_API_FORMAT=anthropic` 时复用既有 `EXTERNAL_LLM_API_BASE` / `EXTERNAL_LLM_API_KEY` / `EXTERNAL_LLM_MODEL`，但 OpenAI Chat / Responses 配置不会被当成 Claude CLI 配置。
+
+目标机器初始化：
+
+```bash
+command -v claude >/dev/null || npm install -g @anthropic-ai/claude-code
+claude --version
+```
+
+CLI 后端运行时会创建临时 `HOME` / `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_CACHE_HOME` / `XDG_STATE_HOME` / `CLAUDE_CONFIG_DIR`，并用 `claude --print --bare --no-session-persistence --disable-slash-commands --strict-mcp-config --mcp-config '{}' --permission-mode plan --tools ''` 调用。它不加载用户目录的 Claude Code hooks、plugins、MCP、skills、auto memory、CLAUDE.md 或会话历史。
 
 兼容性要求：endpoint 实现以下任一协议即可：
 - OpenAI Chat Completions schema（最常见，含本地 Ollama `http://localhost:11434/v1`）
@@ -46,6 +87,7 @@ uv run --no-project \
     python ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py \
     <BASE_SHA> <HEAD_SHA> \
     [--worktree PATH] \
+    [--backend api|claude-code-cli] \
     [--spec docs/superpowers/specs/foo.md] \
     [--max-diff 80000] \
     [--review-depth standard|exhaustive] \
@@ -62,6 +104,7 @@ uv run --no-project \
 - `BASE_SHA` —— 同族评审看的同一个 base
 - `HEAD_SHA` —— subagent 实施后的 HEAD
 - `--worktree` —— 默认 `.`；评 worktree 时填 `.worktrees/<task>`
+- `--backend` —— 默认 `api` 裸请求；只有 Claude review 且企业网关必须通过 Claude Code CLI 时才设 `claude-code-cli`
 - `--spec` —— 把 spec 文件附给模型做"对契约"评审
 - `--max-diff` —— diff 字符上限（默认 80000，防网关 413）
 - `--review-depth` —— 评审深度；默认 `exhaustive`，要求单轮尽量暴露完整问题面；需要快速 smoke review 时才设 `standard`
@@ -196,7 +239,8 @@ EXTERNAL_LLM_API_FORMAT=anthropic uv run --no-project \
 
 ## reviewer.py 实现要点
 
-- 使用 `openai.AsyncOpenAI` / `anthropic.AsyncAnthropic`：`base_url` 切换到任意兼容端点，`api_key` 从环境变量读
+- 默认 `api` 后端使用 `openai.AsyncOpenAI` / `anthropic.AsyncAnthropic`：`base_url` 切换到任意兼容端点，`api_key` 从环境变量读
+- `claude-code-cli` 后端仅显式 opt-in；用临时 HOME/XDG/Claude config 调 `claude --print --bare`，只拼接必要的 Anthropic endpoint/auth/model 环境变量
 - 系统提示固化在脚本里：要求输出 Strengths / Critical / Important / Minor / Assessment
 - 用户提示包含 git diff 文本 + 可选 spec 文本
 - `qwen-explicit` 缓存通过 OpenAI Chat Completions content block 的 `cache_control` marker 表达

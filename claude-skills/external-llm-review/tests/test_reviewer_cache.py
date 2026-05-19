@@ -1,4 +1,6 @@
 import unittest
+import shlex
+from argparse import Namespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -49,6 +51,157 @@ class QwenExplicitCacheMessagesTest(unittest.TestCase):
 
         with self.assertRaises(SystemExit):
             parser.parse_args(["base", "head", "--review-round", "3"])
+
+    def test_review_backend_defaults_to_raw_api(self):
+        args = Namespace(backend=None)
+
+        self.assertEqual(reviewer.resolve_review_backend(args, env={}), "api")
+
+    def test_review_backend_can_be_enabled_by_arg_or_env(self):
+        args = Namespace(backend="claude-code-cli")
+
+        self.assertEqual(reviewer.resolve_review_backend(args, env={}), "claude-code-cli")
+        self.assertEqual(
+            reviewer.resolve_review_backend(
+                Namespace(backend=None),
+                env={"EXTERNAL_LLM_REVIEW_BACKEND": "claude-code-cli"},
+            ),
+            "claude-code-cli",
+        )
+
+    def test_review_backend_rejects_unknown_values(self):
+        with self.assertRaisesRegex(ValueError, "EXTERNAL_LLM_REVIEW_BACKEND"):
+            reviewer.resolve_review_backend(
+                Namespace(backend=None),
+                env={"EXTERNAL_LLM_REVIEW_BACKEND": "ollama"},
+            )
+
+    def test_claude_cli_backend_accepts_only_claude_model_names(self):
+        for model in ("claude-sonnet-4-6", "anthropic/claude-opus-4-7", "sonnet", "opus", "haiku"):
+            reviewer.validate_claude_cli_model(model)
+
+        for model in ("deepseek-chat", "deepseek-sonnet", "qwen-max", "glm-4-plus", "llama3:70b"):
+            with self.subTest(model=model):
+                with self.assertRaisesRegex(ValueError, "Claude model"):
+                    reviewer.validate_claude_cli_model(model)
+
+    def test_claude_cli_config_can_fallback_from_anthropic_format_external_env(self):
+        config = reviewer.resolve_claude_cli_config(
+            {
+                "EXTERNAL_LLM_API_FORMAT": "anthropic",
+                "EXTERNAL_LLM_API_BASE": "https://gateway.example.test",
+                "EXTERNAL_LLM_API_KEY": "external-key",
+                "EXTERNAL_LLM_MODEL": "claude-sonnet-4-6",
+            }
+        )
+
+        self.assertEqual(config.base_url, "https://gateway.example.test")
+        self.assertEqual(config.api_key, "external-key")
+        self.assertEqual(config.model, "claude-sonnet-4-6")
+
+    def test_claude_cli_config_does_not_fallback_from_non_anthropic_external_env(self):
+        with self.assertRaisesRegex(ValueError, "ANTHROPIC_BASE_URL"):
+            reviewer.resolve_claude_cli_config(
+                {
+                    "EXTERNAL_LLM_API_FORMAT": "chat",
+                    "EXTERNAL_LLM_API_BASE": "https://openai.example.test/v1",
+                    "EXTERNAL_LLM_API_KEY": "external-key",
+                    "EXTERNAL_LLM_MODEL": "claude-sonnet-4-6",
+                }
+            )
+
+    def test_claude_cli_command_uses_bare_plan_mode_and_no_tools(self):
+        command = reviewer.build_claude_cli_command(
+            claude_bin="claude",
+            model="claude-sonnet-4-6",
+            settings_path=Path("/tmp/settings.json"),
+        )
+
+        self.assertIn("--bare", command)
+        self.assertIn("--no-session-persistence", command)
+        self.assertIn("--disable-slash-commands", command)
+        self.assertIn("--strict-mcp-config", command)
+        self.assertIn("--permission-mode", command)
+        self.assertIn("plan", command)
+        self.assertIn("--tools", command)
+        self.assertEqual(command[command.index("--tools") + 1], "")
+
+    def test_claude_cli_env_isolates_home_xdg_and_selected_endpoint_vars(self):
+        config = reviewer.ClaudeCliConfig(
+            base_url="https://gateway.example.test",
+            api_key="key",
+            auth_token="token",
+            model="claude-sonnet-4-6",
+            claude_bin="claude",
+            timeout_seconds=300,
+        )
+
+        with TemporaryDirectory() as tmp:
+            env = reviewer.build_claude_cli_env(
+                base_env={
+                    "PATH": "/usr/bin",
+                    "HOME": "/Users/example",
+                    "CLAUDE_CONFIG_DIR": "/Users/example/.claude",
+                    "ANTHROPIC_API_KEY": "production-key",
+                },
+                runtime_root=Path(tmp),
+                config=config,
+            )
+
+            self.assertEqual(env["PATH"], "/usr/bin")
+            self.assertEqual(env["ANTHROPIC_BASE_URL"], "https://gateway.example.test")
+            self.assertEqual(env["ANTHROPIC_API_KEY"], "key")
+            self.assertEqual(env["ANTHROPIC_AUTH_TOKEN"], "token")
+            self.assertNotEqual(env["HOME"], "/Users/example")
+            self.assertTrue(env["HOME"].startswith(tmp))
+            self.assertTrue(env["XDG_CONFIG_HOME"].startswith(tmp))
+            self.assertTrue(env["CLAUDE_CONFIG_DIR"].startswith(tmp))
+
+    def test_claude_cli_review_invokes_cli_with_stdin_and_isolated_home(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            capture_path = tmp_path / "home.txt"
+            fake_claude = tmp_path / "claude"
+            fake_claude.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "seen_bare=0\n"
+                "seen_plan=0\n"
+                "seen_empty_tools=0\n"
+                "previous=''\n"
+                "for arg in \"$@\"; do\n"
+                "  if [[ \"${arg}\" == \"--bare\" ]]; then seen_bare=1; fi\n"
+                "  if [[ \"${previous}\" == \"--permission-mode\" && \"${arg}\" == \"plan\" ]]; then seen_plan=1; fi\n"
+                "  if [[ \"${previous}\" == \"--tools\" && -z \"${arg}\" ]]; then seen_empty_tools=1; fi\n"
+                "  previous=\"${arg}\"\n"
+                "done\n"
+                "[[ ${seen_bare} -eq 1 && ${seen_plan} -eq 1 && ${seen_empty_tools} -eq 1 ]] || exit 17\n"
+                "prompt=\"$(cat)\"\n"
+                f"printf '%s\\n' \"${{HOME}}\" > {shlex.quote(str(capture_path))}\n"
+                "printf 'reviewed:%s\\n' \"${#prompt}\"\n",
+                encoding="utf-8",
+            )
+            fake_claude.chmod(0o700)
+            config = reviewer.ClaudeCliConfig(
+                base_url="https://gateway.example.test",
+                api_key="key",
+                auth_token=None,
+                model="claude-sonnet-4-6",
+                claude_bin=str(fake_claude),
+                timeout_seconds=5,
+            )
+
+            output = reviewer.run_claude_cli_review(
+                prompt="review this diff",
+                config=config,
+                base_env={"PATH": "/usr/bin:/bin", "HOME": "/Users/example"},
+                cwd=tmp_path,
+            )
+
+            self.assertEqual(output, "reviewed:16")
+            isolated_home = capture_path.read_text(encoding="utf-8").strip()
+            self.assertNotEqual(isolated_home, "/Users/example")
+            self.assertIn("external-llm-review-claude-", isolated_home)
 
     def test_default_chat_messages_are_plain_strings(self):
         messages = reviewer.build_chat_messages(
