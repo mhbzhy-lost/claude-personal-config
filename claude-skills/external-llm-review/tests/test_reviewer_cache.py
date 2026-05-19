@@ -52,6 +52,9 @@ class QwenExplicitCacheMessagesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             parser.parse_args(["base", "head", "--review-round", "3"])
 
+    def test_cache_mode_defaults_to_off_without_env(self):
+        self.assertEqual(reviewer.resolve_cache_mode(None, None), "off")
+
     def test_review_backend_defaults_to_raw_api(self):
         args = Namespace(backend=None)
 

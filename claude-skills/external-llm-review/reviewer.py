@@ -607,6 +607,10 @@ def env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def resolve_cache_mode(arg_value: str | None, env_value: str | None) -> str:
+    return (arg_value or (env_value or "off")).strip().lower()
+
+
 def run_claude_cli_review(
     *,
     prompt: str,
@@ -749,10 +753,7 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
         return 1
 
     api_format = os.environ.get("EXTERNAL_LLM_API_FORMAT", "chat").strip().lower()
-    cache_mode = (
-        args.cache_mode
-        or os.environ.get("EXTERNAL_LLM_CACHE_MODE", "off").strip().lower()
-    )
+    cache_mode = resolve_cache_mode(args.cache_mode, os.environ.get("EXTERNAL_LLM_CACHE_MODE"))
     review_depth = (
         args.review_depth
         or os.environ.get("EXTERNAL_LLM_REVIEW_DEPTH", "exhaustive").strip().lower()
