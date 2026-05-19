@@ -4,7 +4,7 @@ set -euo pipefail
 # Idempotent guard — playwright CLI + browser cache must both exist
 command -v playwright && [ -d /root/.cache/ms-playwright ] && exit 0
 
-# install_helpers.sh — 由 distill 注入到每个 install.sh 头部
+# retry helper for executable skill setup
 # 提供网络敏感命令的 retry 包装
 retry() {
   local n=0 max=3

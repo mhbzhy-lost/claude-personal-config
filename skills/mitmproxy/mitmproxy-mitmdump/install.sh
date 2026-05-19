@@ -3,7 +3,7 @@
 # Use Tsinghua mirror to avoid 中国大陆 outbound timeouts on default Debian repos.
 which mitmdump >/dev/null 2>&1 && exit 0   # idempotent guard
 
-# install_helpers.sh — 由 distill 注入到每个 install.sh 头部
+# retry helper for executable skill setup
 # 提供网络敏感命令的 retry 包装
 retry() {
   local n=0 max=3

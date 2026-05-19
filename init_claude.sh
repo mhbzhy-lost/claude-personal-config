@@ -168,9 +168,7 @@ sync_claude_skills() {
   # 已废弃同步清单：曾经同步过、现已从 sync_list 剔除的 skill。
   # 一次性清理，仅当目标的 SKILL.md 与源完全一致（确认是本仓同步残留）才删，
   # 避免误删用户手动放置的同名 skill。
-  local deprecated_list=(
-    "skill-distill"
-  )
+  local deprecated_list=()
 
   if ! command -v rsync >/dev/null 2>&1; then
     echo "[warn] rsync 不可用，跳过 skills 同步；请手动同步 $src_path 到 $dst_path"
@@ -249,7 +247,7 @@ settings_path = Path(sys.argv[2])
 #
 # 已废弃 hook 历史（由文件下方一次性清理逻辑负责从 settings.json 移除）：
 #   skill-marker        (SubagentStart)  → capability-taxonomy-inject.sh
-#       旧 skill-distill 多 agent 编排架构的角色，v0.5 重构后下线
+#       旧多 agent 编排架构的角色，v0.5 重构后下线
 #   coding-expert*      (SubagentStart)  → coding-expert-rules-inject.sh
 #       三档 subagent 已删
 #   stack-detector / skill-matcher (SubagentStart) → 由 skill-intent-inject.sh 替代后又下线
@@ -332,7 +330,7 @@ for desired in desired_pretooluse_hooks:
         print(f"[settings] 更新 hooks.PreToolUse[matcher={matcher!r}]")
 
 # 一次性清理：移除已废弃的 SubagentStart hooks
-#   skill-marker        → capability-taxonomy-inject.sh （旧 skill-distill 多 agent 编排架构遗留）
+#   skill-marker        → capability-taxonomy-inject.sh （旧多 agent 编排架构遗留）
 #   coding-expert*      → coding-expert-rules-inject.sh （三档 subagent 已随 335213f 删除）
 # 仅当 (matcher, command 后缀) 双匹配才删除，避免误伤用户自定义 hook。
 deprecated_sub_start_specs = [

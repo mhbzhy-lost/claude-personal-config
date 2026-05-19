@@ -459,7 +459,7 @@ claude-config/
 ### 9.2 命名约定
 - block 名：`<domain>-<pattern-name>`，全小写连字符（如 `im-conversation-list`、
   `commerce-product-list`、`admin-resource-crud`）
-- SKILL 名沿用现有规范（见 `skill-distill` 输出）
+- SKILL 名使用全小写连字符命名，与现有 `skills/` 目录保持一致
 - 协议类型名加 `Block` 前缀避免和上游冲突（如 `BlockConversation`、`BlockMessage`）
 
 ### 9.3 后续 block 复用

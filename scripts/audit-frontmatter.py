@@ -9,6 +9,7 @@ Exit 1 if any ERROR. Suggested pre-commit hook (opt-in)::
     python3 scripts/audit-frontmatter.py || exit 1
 """
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -19,8 +20,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
-CAPABILITY_TAXONOMY = REPO_ROOT / "claude-skills" / "skill-distillation" / "references" / "capability-taxonomy.md"
-TECH_STACK_TAXONOMY = REPO_ROOT / "claude-skills" / "skill-distillation" / "references" / "tech-stack-taxonomy.md"
+TAG_CATALOG = SKILLS_DIR / "_tag_catalog.json"
 
 REQUIRED_FIELDS = ["name", "description", "tech_stack", "capability"]
 
@@ -33,16 +33,10 @@ BANNED_LANGUAGE_VALUES = {
 DESCRIPTION_MIN_LEN = 30
 
 
-# ---------------------------------------------------------------------------
-# Taxonomy helpers
-# ---------------------------------------------------------------------------
-
-def extract_bold_terms(path: Path) -> set[str]:
-    """Extract all **term** values from a markdown file."""
-    terms = set()
-    for m in re.finditer(r"\*\*([^*]+)\*\*", path.read_text(encoding="utf-8")):
-        terms.add(m.group(1).strip())
-    return terms
+def load_tag_catalog(path: Path) -> tuple[set[str], set[str]]:
+    """Load capability and tech_stack closed sets from skills/_tag_catalog.json."""
+    catalog = json.loads(path.read_text(encoding="utf-8"))
+    return set(catalog.get("capability", {})), set(catalog.get("tech_stack", {}))
 
 
 # ---------------------------------------------------------------------------
@@ -108,15 +102,8 @@ def to_list(val) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def audit():
-    # Load capability closed set
-    cap_set = extract_bold_terms(CAPABILITY_TAXONOMY)
-
-    # Load tech_stack closed set (optional)
-    ts_set: set[str] | None = None
-    if TECH_STACK_TAXONOMY.exists():
-        ts_set = extract_bold_terms(TECH_STACK_TAXONOMY)
-    else:
-        print(f"[info] tech-stack-taxonomy.md not found, skipping tech_stack closed-set check")
+    # Load closed sets
+    cap_set, ts_set = load_tag_catalog(TAG_CATALOG)
 
     skill_files = sorted(SKILLS_DIR.rglob("SKILL.md"))
     total = len(skill_files)
