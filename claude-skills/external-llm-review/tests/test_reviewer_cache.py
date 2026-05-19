@@ -126,6 +126,18 @@ class QwenExplicitCacheMessagesTest(unittest.TestCase):
         self.assertIn("--tools", command)
         self.assertEqual(command[command.index("--tools") + 1], "")
 
+    def test_claude_cli_command_uses_valid_empty_mcp_config(self):
+        command = reviewer.build_claude_cli_command(
+            claude_bin="claude",
+            model="claude-sonnet-4-6",
+            settings_path=Path("/tmp/settings.json"),
+        )
+
+        self.assertEqual(
+            command[command.index("--mcp-config") + 1],
+            '{"mcpServers":{}}',
+        )
+
     def test_claude_cli_env_isolates_home_xdg_and_selected_endpoint_vars(self):
         config = reviewer.ClaudeCliConfig(
             base_url="https://gateway.example.test",
