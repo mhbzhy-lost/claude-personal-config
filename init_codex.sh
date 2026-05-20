@@ -6,9 +6,8 @@
 # Codex app、IDE extension 共同消费的配置层：
 #   - `claude/CLAUDE.md`          -> `~/.codex/agents.md`
 #   - `memory.md`                 -> `~/.codex/memory.md`
-#   - `claude-skills/<name>`      -> `~/.agents/skills/<name>`（共享 skill 白名单）
-#   - `vendor/superpowers/skills` -> `~/.agents/skills/<name>`（Codex local plugin
-#                                      skills 暂不暴露时的 fallback）
+#   - `codex/skills.list`         -> `~/.agents/skills/<name>`（Codex 原生 skill 白名单；
+#                                      来源为 claude-skills/ 或 vendor/superpowers/skills/）
 #   - `codex/hooks.json`          -> 渲染到 `~/.codex/hooks.json`
 #   - `mcp/*`                     -> 合并到 `~/.codex/config.toml`
 #   - `mcp/skill-catalog/vendor/ollama` 与 `bge-m3` embedding 模型
@@ -19,7 +18,7 @@
 #   - 保守：若目标已是真实文件/目录，报警但不覆盖
 #   - 单源：claude-config/ 为事实源，Codex 侧仅做共享 runtime 挂载
 #   - 渐进迁移：`skills/` 继续通过 skill-catalog MCP 暴露，不强行扁平化为
-#     Codex 原生 skills；仅将已验证可直用的 `claude-skills/` 白名单暴露出来
+#     Codex 原生 skills；仅将 `codex/skills.list` 白名单暴露出来
 #   - 不写入 app-only 配置：外观、通知、browser use、桌面权限等均不在此脚本管理
 
 set -euo pipefail
@@ -79,6 +78,19 @@ link_path() {
   fi
 }
 
+list_contains() {
+  local needle="$1"
+  shift
+
+  local item
+  for item in "$@"; do
+    if [ "$item" = "$needle" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 cleanup_legacy_global_agents() {
   if [ -L "$LEGACY_GLOBAL_AGENTS_PATH" ]; then
     local cur
@@ -115,6 +127,8 @@ ensure_codex_installed() {
 
 sync_codex_skills() {
   local list_file="$SRC/codex/skills.list"
+  local claude_skills_dir="$SRC/claude-skills"
+  local superpowers_dir="$SRC/vendor/superpowers/skills"
   mkdir -p "$USER_SKILLS_DIR"
 
   if [ ! -f "$list_file" ]; then
@@ -123,38 +137,37 @@ sync_codex_skills() {
   fi
 
   local skill_name src_skill dst_skill
+  local skill_allowlist=()
   while IFS= read -r skill_name; do
-    src_skill="$SRC/claude-skills/$skill_name"
-    dst_skill="$USER_SKILLS_DIR/$skill_name"
+    skill_allowlist+=("$skill_name")
 
-    if [ ! -d "$src_skill" ]; then
-      echo "[warn] skill '$skill_name' is listed for Codex, but $src_skill is missing"
+    if [ -d "$claude_skills_dir/$skill_name" ]; then
+      src_skill="$claude_skills_dir/$skill_name"
+    elif [ -d "$superpowers_dir/$skill_name" ]; then
+      src_skill="$superpowers_dir/$skill_name"
+    else
+      echo "[warn] skill '$skill_name' is listed for Codex, but no source exists in claude-skills/ or vendor/superpowers/skills/"
       continue
     fi
 
-    link_path "$src_skill" "$dst_skill"
-  done < <(read_list_file "$list_file")
-}
-
-sync_superpowers_skills_fallback() {
-  local src_dir="$SRC/vendor/superpowers/skills"
-
-  if [ ! -d "$src_dir" ]; then
-    echo "[warn] superpowers skills dir not found at $src_dir; skipping fallback skills"
-    return
-  fi
-
-  mkdir -p "$USER_SKILLS_DIR"
-
-  local src_skill dst_skill skill_name
-  for src_skill in "$src_dir"/*; do
-    [ -d "$src_skill" ] || continue
-    [ -f "$src_skill/SKILL.md" ] || continue
-
-    skill_name="$(basename "$src_skill")"
     dst_skill="$USER_SKILLS_DIR/$skill_name"
 
     link_path "$src_skill" "$dst_skill"
+  done < <(read_list_file "$list_file")
+
+  local cur
+  for dst_skill in "$USER_SKILLS_DIR"/*; do
+    [ -L "$dst_skill" ] || continue
+    cur="$(readlink "$dst_skill")"
+    case "$cur" in
+      "$claude_skills_dir"/*|"$superpowers_dir"/*)
+        skill_name="$(basename "$dst_skill")"
+        if ! list_contains "$skill_name" "${skill_allowlist[@]}"; then
+          rm -f "$dst_skill"
+          echo "[cleanup] removed managed skill outside codex/skills.list: ${dst_skill}"
+        fi
+        ;;
+    esac
   done
 }
 
@@ -528,7 +541,6 @@ link_path "$SRC/claude/CLAUDE.md" "$CODEX_AGENTS_PATH"
 cleanup_legacy_global_agents
 link_path "$SRC/memory.md" "$CODEX_MEMORY_PATH"
 sync_codex_skills
-sync_superpowers_skills_fallback
 render_hooks_json
 ensure_skill_catalog_venv
 ensure_block_catalog_venv
