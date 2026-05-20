@@ -7,7 +7,8 @@
 #   - `claude/CLAUDE.md`          -> `~/.codex/agents.md`
 #   - `memory.md`                 -> `~/.codex/memory.md`
 #   - `codex/skills.list`         -> `~/.agents/skills/<name>`（Codex 原生 skill 白名单；
-#                                      来源为 claude-skills/ 或 vendor/superpowers/skills/）
+#                                      来源为 claude-skills/ 或 vendor/superpowers/skills/；
+#                                      若存在 `codex/skills.list.local` 则本机覆盖）
 #   - `codex/hooks.json`          -> 渲染到 `~/.codex/hooks.json`
 #   - `mcp/*`                     -> 合并到 `~/.codex/config.toml`
 #   - `mcp/skill-catalog/vendor/ollama` 与 `bge-m3` embedding 模型
@@ -50,6 +51,17 @@ read_list_file() {
     [[ "$line" == \#* ]] && continue
     printf '%s\n' "$line"
   done < "$file"
+}
+
+codex_skills_list_file() {
+  local default_list="$SRC/codex/skills.list"
+  local local_list="$SRC/codex/skills.list.local"
+
+  if [ -f "$local_list" ]; then
+    printf '%s\n' "$local_list"
+  else
+    printf '%s\n' "$default_list"
+  fi
 }
 
 link_path() {
@@ -126,7 +138,8 @@ ensure_codex_installed() {
 }
 
 sync_codex_skills() {
-  local list_file="$SRC/codex/skills.list"
+  local list_file
+  list_file="$(codex_skills_list_file)"
   local claude_skills_dir="$SRC/claude-skills"
   local superpowers_dir="$SRC/vendor/superpowers/skills"
   mkdir -p "$USER_SKILLS_DIR"
@@ -134,6 +147,10 @@ sync_codex_skills() {
   if [ ! -f "$list_file" ]; then
     echo "[warn] skills list not found at $list_file; skipping Codex native skills"
     return
+  fi
+
+  if [ "$list_file" = "$SRC/codex/skills.list.local" ]; then
+    echo "[skills] using local override list: $list_file"
   fi
 
   local skill_name src_skill dst_skill
@@ -164,7 +181,7 @@ sync_codex_skills() {
         skill_name="$(basename "$dst_skill")"
         if ! list_contains "$skill_name" "${skill_allowlist[@]}"; then
           rm -f "$dst_skill"
-          echo "[cleanup] removed managed skill outside codex/skills.list: ${dst_skill}"
+          echo "[cleanup] removed managed skill outside resolved skills list: ${dst_skill}"
         fi
         ;;
     esac

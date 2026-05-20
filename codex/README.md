@@ -12,6 +12,8 @@ This directory contains Codex shared agent runtime resources derived from
 - `skills.list`
   Whitelist of `claude-skills/` entries that are safe to expose directly as
   native Codex skills under `$HOME/.agents/skills`.
+  If `skills.list.local` exists, `init_codex.sh` uses it instead of the tracked
+  `skills.list`; this file is intentionally ignored for per-machine overrides.
 - `superpowers-bootstrap.md`
   Handwritten Codex-side bootstrap prompt for using Superpowers workflows
   without relying on plugin `SessionStart` injection.

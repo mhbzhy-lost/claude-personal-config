@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import json
+import shlex
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -72,6 +74,49 @@ class CodexHooksTest(unittest.TestCase):
         init_codex = INIT_CODEX.read_text()
         self.assertIn("CODEX_HOOKS_DIR", init_codex)
         self.assertIn("codex/hooks/git-commit-hint.sh", init_codex)
+
+    def test_sync_codex_skills_prefers_local_override_list(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            codex_dir = repo / "codex"
+            claude_skills_dir = repo / "claude-skills"
+            user_skills_dir = tmp_path / "home" / ".agents" / "skills"
+
+            codex_dir.mkdir(parents=True)
+            claude_skills_dir.mkdir(parents=True)
+            (claude_skills_dir / "default-only").mkdir()
+            (claude_skills_dir / "local-only").mkdir()
+            (codex_dir / "skills.list").write_text("default-only\n")
+            (codex_dir / "skills.list.local").write_text("local-only\n")
+            user_skills_dir.mkdir(parents=True)
+            (user_skills_dir / "default-only").symlink_to(
+                claude_skills_dir / "default-only"
+            )
+            external_skill = tmp_path / "external-skill"
+            external_skill.mkdir()
+            (user_skills_dir / "external-only").symlink_to(external_skill)
+            init_prelude = tmp_path / "init_codex_prelude.sh"
+            init_prelude.write_text(
+                INIT_CODEX.read_text().split("\nensure_codex_installed\n", 1)[0]
+            )
+
+            script = f"""
+source {shlex.quote(str(init_prelude))}
+SRC={shlex.quote(str(repo))}
+USER_SKILLS_DIR={shlex.quote(str(user_skills_dir))}
+sync_codex_skills
+"""
+            proc = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue((user_skills_dir / "local-only").is_symlink())
+            self.assertFalse((user_skills_dir / "default-only").exists())
+            self.assertTrue((user_skills_dir / "external-only").is_symlink())
 
 
 if __name__ == "__main__":

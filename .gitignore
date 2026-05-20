@@ -33,6 +33,7 @@ claude/settings/.env
 
 # 用户自定义清单：覆盖 lists/*.list 默认值，仅本机生效
 lists/*.local.list
+codex/skills.list.local
 
 # skill 私有 .env 凭据（如 external-llm-review/.env）
 claude-skills/*/.env
