@@ -67,7 +67,20 @@ command -v claude >/dev/null || npm install -g @anthropic-ai/claude-code
 claude --version
 ```
 
+如果 `command -v claude` 找不到，先搜索常见用户安装目录，Claude Code CLI 可能已经安装但不在当前 `PATH`。
+
 CLI 后端运行时会创建临时 `HOME` / `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_CACHE_HOME` / `XDG_STATE_HOME` / `CLAUDE_CONFIG_DIR`，并用 `claude --print --bare --no-session-persistence --disable-slash-commands --strict-mcp-config --mcp-config '{}' --permission-mode plan --tools ''` 调用。它不加载用户目录的 Claude Code hooks、plugins、MCP、skills、auto memory、CLAUDE.md 或会话历史。
+
+#### Claude Code CLI 单次 review 大小建议
+
+Claude Code CLI 后端比裸 API 后端更容易受本地 CLI 超时、企业网关 socket、以及长输出流稳定性影响。`--max-diff` 的默认值仍用于裸 API 防 413，但 CLI 模式应更保守：
+
+- 推荐单次 CLI review 的 `diff_chars` 控制在 **30k-45k 字符**。
+- **45k-55k 字符**通常还能跑，但可能明显变慢，建议只用于高价值、同一风险面的子集 review。
+- **超过约 60k-70k 字符**容易失败：实测 69k 字符完整 diff 曾出现一次 300s CLI 超时、一次 `socket connection was closed unexpectedly`。
+- 需要 review 更大改动时，按风险面拆分 snapshot，例如 `publish/MC`、`AIMI/prompt`、`UI`、`tests` 等；每个子集仍可附同一份 `--spec`。
+- 如果必须接近 50k 字符，显式设置 `EXTERNAL_LLM_CLAUDE_TIMEOUT_SECONDS=900`，但不要把超时拉长当作替代拆分的常规手段。
+- Round 2 只验证已修复项和新增风险，应优先使用修复后的同一子集 diff，不要重新塞回完整累计 diff。
 
 兼容性要求：endpoint 实现以下任一协议即可：
 - OpenAI Chat Completions schema（最常见，含本地 Ollama `http://localhost:11434/v1`）
