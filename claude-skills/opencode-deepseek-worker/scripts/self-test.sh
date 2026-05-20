@@ -11,6 +11,7 @@ GUARD_OUT="$TMP_ROOT/guard.out"
 PROFILE_ROOT="$TMP_ROOT/profile-root"
 AUTH_FILE="$TMP_ROOT/auth.json"
 WATCHDOG_ROOT="$TMP_ROOT/watchdog"
+STUB_BIN="$TMP_ROOT/bin"
 
 cleanup() {
   rm -rf "$TMP_ROOT"
@@ -51,7 +52,7 @@ if ! rg -q "forbidden.txt" "$GUARD_OUT"; then
 fi
 
 printf '{"provider":{"example":true}}\n' > "$AUTH_FILE"
-OPENCODE_DEEPSEEK_AUTH_FILE="$AUTH_FILE" prepare_profile "$PROFILE_ROOT" "$GUARD_OUT" "allowed.txt" ""
+OPENCODE_DEEPSEEK_AUTH_FILE="$AUTH_FILE" prepare_profile "$PROFILE_ROOT" "$GUARD_OUT" "" "allowed.txt" ""
 if [ ! -f "$PROFILE_ROOT/xdg/data/opencode/auth.json" ]; then
   die "prepare_profile did not copy auth.json into isolated data dir"
 fi
@@ -71,4 +72,32 @@ if ! rg -q "idle timed out" "$WATCHDOG_ROOT/opencode.stderr"; then
   die "idle watchdog output did not mention idle timeout"
 fi
 
-echo "[ok] write-scope guard self-test passed"
+mkdir -p "$STUB_BIN"
+cat > "$STUB_BIN/opencode" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+prompt="${@: -1}"
+worker_root="$(cd "$(dirname "$OPENCODE_CONFIG")/.." && pwd)"
+printf '%s\n' "$prompt" > "$worker_root/stub-prompt.txt"
+printf 'worker\n' >> allowed.txt
+printf '{"type":"done"}\n'
+STUB
+chmod +x "$STUB_BIN/opencode"
+
+CLI_OUT="$TMP_ROOT/cli-result.json"
+PATH="$STUB_BIN:$PATH" TMPDIR="$TMP_ROOT/worker-tmp" "$WORKER_DIR/bin/run.sh" \
+  --repo "$REPO" \
+  --prompt "Append worker to allowed.txt." \
+  --keep > "$CLI_OUT"
+
+if ! rg -q '"status": "success"' "$CLI_OUT"; then
+  die "run.sh --prompt without write-scope did not succeed"
+fi
+if ! rg -q '"allowed.txt"' "$CLI_OUT"; then
+  die "run.sh --prompt result did not report the changed file"
+fi
+if ! rg -q "Append worker to allowed.txt." "$TMP_ROOT"/worker-tmp/opencode-deepseek-worker/*/stub-prompt.txt; then
+  die "run.sh --prompt did not forward inline prompt text"
+fi
+
+echo "[ok] opencode-deepseek worker self-test passed"

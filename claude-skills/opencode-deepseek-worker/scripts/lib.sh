@@ -12,8 +12,9 @@ make_task_id() {
 prepare_profile() {
   local worker_root="$1"
   local task_file="$2"
-  local write_scope="$3"
-  local validation="$4"
+  local prompt="$3"
+  local write_scope="$4"
+  local validation="$5"
 
   mkdir -p \
     "$worker_root/xdg/config/opencode" \
@@ -24,17 +25,23 @@ prepare_profile() {
 
   cp "$WORKER_DIR/config/opencode.worker.json" "$worker_root/profile/opencode.json"
   cp "$WORKER_DIR/worker-system.md" "$worker_root/profile/worker-system.md"
-  cp "$task_file" "$worker_root/task.md"
+  if [ -n "$task_file" ]; then
+    cp "$task_file" "$worker_root/task.md"
+  else
+    printf '%s\n' "$prompt" > "$worker_root/task.md"
+  fi
 
   {
-    printf '# Worker Task Capsule\n\n'
-    printf '## Allowed Write Scope\n\n'
-    printf '%s\n' "$write_scope" | tr ',' '\n' | sed 's/^/- /'
+    printf '# Worker Prompt\n\n'
+    if [ -n "$write_scope" ]; then
+      printf '## Allowed Write Scope\n\n'
+      printf '%s\n' "$write_scope" | tr ',' '\n' | sed 's/^/- /'
+    fi
     if [ -n "$validation" ]; then
       printf '\n## Validation Command\n\n```bash\n%s\n```\n' "$validation"
     fi
     printf '\n## Task\n\n'
-    cat "$task_file"
+    cat "$worker_root/task.md"
   } > "$worker_root/prompt.md"
 
   prepare_auth "$worker_root"

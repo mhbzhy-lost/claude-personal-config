@@ -8,7 +8,7 @@ WORKER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${WORKER_DIR}/scripts/lib.sh"
 
 main() {
-  local repo="" task_file="" base_ref="HEAD" write_scope="" validation=""
+  local repo="" task_file="" prompt="" base_ref="HEAD" write_scope="" validation=""
   local model="${OPENCODE_DEEPSEEK_MODEL:-deepseek/deepseek-v4-pro}"
   local keep="false"
 
@@ -20,6 +20,10 @@ main() {
         ;;
       --task)
         task_file="${2:-}"
+        shift 2
+        ;;
+      --prompt)
+        prompt="${2:-}"
         shift 2
         ;;
       --base)
@@ -54,9 +58,14 @@ main() {
 
   [ -n "$repo" ] || die "--repo is required"
   git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || die "--repo must point to a git repository"
-  [ -n "$task_file" ] || die "--task is required"
-  [ -f "$task_file" ] || die "--task file does not exist: $task_file"
-  [ -n "$write_scope" ] || die "--write-scope is required"
+  if [ -n "$task_file" ] && [ -n "$prompt" ]; then
+    die "use either --prompt or --task, not both"
+  fi
+  if [ -n "$task_file" ]; then
+    [ -f "$task_file" ] || die "--task file does not exist: $task_file"
+  elif [ -z "$prompt" ]; then
+    die "--prompt is required"
+  fi
 
   command -v opencode >/dev/null 2>&1 || die "opencode is not available on PATH"
   command -v git >/dev/null 2>&1 || die "git is not available on PATH"
@@ -68,7 +77,7 @@ main() {
   result_file="${worker_root}/result.json"
 
   mkdir -p "$worker_root"
-  prepare_profile "$worker_root" "$task_file" "$write_scope" "$validation"
+  prepare_profile "$worker_root" "$task_file" "$prompt" "$write_scope" "$validation"
   prepare_worktree "$repo" "$worktree" "$base_ref"
 
   local opencode_exit=0
@@ -76,7 +85,7 @@ main() {
 
   local guard_status="success"
   local guard_output=""
-  if ! guard_output="$(enforce_write_scope "$worktree" "$write_scope" 2>&1)"; then
+  if [ -n "$write_scope" ] && ! guard_output="$(enforce_write_scope "$worktree" "$write_scope" 2>&1)"; then
     guard_status="rejected"
   fi
 
@@ -111,14 +120,16 @@ main() {
 usage() {
   cat <<'EOF'
 Usage:
-  run.sh --repo <repo> --task <task.md> --write-scope <paths> [options]
+  run.sh --repo <repo> --prompt <text> [options]
 
 Options:
   --base <ref>          Base ref for the worker worktree. Default: HEAD
-  --write-scope <paths> Comma-separated files, directories, or glob patterns.
+  --prompt <text>       Natural-language task prompt for the worker
+  --task <task.md>      Read the worker prompt from a file. Legacy alias for longer prompts
+  --write-scope <paths> Optional comma-separated files, directories, or glob patterns.
                         Directories may be written as src/auth or src/auth/.
                         --write-set is kept as a backward-compatible alias.
-  --validation <cmd>    Validation command to run inside the worker worktree
+  --validation <cmd>    Optional validation command to run inside the worker worktree
   --model <id>          OpenCode model id. Default: OPENCODE_DEEPSEEK_MODEL or deepseek/deepseek-v4-pro
   --keep                Keep temporary worker files for debugging
 EOF

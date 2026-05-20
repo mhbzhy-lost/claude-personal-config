@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "OpenCode DeepSeek Worker Task Capsule",
+  "title": "OpenCode DeepSeek Worker Prompt Capsule",
   "type": "object",
   "additionalProperties": false,
-  "required": ["objective", "allowed_write_scope"],
+  "required": ["objective"],
   "properties": {
     "objective": {
       "type": "string",
