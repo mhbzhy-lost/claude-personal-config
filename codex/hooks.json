@@ -21,6 +21,18 @@
           }
         ]
       }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"__CLAUDE_CONFIG_HOME__/codex/hooks/external-llm-review-permission.sh\"",
+            "statusMessage": "Checking external LLM review approval"
+          }
+        ]
+      }
     ]
   }
 }

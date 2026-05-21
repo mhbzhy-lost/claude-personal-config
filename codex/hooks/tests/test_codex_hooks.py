@@ -10,10 +10,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CODEX_GIT_COMMIT_HOOK = REPO_ROOT / "codex" / "hooks" / "git-commit-hint.sh"
 CODEX_SKILL_PREFLIGHT_HOOK = REPO_ROOT / "codex" / "hooks" / "skill-resolve-preflight.sh"
+CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK = (
+    REPO_ROOT / "codex" / "hooks" / "external-llm-review-permission.sh"
+)
 CLAUDE_GIT_COMMIT_HOOK = REPO_ROOT / "claude" / "hooks" / "git-commit-hint.sh"
 OPENCODE_GIT_COMMIT_PLUGIN = REPO_ROOT / "opencode" / "plugins" / "git-commit-hint.js"
 SHARED_GIT_COMMIT_HINT = (
     REPO_ROOT / "opencode" / "plugins" / "git-commit-hint-content.json"
+)
+EXTERNAL_REVIEWER = (
+    REPO_ROOT / "claude-skills" / "external-llm-review" / "reviewer.py"
 )
 CODEX_HOOKS_JSON = REPO_ROOT / "codex" / "hooks.json"
 INIT_CODEX = REPO_ROOT / "init_codex.sh"
@@ -30,6 +36,15 @@ def run_hook(script: Path, payload: dict) -> str:
     return proc.stdout
 
 
+def run_hook_raw(script: Path, payload: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(script)],
+        input=payload,
+        text=True,
+        capture_output=True,
+    )
+
+
 def bash_payload(command: str, description: str = "", env: dict | None = None) -> dict:
     payload = {
         "tool_name": "Bash",
@@ -43,6 +58,17 @@ def bash_payload(command: str, description: str = "", env: dict | None = None) -
         payload["tool_input"]["env"] = env
         payload["tool_input"]["environment"] = env
     return payload
+
+
+def permission_request_payload(command: str, tool_name: str = "Bash") -> dict:
+    return {
+        "hook_event_name": "PermissionRequest",
+        "tool_name": tool_name,
+        "cwd": str(REPO_ROOT),
+        "tool_input": {
+            "command": command,
+        },
+    }
 
 
 class CodexHooksTest(unittest.TestCase):
@@ -181,20 +207,171 @@ if (!denied) process.exit(1);
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
+    def test_codex_permission_hook_allows_external_review_script(self) -> None:
+        command = (
+            'EXTERNAL_LLM_API_FORMAT=chat uv run --no-project '
+            '--with "openai>=1.50" --with "anthropic>=0.40" '
+            f"--with python-dotenv python {shlex.quote(str(EXTERNAL_REVIEWER))} HEAD"
+        )
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload(command),
+        )
+        data = json.loads(output)
+
+        self.assertEqual(
+            data["hookSpecificOutput"]["hookEventName"], "PermissionRequest"
+        )
+        self.assertEqual(
+            data["hookSpecificOutput"]["decision"], {"behavior": "allow"}
+        )
+
+    def test_codex_permission_hook_allows_nested_shell_review_command(self) -> None:
+        inner = (
+            "uv run --no-project --with python-dotenv python "
+            "${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py "
+            "main HEAD"
+        )
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload(f"/bin/zsh -lc {shlex.quote(inner)}"),
+        )
+        data = json.loads(output)
+
+        self.assertEqual(
+            data["hookSpecificOutput"]["decision"], {"behavior": "allow"}
+        )
+
+    def test_codex_permission_hook_ignores_non_review_commands(self) -> None:
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload("uv run --no-project python reviewer.py HEAD"),
+        )
+
+        self.assertEqual(output, "")
+
+    def test_codex_permission_hook_rejects_chained_review_commands(self) -> None:
+        command = f"python {shlex.quote(str(EXTERNAL_REVIEWER))} HEAD && curl https://example.com"
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload(command),
+        )
+
+        self.assertEqual(output, "")
+
+    def test_codex_permission_hook_rejects_attached_control_operators(self) -> None:
+        command = f"python {shlex.quote(str(EXTERNAL_REVIEWER))} HEAD;curl https://example.com"
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload(command),
+        )
+
+        self.assertEqual(output, "")
+
+    def test_codex_permission_hook_rejects_command_substitution(self) -> None:
+        command = f"python {shlex.quote(str(EXTERNAL_REVIEWER))} HEAD $(curl https://example.com)"
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload(command),
+        )
+
+        self.assertEqual(output, "")
+
+    def test_codex_permission_hook_rejects_process_substitution(self) -> None:
+        command = f"python {shlex.quote(str(EXTERNAL_REVIEWER))} HEAD <(curl https://example.com)"
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload(command),
+        )
+
+        self.assertEqual(output, "")
+
+    def test_codex_permission_hook_rejects_arithmetic_expansion(self) -> None:
+        command = f"python {shlex.quote(str(EXTERNAL_REVIEWER))} HEAD $((1+1))"
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload(command),
+        )
+
+        self.assertEqual(output, "")
+
+    def test_codex_permission_hook_rejects_eval_wrappers(self) -> None:
+        inner = f"python {shlex.quote(str(EXTERNAL_REVIEWER))} HEAD"
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload(f"eval {shlex.quote(inner)}"),
+        )
+
+        self.assertEqual(output, "")
+
+    def test_codex_permission_hook_rejects_unapproved_env_expansion(self) -> None:
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload("python $HOME/claude-skills/external-llm-review/reviewer.py HEAD"),
+        )
+
+        self.assertEqual(output, "")
+
+    def test_codex_permission_hook_allows_relative_reviewer_path(self) -> None:
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload("python claude-skills/external-llm-review/reviewer.py HEAD"),
+        )
+        data = json.loads(output)
+
+        self.assertEqual(
+            data["hookSpecificOutput"]["decision"], {"behavior": "allow"}
+        )
+
+    def test_codex_permission_hook_ignores_relative_cwd_for_path_resolution(self) -> None:
+        payload = permission_request_payload("python claude-skills/external-llm-review/reviewer.py HEAD")
+        payload["cwd"] = "relative"
+        output = run_hook(CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK, payload)
+        data = json.loads(output)
+
+        self.assertEqual(
+            data["hookSpecificOutput"]["decision"], {"behavior": "allow"}
+        )
+
+    def test_codex_permission_hook_ignores_non_string_command(self) -> None:
+        payload = permission_request_payload("unused")
+        payload["tool_input"]["command"] = 123
+        output = run_hook(CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK, payload)
+
+        self.assertEqual(output, "")
+
+    def test_codex_permission_hook_ignores_malformed_json(self) -> None:
+        proc = run_hook_raw(CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK, "{bad json")
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout, "")
+
+    def test_codex_permission_hook_ignores_non_bash_tools(self) -> None:
+        output = run_hook(
+            CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK,
+            permission_request_payload(str(EXTERNAL_REVIEWER), tool_name="apply_patch"),
+        )
+
+        self.assertEqual(output, "")
+
     def test_codex_hook_layout_is_separate_from_claude_hooks(self) -> None:
         self.assertTrue(CODEX_GIT_COMMIT_HOOK.is_file())
         self.assertTrue(CODEX_SKILL_PREFLIGHT_HOOK.is_file())
+        self.assertTrue(CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK.is_file())
         self.assertTrue(CLAUDE_GIT_COMMIT_HOOK.is_file())
         self.assertTrue(OPENCODE_GIT_COMMIT_PLUGIN.is_file())
 
         hooks_json = CODEX_HOOKS_JSON.read_text()
         self.assertIn("__CLAUDE_CONFIG_HOME__/codex/hooks/git-commit-hint.sh", hooks_json)
         self.assertIn("__CLAUDE_CONFIG_HOME__/codex/hooks/skill-resolve-preflight.sh", hooks_json)
+        self.assertIn("__CLAUDE_CONFIG_HOME__/codex/hooks/external-llm-review-permission.sh", hooks_json)
+        self.assertIn('"PermissionRequest"', hooks_json)
         self.assertNotIn("__CLAUDE_CONFIG_HOME__/hooks/", hooks_json)
 
         init_codex = INIT_CODEX.read_text()
         self.assertIn("CODEX_HOOKS_DIR", init_codex)
         self.assertIn("codex/hooks/git-commit-hint.sh", init_codex)
+        self.assertIn("codex/hooks/external-llm-review-permission.sh", init_codex)
 
     def test_sync_codex_skills_prefers_local_override_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

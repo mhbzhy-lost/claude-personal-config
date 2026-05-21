@@ -8,7 +8,9 @@ This directory contains Codex shared agent runtime resources derived from
 - `hooks.json`
   Template for Codex lifecycle hooks. `init_codex.sh` renders it into
   `~/.codex/hooks.json` with the local repository path substituted in place of
-  `__CLAUDE_CONFIG_HOME__`.
+  `__CLAUDE_CONFIG_HOME__`. It currently registers PreToolUse checks for skill
+  lookup / git commit workflow and a PermissionRequest allowlist for
+  `external-llm-review` reviewer.py Bash calls.
 - `skills.list`
   Whitelist of `claude-skills/` entries that are safe to expose directly as
   native Codex skills under `$HOME/.agents/skills`.
