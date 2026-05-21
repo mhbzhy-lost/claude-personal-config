@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # Codex PreToolUse hook: detect git commit and require the review/commit workflow.
 #
-# Codex does not expose Claude Code's Bash tool_input.description field through
-# exec_command. The escape hatch therefore lives in the command text itself:
-# include "skip-git-commit-hint" in the shell command after completing the
-# required checks or documenting an allowed exemption.
+# Escape hatch: set GIT_COMMIT_HINT_SKIP=1 in structured Bash env when present,
+# or as a leading shell env assignment for tool surfaces without env fields.
 
 set -uo pipefail
 
@@ -15,8 +13,12 @@ if ! RESPONSE="$(HINT_CONTENT_PATH="${HINT_CONTENT_PATH}" HINT_HOST="codex" pyth
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
+
+SKIP_ENV_NAME = "GIT_COMMIT_HINT_SKIP"
+SKIP_VALUES = {"1", "true", "yes", "on"}
 
 
 def render_reason():
@@ -28,6 +30,42 @@ def render_reason():
         .replace("{hook_name}", content["hook_names"][host])
         .replace("{escape_instruction}", content["escape_instructions"][host])
     )
+
+
+def is_truthy(value):
+    return str(value).strip().lower() in SKIP_VALUES
+
+
+def tool_env_requests_skip(tool_input):
+    for key in ("env", "environment"):
+        env = tool_input.get(key)
+        if isinstance(env, dict) and is_truthy(env.get(SKIP_ENV_NAME, "")):
+            return True
+    return False
+
+
+def command_env_prefix_requests_skip(cmd):
+    try:
+        tokens = shlex.split(cmd, posix=True)
+    except ValueError:
+        return False
+
+    if not tokens:
+        return False
+    if tokens[0] == "env":
+        tokens = tokens[1:]
+
+    skip_requested = False
+    idx = 0
+    while idx < len(tokens):
+        name, separator, value = tokens[idx].partition("=")
+        if not separator or not name.isidentifier():
+            break
+        if name == SKIP_ENV_NAME and is_truthy(value):
+            skip_requested = True
+        idx += 1
+
+    return skip_requested and idx + 1 < len(tokens) and tokens[idx:idx + 2] == ["git", "commit"]
 
 raw = sys.stdin.read()
 try:
@@ -43,19 +81,15 @@ if tool_name not in {"Bash", "exec_command", "functions.exec_command"}:
 
 tool_input = payload.get("tool_input") or {}
 cmd = tool_input.get("command") or tool_input.get("cmd") or ""
-description = tool_input.get("description") or ""
 
 # Match git commit only, not git commit-tree / git commit-graph.
 if not re.search(r"(^|[^\w-])git\s+commit(\s|$)", cmd):
     print("")
     sys.exit(0)
 
-# Codex-friendly escape hatch: marker in command text. Description is accepted
-# as a defensive fallback for future tool schema changes, but the user-facing
-# instruction below names command text only.
-if re.search(r"skip-git-commit-hint", cmd, re.IGNORECASE) or re.search(
-    r"skip-git-commit-hint", description, re.IGNORECASE
-):
+# Escape hatch: structured Bash env when present, or a leading shell env
+# assignment for tool surfaces that do not expose a separate env field.
+if tool_env_requests_skip(tool_input) or command_env_prefix_requests_skip(cmd):
     print("")
     sys.exit(0)
 

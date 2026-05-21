@@ -1,13 +1,13 @@
 {
   "hook_names": {
-    "codex": "[codex git-commit hook]",
+    "codex": "[git-commit hook]",
     "claude": "[git-commit hook]",
     "opencode": "[git-commit 插件]"
   },
   "escape_instructions": {
-    "codex": "Codex 没有可写的 Bash 放行字段；完成上述步骤后，请在命令文本中包含字符串 \"skip-git-commit-hint\" 以放行本次 commit。",
-    "claude": "完成上述步骤后，请在本次 Bash 工具的 description 字段中包含字符串 \"skip-git-commit-hint\" 以放行 commit。",
-    "opencode": "完成上述步骤后，请在 bash 工具的 description 字段中包含字符串 \"skip-git-commit-hint\" 以放行 commit。"
+    "codex": "完成上述步骤后，请设置 Bash 工具环境变量 `GIT_COMMIT_HINT_SKIP=1` 以放行；若当前工具没有结构化 env 字段，可使用命令前缀 `GIT_COMMIT_HINT_SKIP=1 git commit ...`。",
+    "claude": "完成上述步骤后，请设置 Bash 工具环境变量 `GIT_COMMIT_HINT_SKIP=1` 以放行；若当前工具没有结构化 env 字段，可使用命令前缀 `GIT_COMMIT_HINT_SKIP=1 git commit ...`。",
+    "opencode": "完成上述步骤后，请设置 bash 工具环境变量 `GIT_COMMIT_HINT_SKIP=1` 以放行；若当前工具没有结构化 env 字段，可使用命令前缀 `GIT_COMMIT_HINT_SKIP=1 git commit ...`。"
   },
   "template": [
     "{hook_name} 准备执行 git commit，提交前必须完成以下检查：",

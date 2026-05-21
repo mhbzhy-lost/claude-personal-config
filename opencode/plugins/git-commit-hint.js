@@ -12,6 +12,8 @@ const hintContentPath = join(
   dirname(fileURLToPath(import.meta.url)),
   "git-commit-hint-content.json",
 )
+const skipEnvName = "GIT_COMMIT_HINT_SKIP"
+const skipValues = new Set(["1", "true", "yes", "on"])
 
 const renderGitCommitHint = async (host) => {
   try {
@@ -26,19 +28,42 @@ const renderGitCommitHint = async (host) => {
   }
 }
 
+const isTruthy = (value) => skipValues.has(String(value || "").trim().toLowerCase())
+
+const toolEnvRequestsSkip = (args) => {
+  for (const env of [args?.env, args?.environment]) {
+    if (env && typeof env === "object" && isTruthy(env[skipEnvName])) return true
+  }
+  return false
+}
+
+const commandEnvPrefixRequestsSkip = (command) => {
+  let tokens = command.trim().split(/\s+/).filter(Boolean)
+  if (tokens[0] === "env") tokens = tokens.slice(1)
+
+  let skipRequested = false
+  let index = 0
+  for (; index < tokens.length; index += 1) {
+    const match = tokens[index].match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/)
+    if (!match) break
+    if (match[1] === skipEnvName && isTruthy(match[2])) skipRequested = true
+  }
+
+  return skipRequested && tokens[index] === "git" && tokens[index + 1] === "commit"
+}
+
 export const GitCommitHintPlugin = async (ctx) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (input.tool !== "bash") return
 
       const command = output.args?.command || ""
-      const description = output.args?.description || ""
 
       // 仅匹配 git commit（排除 git commit-tree/git commit-graph 等子命令）
       if (!/(^|[^\w-])git\s+commit(\s|$)/.test(command)) return
 
-      // 逃生舱：description 含特殊标记则放行
-      if (/skip-git-commit-hint/i.test(description)) return
+      // 逃生舱：结构化 bash env 优先；无独立 env 字段的工具可用命令前缀赋值
+      if (toolEnvRequestsSkip(output.args) || commandEnvPrefixRequestsSkip(command)) return
 
       const hint = await renderGitCommitHint("opencode")
       if (!hint) return

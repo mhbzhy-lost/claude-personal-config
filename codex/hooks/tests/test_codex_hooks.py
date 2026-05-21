@@ -30,8 +30,8 @@ def run_hook(script: Path, payload: dict) -> str:
     return proc.stdout
 
 
-def bash_payload(command: str, description: str = "") -> dict:
-    return {
+def bash_payload(command: str, description: str = "", env: dict | None = None) -> dict:
+    payload = {
         "tool_name": "Bash",
         "tool_input": {
             "command": command,
@@ -39,6 +39,10 @@ def bash_payload(command: str, description: str = "") -> dict:
             "description": description,
         },
     }
+    if env is not None:
+        payload["tool_input"]["env"] = env
+        payload["tool_input"]["environment"] = env
+    return payload
 
 
 class CodexHooksTest(unittest.TestCase):
@@ -56,16 +60,34 @@ class CodexHooksTest(unittest.TestCase):
         self.assertNotIn("豁免条件", reason)
         self.assertIn("明确本项目不需维护知识文档", reason)
         self.assertIn("Knowledge: not needed - <具体原因>", reason)
-        self.assertIn("命令文本", reason)
+        self.assertIn("GIT_COMMIT_HINT_SKIP=1", reason)
         self.assertNotIn("description 字段", reason)
+        self.assertNotIn("skip-git-commit-hint", reason)
 
-    def test_codex_git_commit_hook_allows_command_marker(self) -> None:
+    def test_codex_git_commit_hook_allows_structured_env_escape(self) -> None:
         output = run_hook(
             CODEX_GIT_COMMIT_HOOK,
-            bash_payload("git commit -m test # skip-git-commit-hint"),
+            bash_payload("git commit -m test", env={"GIT_COMMIT_HINT_SKIP": "1"}),
         )
 
         self.assertEqual(output, "")
+
+    def test_codex_git_commit_hook_allows_env_assignment_prefix(self) -> None:
+        output = run_hook(
+            CODEX_GIT_COMMIT_HOOK,
+            bash_payload("GIT_COMMIT_HINT_SKIP=1 git commit -m test"),
+        )
+
+        self.assertEqual(output, "")
+
+    def test_codex_git_commit_hook_ignores_old_string_marker(self) -> None:
+        output = run_hook(
+            CODEX_GIT_COMMIT_HOOK,
+            bash_payload("git commit -m 'skip-git-commit-hint'"),
+        )
+        data = json.loads(output)
+
+        self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
 
     def test_codex_git_commit_hook_does_not_match_commit_tree(self) -> None:
         output = run_hook(CODEX_GIT_COMMIT_HOOK, bash_payload("git commit-tree HEAD"))
@@ -80,19 +102,19 @@ class CodexHooksTest(unittest.TestCase):
 
         self.assertIn("知识文档检查", reason)
 
-    def test_claude_git_commit_hook_uses_description_marker(self) -> None:
+    def test_claude_git_commit_hook_uses_env_escape(self) -> None:
         output = run_hook(CLAUDE_GIT_COMMIT_HOOK, bash_payload("git commit -m test"))
         data = json.loads(output)
         reason = data["hookSpecificOutput"]["permissionDecisionReason"]
 
         self.assertIn("知识文档检查", reason)
         self.assertIn("Knowledge: updated <path>", reason)
-        self.assertIn("description 字段", reason)
+        self.assertIn("GIT_COMMIT_HINT_SKIP=1", reason)
         self.assertNotIn("命令文本中包含", reason)
 
         allowed = run_hook(
             CLAUDE_GIT_COMMIT_HOOK,
-            bash_payload("git commit -m test", "skip-git-commit-hint"),
+            bash_payload("git commit -m test", env={"GIT_COMMIT_HINT_SKIP": "1"}),
         )
         self.assertEqual(allowed, "")
 
@@ -110,6 +132,7 @@ class CodexHooksTest(unittest.TestCase):
         self.assertNotIn("豁免条件", rendered)
         self.assertIn("明确本项目不需维护知识文档", rendered)
         self.assertIn("Knowledge: updated <path>", rendered)
+        self.assertNotIn("skip-git-commit-hint", rendered)
 
         for adapter in (
             CODEX_GIT_COMMIT_HOOK,
@@ -118,8 +141,45 @@ class CodexHooksTest(unittest.TestCase):
         ):
             adapter_text = adapter.read_text()
             self.assertIn("git-commit-hint-content.json", adapter_text)
+            self.assertNotIn("skip-git-commit-hint", adapter_text)
             self.assertNotIn("知识文档检查", adapter_text)
             self.assertNotIn("Knowledge: updated <path>", adapter_text)
+
+    def test_opencode_git_commit_plugin_uses_env_escape(self) -> None:
+        script = f"""
+const mod = await import({json.dumps(OPENCODE_GIT_COMMIT_PLUGIN.as_uri())});
+const plugin = await mod.GitCommitHintPlugin({{}});
+const before = plugin["tool.execute.before"];
+
+await before(
+  {{tool: "bash"}},
+  {{args: {{command: "git commit -m test", env: {{GIT_COMMIT_HINT_SKIP: "1"}}}}}},
+);
+
+await before(
+  {{tool: "bash"}},
+  {{args: {{command: "GIT_COMMIT_HINT_SKIP=1 git commit -m test"}}}},
+);
+
+let denied = false;
+try {{
+  await before(
+    {{tool: "bash"}},
+    {{args: {{command: "git commit -m 'skip-git-commit-hint'"}}}},
+  );
+}} catch (err) {{
+  denied = String(err.message).includes("知识文档检查");
+}}
+
+if (!denied) process.exit(1);
+"""
+        proc = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True,
+            capture_output=True,
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
 
     def test_codex_hook_layout_is_separate_from_claude_hooks(self) -> None:
         self.assertTrue(CODEX_GIT_COMMIT_HOOK.is_file())
