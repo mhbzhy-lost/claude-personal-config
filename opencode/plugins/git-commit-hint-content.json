@@ -13,7 +13,7 @@
     "{hook_name} 准备执行 git commit，提交前必须完成以下检查：",
     "1) 读取 git-commit skill 获取 commit message 规范，再生成 message。",
     "2) 执行 external-llm-review skill。",
-    "3) 知识文档检查：查看 staged diff，并按 `docs/knowledge/README.md` 判断是否需要更新 `docs/knowledge/`。",
+    "3) 知识文档检查：查看 staged diff，并按 `$CLAUDE_CONFIG_HOME/docs/knowledge/README.md` 判断是否需要更新当前项目的 `docs/knowledge/`。",
     "   - 如明确本项目不需维护知识文档：直接走 escape，并在 commit message 说明原因。",
     "   - 如需更新：先更新对应知识文档，再提交。",
     "   - 如已更新：commit message 建议包含 `Knowledge: updated <path>`。",

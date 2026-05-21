@@ -86,6 +86,8 @@ class CodexHooksTest(unittest.TestCase):
         self.assertNotIn("豁免条件", reason)
         self.assertIn("明确本项目不需维护知识文档", reason)
         self.assertIn("Knowledge: not needed - <具体原因>", reason)
+        self.assertIn("$CLAUDE_CONFIG_HOME/docs/knowledge/README.md", reason)
+        self.assertNotIn("按 `docs/knowledge/README.md`", reason)
         self.assertIn("GIT_COMMIT_HINT_SKIP=1", reason)
         self.assertNotIn("description 字段", reason)
         self.assertNotIn("skip-git-commit-hint", reason)
@@ -158,6 +160,8 @@ class CodexHooksTest(unittest.TestCase):
         self.assertNotIn("豁免条件", rendered)
         self.assertIn("明确本项目不需维护知识文档", rendered)
         self.assertIn("Knowledge: updated <path>", rendered)
+        self.assertIn("$CLAUDE_CONFIG_HOME/docs/knowledge/README.md", rendered)
+        self.assertNotIn("按 `docs/knowledge/README.md`", rendered)
         self.assertNotIn("skip-git-commit-hint", rendered)
 
         for adapter in (
