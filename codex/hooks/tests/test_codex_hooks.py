@@ -50,6 +50,7 @@ class CodexHooksTest(unittest.TestCase):
         self.assertEqual(hook_output["permissionDecision"], "deny")
         reason = hook_output["permissionDecisionReason"]
         self.assertIn("知识文档检查", reason)
+        self.assertIn("明确本项目不需维护知识文档", reason)
         self.assertIn("Knowledge: not needed - <具体原因>", reason)
         self.assertIn("命令文本", reason)
         self.assertNotIn("description 字段", reason)
@@ -99,6 +100,7 @@ class CodexHooksTest(unittest.TestCase):
         )
 
         self.assertIn("知识文档检查", rendered)
+        self.assertIn("明确本项目不需维护知识文档", rendered)
         self.assertIn("Knowledge: updated <path>", rendered)
 
         for adapter in (

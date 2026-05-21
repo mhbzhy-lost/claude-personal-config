@@ -15,6 +15,7 @@
     "2) 读取 external-llm-review skill，对本次 staged diff（`git diff --cached`）跑一次外源评审；未给出 non-blocking 结论前不得 commit，fix 后需重新跑直到收敛。",
     "   若满足 CLAUDE.md「异源复审 / 何时不必用」豁免条件（纯文档配置、作用域<50 行且无外部依赖、无 API 凭据、项目合规策略禁止外发），可跳过外源评审，并在 commit message 注明豁免原因。",
     "3) 知识文档检查：查看 staged diff，并按 `docs/knowledge/README.md` 判断是否需要更新 `docs/knowledge/`。",
+    "   - 如明确本项目不需维护知识文档：直接走 escape，并在 commit message 说明原因。",
     "   - 如需更新：先更新对应知识文档，再提交。",
     "   - 如已更新：commit message 建议包含 `Knowledge: updated <path>`。",
     "   - 如无需更新：commit message 建议包含 `Knowledge: not needed - <具体原因>`。",
