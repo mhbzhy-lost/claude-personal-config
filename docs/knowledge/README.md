@@ -12,7 +12,7 @@
 
 如果答案是“是”，必须更新 `docs/knowledge/` 下的相关文档。
 
-如果答案是“否”，可以使用逃生出口重试提交，但必须写明原因。
+如果答案是“否”，按提交 hook 的提示处理；本文档不定义提交放行方式。
 
 ## 知识库入口必须接入 agent 指令
 
@@ -39,7 +39,7 @@ durable project knowledge.
 
 When a change affects architecture, contracts, workflows, testing strategy,
 integrations, or recurring pitfalls, update `docs/knowledge/` before committing.
-If no knowledge update is needed, use the documented escape hatch and explain why.
+If no knowledge update is needed, follow the commit hook instructions.
 ```
 
 `CLAUDE.md` 建议只做导入和 Claude 专属补充：
@@ -217,43 +217,6 @@ docs/knowledge/
 - `runbooks/`：本地开发、发布、排错、运维流程
 - `integrations/`：第三方服务、SDK、外部系统
 - `pitfalls/`：已踩过且未来可能复现的问题
-
-## 逃生出口
-
-如果确认本次提交不需要更新知识文档，可以重试提交并提供原因：
-
-```bash
-KNOWLEDGE_SKIP=1 KNOWLEDGE_SKIP_REASON="pure refactor, no durable behavior changed" git commit
-```
-
-逃生原因必须具体说明为什么不需要更新，例如：
-
-- `format only`
-- `generated files only`
-- `covered by docs/knowledge/conventions/testing.md`
-- `pure rename, no responsibility or contract changed`
-- `test snapshot update only`
-
-不要使用空泛理由，例如：
-
-- `not needed`
-- `small change`
-- `no docs`
-- `skip`
-
-## commit message 建议
-
-推荐在提交信息中标明知识检查结果：
-
-```text
-Knowledge: updated docs/knowledge/conventions/testing.md
-```
-
-或：
-
-```text
-Knowledge: not needed - pure refactor, no behavior or contract changed
-```
 
 ## 维护规则
 

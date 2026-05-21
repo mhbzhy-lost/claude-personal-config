@@ -1,0 +1,23 @@
+{
+  "hook_names": {
+    "codex": "[codex git-commit hook]",
+    "claude": "[git-commit hook]",
+    "opencode": "[git-commit 插件]"
+  },
+  "escape_instructions": {
+    "codex": "Codex 没有可写的 Bash 放行字段；完成上述步骤后，请在命令文本中包含字符串 \"skip-git-commit-hint\" 以放行本次 commit。",
+    "claude": "完成上述步骤后，请在本次 Bash 工具的 description 字段中包含字符串 \"skip-git-commit-hint\" 以放行 commit。",
+    "opencode": "完成上述步骤后，请在 bash 工具的 description 字段中包含字符串 \"skip-git-commit-hint\" 以放行 commit。"
+  },
+  "template": [
+    "{hook_name} 准备执行 git commit，提交前必须完成以下检查：",
+    "1) 读取 git-commit skill 获取 commit message 规范，再生成 message。",
+    "2) 读取 external-llm-review skill，对本次 staged diff（`git diff --cached`）跑一次外源评审；未给出 non-blocking 结论前不得 commit，fix 后需重新跑直到收敛。",
+    "   若满足 CLAUDE.md「异源复审 / 何时不必用」豁免条件（纯文档配置、作用域<50 行且无外部依赖、无 API 凭据、项目合规策略禁止外发），可跳过外源评审，并在 commit message 注明豁免原因。",
+    "3) 知识文档检查：查看 staged diff，并按 `docs/knowledge/README.md` 判断是否需要更新 `docs/knowledge/`。",
+    "   - 如需更新：先更新对应知识文档，再提交。",
+    "   - 如已更新：commit message 建议包含 `Knowledge: updated <path>`。",
+    "   - 如无需更新：commit message 建议包含 `Knowledge: not needed - <具体原因>`。",
+    "{escape_instruction}"
+  ]
+}

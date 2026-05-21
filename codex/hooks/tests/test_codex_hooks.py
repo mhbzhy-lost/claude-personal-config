@@ -11,6 +11,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 CODEX_GIT_COMMIT_HOOK = REPO_ROOT / "codex" / "hooks" / "git-commit-hint.sh"
 CODEX_SKILL_PREFLIGHT_HOOK = REPO_ROOT / "codex" / "hooks" / "skill-resolve-preflight.sh"
 CLAUDE_GIT_COMMIT_HOOK = REPO_ROOT / "claude" / "hooks" / "git-commit-hint.sh"
+OPENCODE_GIT_COMMIT_PLUGIN = REPO_ROOT / "opencode" / "plugins" / "git-commit-hint.js"
+SHARED_GIT_COMMIT_HINT = (
+    REPO_ROOT / "opencode" / "plugins" / "git-commit-hint-content.json"
+)
 CODEX_HOOKS_JSON = REPO_ROOT / "codex" / "hooks.json"
 INIT_CODEX = REPO_ROOT / "init_codex.sh"
 
@@ -45,6 +49,8 @@ class CodexHooksTest(unittest.TestCase):
 
         self.assertEqual(hook_output["permissionDecision"], "deny")
         reason = hook_output["permissionDecisionReason"]
+        self.assertIn("知识文档检查", reason)
+        self.assertIn("Knowledge: not needed - <具体原因>", reason)
         self.assertIn("命令文本", reason)
         self.assertNotIn("description 字段", reason)
 
@@ -61,10 +67,55 @@ class CodexHooksTest(unittest.TestCase):
 
         self.assertEqual(output, "")
 
+    def test_codex_git_commit_hook_handles_large_payload(self) -> None:
+        command = "git commit -m " + "x" * 2_000_000
+        output = run_hook(CODEX_GIT_COMMIT_HOOK, bash_payload(command))
+        data = json.loads(output)
+        reason = data["hookSpecificOutput"]["permissionDecisionReason"]
+
+        self.assertIn("知识文档检查", reason)
+
+    def test_claude_git_commit_hook_uses_description_marker(self) -> None:
+        output = run_hook(CLAUDE_GIT_COMMIT_HOOK, bash_payload("git commit -m test"))
+        data = json.loads(output)
+        reason = data["hookSpecificOutput"]["permissionDecisionReason"]
+
+        self.assertIn("知识文档检查", reason)
+        self.assertIn("Knowledge: updated <path>", reason)
+        self.assertIn("description 字段", reason)
+        self.assertNotIn("命令文本中包含", reason)
+
+        allowed = run_hook(
+            CLAUDE_GIT_COMMIT_HOOK,
+            bash_payload("git commit -m test", "skip-git-commit-hint"),
+        )
+        self.assertEqual(allowed, "")
+
+    def test_git_commit_hint_content_has_single_source(self) -> None:
+        shared = json.loads(SHARED_GIT_COMMIT_HINT.read_text())
+        rendered = "\n".join(shared["template"]).format(
+            hook_name=shared["hook_names"]["codex"],
+            escape_instruction=shared["escape_instructions"]["codex"],
+        )
+
+        self.assertIn("知识文档检查", rendered)
+        self.assertIn("Knowledge: updated <path>", rendered)
+
+        for adapter in (
+            CODEX_GIT_COMMIT_HOOK,
+            CLAUDE_GIT_COMMIT_HOOK,
+            OPENCODE_GIT_COMMIT_PLUGIN,
+        ):
+            adapter_text = adapter.read_text()
+            self.assertIn("git-commit-hint-content.json", adapter_text)
+            self.assertNotIn("知识文档检查", adapter_text)
+            self.assertNotIn("Knowledge: updated <path>", adapter_text)
+
     def test_codex_hook_layout_is_separate_from_claude_hooks(self) -> None:
         self.assertTrue(CODEX_GIT_COMMIT_HOOK.is_file())
         self.assertTrue(CODEX_SKILL_PREFLIGHT_HOOK.is_file())
         self.assertTrue(CLAUDE_GIT_COMMIT_HOOK.is_file())
+        self.assertTrue(OPENCODE_GIT_COMMIT_PLUGIN.is_file())
 
         hooks_json = CODEX_HOOKS_JSON.read_text()
         self.assertIn("__CLAUDE_CONFIG_HOME__/codex/hooks/git-commit-hint.sh", hooks_json)
