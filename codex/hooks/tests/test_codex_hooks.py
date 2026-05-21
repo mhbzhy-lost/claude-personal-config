@@ -18,6 +18,7 @@ OPENCODE_GIT_COMMIT_PLUGIN = REPO_ROOT / "opencode" / "plugins" / "git-commit-hi
 SHARED_GIT_COMMIT_HINT = (
     REPO_ROOT / "opencode" / "plugins" / "git-commit-hint-content.json"
 )
+KNOWLEDGE_README = REPO_ROOT / "docs" / "knowledge" / "README.md"
 EXTERNAL_REVIEWER = (
     REPO_ROOT / "claude-skills" / "external-llm-review" / "reviewer.py"
 )
@@ -86,7 +87,8 @@ class CodexHooksTest(unittest.TestCase):
         self.assertNotIn("豁免条件", reason)
         self.assertIn("明确本项目不需维护知识文档", reason)
         self.assertIn("Knowledge: not needed - <具体原因>", reason)
-        self.assertIn("$CLAUDE_CONFIG_HOME/docs/knowledge/README.md", reason)
+        self.assertIn(str(KNOWLEDGE_README), reason)
+        self.assertNotIn("$CLAUDE_CONFIG_HOME/docs/knowledge/README.md", reason)
         self.assertNotIn("按 `docs/knowledge/README.md`", reason)
         self.assertIn("GIT_COMMIT_HINT_SKIP=1", reason)
         self.assertNotIn("description 字段", reason)
@@ -151,6 +153,7 @@ class CodexHooksTest(unittest.TestCase):
         rendered = "\n".join(shared["template"]).format(
             hook_name=shared["hook_names"]["codex"],
             escape_instruction=shared["escape_instructions"]["codex"],
+            knowledge_readme=str(KNOWLEDGE_README),
         )
 
         self.assertIn("知识文档检查", rendered)
@@ -160,7 +163,8 @@ class CodexHooksTest(unittest.TestCase):
         self.assertNotIn("豁免条件", rendered)
         self.assertIn("明确本项目不需维护知识文档", rendered)
         self.assertIn("Knowledge: updated <path>", rendered)
-        self.assertIn("$CLAUDE_CONFIG_HOME/docs/knowledge/README.md", rendered)
+        self.assertIn(str(KNOWLEDGE_README), rendered)
+        self.assertNotIn("$CLAUDE_CONFIG_HOME/docs/knowledge/README.md", rendered)
         self.assertNotIn("按 `docs/knowledge/README.md`", rendered)
         self.assertNotIn("skip-git-commit-hint", rendered)
 

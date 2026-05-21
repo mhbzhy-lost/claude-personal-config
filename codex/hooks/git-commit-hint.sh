@@ -22,13 +22,15 @@ SKIP_VALUES = {"1", "true", "yes", "on"}
 
 
 def render_reason():
-    content_path = Path(os.environ["HINT_CONTENT_PATH"])
+    content_path = Path(os.environ["HINT_CONTENT_PATH"]).resolve()
     host = os.environ["HINT_HOST"]
     content = json.loads(content_path.read_text(encoding="utf-8"))
+    knowledge_readme = content_path.parents[2] / "docs" / "knowledge" / "README.md"
     return (
         "\n".join(content["template"])
         .replace("{hook_name}", content["hook_names"][host])
         .replace("{escape_instruction}", content["escape_instructions"][host])
+        .replace("{knowledge_readme}", str(knowledge_readme))
     )
 
 

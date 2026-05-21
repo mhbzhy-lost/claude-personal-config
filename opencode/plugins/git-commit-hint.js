@@ -12,6 +12,14 @@ const hintContentPath = join(
   dirname(fileURLToPath(import.meta.url)),
   "git-commit-hint-content.json",
 )
+const knowledgeReadmePath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "docs",
+  "knowledge",
+  "README.md",
+)
 const skipEnvName = "GIT_COMMIT_HINT_SKIP"
 const skipValues = new Set(["1", "true", "yes", "on"])
 
@@ -22,6 +30,7 @@ const renderGitCommitHint = async (host) => {
       .join("\n")
       .replaceAll("{hook_name}", content.hook_names[host])
       .replaceAll("{escape_instruction}", content.escape_instructions[host])
+      .replaceAll("{knowledge_readme}", knowledgeReadmePath)
   } catch (err) {
     process.stderr.write(`git-commit-hint: failed to render shared hint: ${err}\n`)
     return ""
