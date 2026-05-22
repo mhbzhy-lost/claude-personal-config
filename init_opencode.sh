@@ -123,6 +123,39 @@ sync_opencode_plugins() {
 
 sync_opencode_plugins
 
+sync_opencode_proxy() {
+  local src_path="$SRC/opencode/proxy"
+  local dst_path="$OPENCODE_CONFIG_DIR/proxy"
+
+  if [ ! -d "$src_path" ]; then
+    echo "[skip]  opencode/proxy/ 不存在，跳过"
+    return
+  fi
+
+  mkdir -p "$OPENCODE_CONFIG_DIR"
+
+  if [ ! -e "$dst_path" ] && [ ! -L "$dst_path" ]; then
+    ln -s "$src_path" "$dst_path"
+    echo "[proxy]  $dst_path -> ${src_path}"
+    return
+  fi
+
+  if [ -L "$dst_path" ]; then
+    local cur
+    cur=$(readlink "$dst_path")
+    if [ "$cur" = "$src_path" ]; then
+      echo "[proxy]  $dst_path -> ${src_path}（已就绪）"
+    else
+      echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 opencode/proxy/），人工核对后再处理"
+    fi
+    return
+  fi
+
+  echo "[warn]  $dst_path 已存在且不是软链；请手动核对后指向 $src_path"
+}
+
+sync_opencode_proxy
+
 # ── MCP 变量（与 init_claude.sh 保持一致） ──────────────
 SKILL_CATALOG_DIR="$SRC/mcp/skill-catalog"
 SKILL_CATALOG_VENV="$SKILL_CATALOG_DIR/.venv"
@@ -132,6 +165,7 @@ EMBEDDING_MODEL="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
 OLLAMA_PORT="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
 OLLAMA_HOST_URL="http://127.0.0.1:$OLLAMA_PORT"
 ENABLE_INTENT_ENHANCEMENT="${ENABLE_INTENT_ENHANCEMENT:-true}"
+BAILIAN_CACHE_PROXY_PORT="${BAILIAN_CACHE_PROXY_PORT:-48761}"
 
 BLOCK_CATALOG_DIR="$SRC/mcp/block-catalog"
 BLOCK_CATALOG_VENV="$BLOCK_CATALOG_DIR/.venv"
@@ -161,6 +195,7 @@ export EMBEDDING_MODEL="$EMBEDDING_MODEL"
 export OLLAMA_HOST_URL="$OLLAMA_HOST_URL"
 export ENABLE_INTENT_ENHANCEMENT="$ENABLE_INTENT_ENHANCEMENT"
 export BC_CMD="$BC_CMD"
+export BAILIAN_CACHE_PROXY_PORT="$BAILIAN_CACHE_PROXY_PORT"
 
 $PY -c '
 import json, os, sys
@@ -172,6 +207,7 @@ src = os.environ["SRC"]
 embedding_model = os.environ["EMBEDDING_MODEL"]
 ollama_host = os.environ["OLLAMA_HOST_URL"]
 intent_enhancement = os.environ["ENABLE_INTENT_ENHANCEMENT"]
+bailian_cache_proxy_port = os.environ["BAILIAN_CACHE_PROXY_PORT"]
 
 config = {}
 if os.path.exists(config_path):
@@ -295,6 +331,40 @@ if existing_plugins != desired_plugins:
     changed = True
 else:
     print("[plugin] plugin 已是最新")
+
+# ── Bailian cache proxy provider ──
+# 只新增一个显式的百炼 provider；其他 provider 不会经过本地代理。
+providers = config.setdefault("provider", {})
+desired_bailian_cache = {
+    "npm": "@ai-sdk/openai-compatible",
+    "name": "Bailian custom cached",
+    "options": {
+        "baseURL": f"http://127.0.0.1:{bailian_cache_proxy_port}/compatible-mode/v1",
+        "apiKey": "{env:DASHSCOPE_API_KEY}",
+    },
+    "models": {
+        "qwen3.6-plus": {"name": "Qwen 3.6 Plus"},
+        "qwen3.6-max": {"name": "Qwen 3.6 Max"},
+        "qwen-plus": {"name": "Qwen Plus"},
+        "qwen-max": {"name": "Qwen Max"},
+        "qwen-turbo": {"name": "Qwen Turbo"},
+        "qwen-coder-plus": {"name": "Qwen Coder Plus"},
+        "qwen-coder-max": {"name": "Qwen Coder Max"},
+    },
+}
+if providers.pop("bailian-cache", None) is not None:
+    print("[provider] 已移除旧名 bailian-cache，改用 bailian-custom-cached")
+    changed = True
+existing_bailian_cache = providers.get("bailian-custom-cached")
+if existing_bailian_cache != desired_bailian_cache:
+    if existing_bailian_cache is not None:
+        print("[provider] bailian-custom-cached 已有配置，更新为本地缓存代理")
+    else:
+        print("[provider] bailian-custom-cached 新增（仅该 provider 走本地缓存代理）")
+    providers["bailian-custom-cached"] = desired_bailian_cache
+    changed = True
+else:
+    print("[provider] bailian-custom-cached 已是最新")
 
 # ── LSP ──
 # 内置 LSP 仅支持 boolean (true/false) 或 object (disable/custom)。

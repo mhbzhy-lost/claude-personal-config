@@ -1,0 +1,208 @@
+import { createServer } from "node:http"
+import { Readable } from "node:stream"
+import { pipeline } from "node:stream/promises"
+
+import { planBailianCacheMarkers } from "./cache-planner.mjs"
+import { createLifecycleTracker } from "./lifecycle.mjs"
+
+const DEFAULT_UPSTREAM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+const DEFAULT_IDLE_EXIT_MS = 60_000
+const DEFAULT_LIFECYCLE_CHECK_MS = 5_000
+const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024
+const CONTROL_PREFIX = "/__bailian_cache_proxy"
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+])
+
+const readBody = async (request, maxBodyBytes = DEFAULT_MAX_BODY_BYTES) => {
+  const chunks = []
+  let bytes = 0
+  for await (const chunk of request) {
+    bytes += chunk.length
+    if (bytes > maxBodyBytes) {
+      const err = new Error(`request body exceeds ${maxBodyBytes} bytes`)
+      err.statusCode = 413
+      throw err
+    }
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks)
+}
+
+const writeJson = (response, statusCode, body) => {
+  response.writeHead(statusCode, { "content-type": "application/json" })
+  response.end(JSON.stringify(body))
+}
+
+const headersToObject = (headers) => {
+  const result = {}
+  for (const [key, value] of headers.entries()) result[key] = value
+  return result
+}
+
+const buildUpstreamUrl = (requestUrl, upstreamBaseUrl) => {
+  const incoming = new URL(requestUrl, "http://127.0.0.1")
+  const upstreamBase = new URL(upstreamBaseUrl)
+  const upstreamPath = upstreamBase.pathname.replace(/\/$/, "")
+  let requestPath = incoming.pathname
+
+  if (requestPath.startsWith(upstreamPath)) {
+    requestPath = requestPath.slice(upstreamPath.length)
+  }
+  if (!requestPath.startsWith("/")) requestPath = `/${requestPath}`
+
+  return new URL(`${upstreamPath}${requestPath}${incoming.search}`, upstreamBase.origin)
+}
+
+const isJsonContent = (request) => {
+  const contentType = request.headers["content-type"] || ""
+  return contentType.toLowerCase().includes("application/json")
+}
+
+const shouldPlanCache = (request) =>
+  request.method === "POST" &&
+  isJsonContent(request) &&
+  new URL(request.url, "http://127.0.0.1").pathname.endsWith("/chat/completions")
+
+const isAllowedUpstreamPath = (request) => {
+  const pathname = new URL(request.url, "http://127.0.0.1").pathname
+  return pathname.endsWith("/chat/completions")
+}
+
+const hasUnsupportedContentEncoding = (request) => {
+  const encoding = request.headers["content-encoding"]
+  return Boolean(encoding && String(encoding).toLowerCase() !== "identity")
+}
+
+const forwardHeaders = (request, bodyLength, apiKey) => {
+  const headers = {}
+  for (const [key, value] of Object.entries(request.headers)) {
+    const lowerKey = key.toLowerCase()
+    if (lowerKey === "host" || lowerKey === "content-length") continue
+    if (lowerKey === "content-encoding") continue
+    if (HOP_BY_HOP_HEADERS.has(lowerKey)) continue
+    headers[key] = value
+  }
+  headers["content-length"] = String(bodyLength)
+  if (!headers.authorization && apiKey) {
+    headers.authorization = `Bearer ${apiKey}`
+  }
+  return headers
+}
+
+const handleHeartbeat = async (request, response, tracker) => {
+  if (request.method !== "POST") {
+    writeJson(response, 405, { error: "method_not_allowed" })
+    return
+  }
+
+  try {
+    const body = JSON.parse((await readBody(request)).toString("utf8"))
+    tracker.register(body.pid)
+    writeJson(response, 200, { ok: true, activePids: tracker.activePids() })
+  } catch (err) {
+    writeJson(response, 400, { error: "invalid_heartbeat", message: String(err.message || err) })
+  }
+}
+
+const writeProxyError = (response, statusCode, body) => {
+  if (response.headersSent || response.destroyed) {
+    response.destroy()
+    return
+  }
+  writeJson(response, statusCode, body)
+}
+
+export const createBailianCacheProxy = ({
+  upstreamBaseUrl = DEFAULT_UPSTREAM_BASE_URL,
+  apiKey = process.env.DASHSCOPE_API_KEY || process.env.BAILIAN_API_KEY || "",
+  cacheOptions = {},
+  lifecycle = true,
+  idleExitMs = DEFAULT_IDLE_EXIT_MS,
+  lifecycleCheckMs = DEFAULT_LIFECYCLE_CHECK_MS,
+  maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
+  onIdleExit = () => process.exit(0),
+  logger = console,
+} = {}) => {
+  const tracker = createLifecycleTracker()
+  let lastActiveAt = Date.now()
+  let lifecycleTimer
+
+  const server = createServer(async (request, response) => {
+    const requestPath = new URL(request.url, "http://127.0.0.1").pathname
+
+    if (requestPath === `${CONTROL_PREFIX}/health`) {
+      writeJson(response, 200, { ok: true, activePids: tracker.activePids() })
+      return
+    }
+
+    if (requestPath === `${CONTROL_PREFIX}/heartbeat`) {
+      await handleHeartbeat(request, response, tracker)
+      lastActiveAt = Date.now()
+      return
+    }
+
+    try {
+      if (!isAllowedUpstreamPath(request)) {
+        writeJson(response, 404, { error: "not_found" })
+        return
+      }
+      if (hasUnsupportedContentEncoding(request)) {
+        writeJson(response, 415, { error: "unsupported_content_encoding" })
+        return
+      }
+
+      let bodyBuffer = await readBody(request, maxBodyBytes)
+      if (shouldPlanCache(request)) {
+        const body = JSON.parse(bodyBuffer.toString("utf8"))
+        bodyBuffer = Buffer.from(JSON.stringify(planBailianCacheMarkers(body, cacheOptions)))
+      }
+
+      const upstreamResponse = await fetch(buildUpstreamUrl(request.url, upstreamBaseUrl), {
+        method: request.method,
+        headers: forwardHeaders(request, bodyBuffer.length, apiKey),
+        body: request.method === "GET" || request.method === "HEAD" ? undefined : bodyBuffer,
+      })
+
+      response.writeHead(upstreamResponse.status, headersToObject(upstreamResponse.headers))
+      if (upstreamResponse.body) {
+        await pipeline(Readable.fromWeb(upstreamResponse.body), response)
+      } else {
+        response.end()
+      }
+    } catch (err) {
+      if (err.statusCode === 413) {
+        writeProxyError(response, 413, { error: "payload_too_large", message: err.message })
+        return
+      }
+      logger.error?.(`bailian-cache-proxy: ${err.stack || err}`)
+      writeProxyError(response, 502, { error: "bailian_proxy_failed", message: String(err.message || err) })
+    }
+  })
+
+  if (lifecycle) {
+    lifecycleTimer = setInterval(() => {
+      if (tracker.hasActiveParents()) {
+        lastActiveAt = Date.now()
+        return
+      }
+      if (Date.now() - lastActiveAt >= idleExitMs) {
+        server.close(() => onIdleExit())
+      }
+    }, lifecycleCheckMs)
+    lifecycleTimer.unref?.()
+  }
+
+  server.on("close", () => {
+    if (lifecycleTimer) clearInterval(lifecycleTimer)
+  })
+
+  return { server, tracker }
+}
