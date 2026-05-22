@@ -1,10 +1,33 @@
 # Claude Code launchers + log helper. Sourced by ~/.zshrc.
 # Provider switching is delegated to Claude Code's --settings (no local proxy).
 
+# --- internal helpers --------------------------------------------------------
+# Claude Code 把 CWD 编码到 ~/.claude/projects/<encoded>/，规则是把 path 中
+# 的 '/' 与 '.' 都替换为 '-'（例如 /Users/leshi.zhy/foo → -Users-leshi-zhy-foo）。
+# 历史上 claude-log 只换了 '/'，在带点路径下静默找不到日志；统一走这个 helper。
+_claude_proj_dir() {
+  local enc="${PWD//./-}"
+  enc="${enc//\//-}"
+  print -r -- "$HOME/.claude/projects/$enc"
+}
+
+# 当前 CWD 是否已有 Claude 会话历史。无历史时调用 --continue 会以
+# "No conversation found to continue" 退出，因此 launcher 在自动续聊前先探一下。
+_claude_has_history() {
+  local dir
+  dir="$(_claude_proj_dir)"
+  local sessions=("$dir"/*.jsonl(N))
+  (( ${#sessions} > 0 ))
+}
+
 # --- claude wrapper -----------------------------------------------------------
 claude() {
   if (( $# == 0 )); then
-    command claude --continue --fork-session || command claude
+    if _claude_has_history; then
+      command claude --continue --fork-session
+    else
+      command claude
+    fi
   else
     command claude "$@"
   fi
@@ -24,7 +47,11 @@ claude-qwen() {
     export ANTHROPIC_AUTH_TOKEN="$ANTHROPIC_AUTH_TOKEN_QWEN"
     local settings="$HOME/claude-config/claude/settings/settings-qwen.json"
     if (( $# == 0 )); then
-      command claude --settings "$settings" --continue --fork-session
+      if _claude_has_history; then
+        command claude --settings "$settings" --continue --fork-session
+      else
+        command claude --settings "$settings"
+      fi
     else
       command claude --settings "$settings" "$@"
     fi
@@ -45,7 +72,11 @@ claude-deepseek() {
     export ANTHROPIC_AUTH_TOKEN="$ANTHROPIC_AUTH_TOKEN_DEEPSEEK"
     local settings="$HOME/claude-config/claude/settings/settings-deepseek.json"
     if (( $# == 0 )); then
-      command claude --settings "$settings" --continue --fork-session
+      if _claude_has_history; then
+        command claude --settings "$settings" --continue --fork-session
+      else
+        command claude --settings "$settings"
+      fi
     else
       command claude --settings "$settings" "$@"
     fi
@@ -55,7 +86,8 @@ claude-deepseek() {
 # --- claude-log ---------------------------------------------------------------
 # Inspect / open Claude Code session jsonl logs for the current directory.
 claude-log() {
-  local dir="$HOME/.claude/projects/${PWD//\//-}"
+  local dir
+  dir="$(_claude_proj_dir)"
   local opt_edit=0 opt_copy=0 opt_list=0 opt_n=1
 
   while getopts ":ecln:h" opt; do

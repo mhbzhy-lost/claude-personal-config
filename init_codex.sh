@@ -6,9 +6,10 @@
 # Codex app、IDE extension 共同消费的配置层：
 #   - `claude/CLAUDE.md`          -> `~/.codex/agents.md`
 #   - `memory.md`                 -> `~/.codex/memory.md`
-#   - `codex/skills.list`         -> `~/.agents/skills/<name>`（Codex 原生 skill 白名单；
+#   - `agents/skills.list`        -> `~/.agents/skills/<name>`（Codex 原生 skill 白名单；
+#                                      与 init_claude.sh 共用同一份单源清单；
 #                                      来源为 claude-skills/ 或 vendor/superpowers/skills/；
-#                                      若存在 `codex/skills.list.local` 则本机覆盖）
+#                                      若存在 `agents/skills.list.local` 则本机覆盖）
 #   - `codex/hooks.json`          -> 渲染到 `~/.codex/hooks.json`
 #   - `mcp/*`                     -> 合并到 `~/.codex/config.toml`
 #   - `mcp/skill-catalog/vendor/ollama` 与 `bge-m3` embedding 模型
@@ -54,8 +55,8 @@ read_list_file() {
 }
 
 codex_skills_list_file() {
-  local default_list="$SRC/codex/skills.list"
-  local local_list="$SRC/codex/skills.list.local"
+  local default_list="$SRC/agents/skills.list"
+  local local_list="$SRC/agents/skills.list.local"
 
   if [ -f "$local_list" ]; then
     printf '%s\n' "$local_list"
@@ -508,6 +509,7 @@ stripped = remove_table(stripped, 'plugins."superpowers@superpowers-dev"').rstri
 for needle in (
     '[mcp_servers."skill-catalog"]',
     '[mcp_servers."block-catalog"]',
+    '[mcp_servers."playwright-mcp"]',
 ):
     if needle in stripped:
         print(
@@ -539,6 +541,11 @@ command = "{block_catalog_python}"
 args = ["-m", "block_catalog.server"]
 env = {{ BLOCK_LIBRARY_PATH = "{src}/blocks" }}
 enabled = true
+
+[mcp_servers."playwright-mcp"]
+command = "npx"
+args = ["-y", "@playwright/mcp"]
+enabled = true
 ''',
 end_marker,
 ])
@@ -563,5 +570,30 @@ ensure_skill_catalog_venv
 ensure_block_catalog_venv
 ensure_skill_catalog_ollama
 write_codex_managed_config
+
+# ---------------------------------------------------------------------------
+# 注册 CLAUDE_CONFIG_HOME 到 ~/.zshrc
+# OpenCode / Codex 均无 top-level env 字段（见 opencode.json schema），shell
+# 环境变量是跨端唯一一致的注入路径。skill 中 ${CLAUDE_CONFIG_HOME} 引用
+# 由 spawn 的子进程继承。逻辑与 init_claude.sh / init_opencode.sh 保持一致：
+#   行内容 (export ...) 已存在 → no-op
+#   CLAUDE_CONFIG_HOME 存在但路径不同 → warn 不覆盖
+#   完全不存在 → 追加
+# ---------------------------------------------------------------------------
+ZSHRC="$HOME/.zshrc"
+EXPORT_LINE="export CLAUDE_CONFIG_HOME=\"$SRC\""
+
+if [ ! -f "$ZSHRC" ]; then
+  echo "[skip] ~/.zshrc not found, please export CLAUDE_CONFIG_HOME manually"
+elif grep -Fq "CLAUDE_CONFIG_HOME=" "$ZSHRC"; then
+  if grep -Fxq "$EXPORT_LINE" "$ZSHRC"; then
+    echo "[ok] CLAUDE_CONFIG_HOME already set to $SRC in ~/.zshrc"
+  else
+    echo "[warn] CLAUDE_CONFIG_HOME exists in ~/.zshrc but points elsewhere; please verify manually"
+  fi
+else
+  printf '\n# CLAUDE_CONFIG_HOME (auto-registered by init_codex.sh)\n%s\n' "$EXPORT_LINE" >> "$ZSHRC"
+  echo "[linked] CLAUDE_CONFIG_HOME=$SRC registered in ~/.zshrc"
+fi
 
 echo "[done] init_codex.sh completed"
