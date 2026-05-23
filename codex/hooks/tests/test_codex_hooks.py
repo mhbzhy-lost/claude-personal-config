@@ -89,7 +89,8 @@ class CodexHooksTest(unittest.TestCase):
         self.assertEqual(hook_output["permissionDecision"], "deny")
         reason = hook_output["permissionDecisionReason"]
         self.assertIn("知识文档检查", reason)
-        self.assertIn("执行 external-llm-review skill", reason)
+        self.assertIn("external-llm-review skill", reason)
+        self.assertIn("Skill 工具加载", reason)
         self.assertNotIn("对本次 staged diff", reason)
         self.assertNotIn("non-blocking", reason)
         self.assertNotIn("豁免条件", reason)
@@ -165,7 +166,8 @@ class CodexHooksTest(unittest.TestCase):
         )
 
         self.assertIn("知识文档检查", rendered)
-        self.assertIn("执行 external-llm-review skill", rendered)
+        self.assertIn("external-llm-review skill", rendered)
+        self.assertIn("Skill 工具加载", rendered)
         self.assertNotIn("对本次 staged diff", rendered)
         self.assertNotIn("non-blocking", rendered)
         self.assertNotIn("豁免条件", rendered)
