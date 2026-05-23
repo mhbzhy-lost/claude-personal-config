@@ -165,8 +165,25 @@ try {
   exitCode = 1
 } finally {
   server.close()
-  // Give fire-and-forget usage records a moment to flush before we exit,
-  // otherwise process.exit can drop the second-run record on the floor.
-  await new Promise((resolve) => setTimeout(resolve, 200))
+  // Wait for fire-and-forget usage records to land. We do NOT hardcode a sleep
+  // here because CI / busy disks can blow past it — instead poll the usage log
+  // until the expected line count appears or we hit a generous timeout. This
+  // is best-effort for verification; production proxy never exits this way.
+  const usageLogPath =
+    process.env.BAILIAN_CACHE_PROXY_USAGE_LOG ||
+    join(process.env.XDG_CACHE_HOME || join(process.env.HOME || "", ".cache"), "bailian-cache-proxy", "usage.jsonl")
+  const expectedLines = 2
+  const pollDeadline = Date.now() + 5000
+  while (Date.now() < pollDeadline) {
+    try {
+      const { readFile } = await import("node:fs/promises")
+      const text = await readFile(usageLogPath, "utf8")
+      const lines = text.split("\n").filter((l) => l.trim()).length
+      if (lines >= expectedLines) break
+    } catch {
+      // file may not exist yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
   process.exit(exitCode)
 }

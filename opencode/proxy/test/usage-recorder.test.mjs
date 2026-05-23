@@ -67,6 +67,19 @@ describe("buildUsageRecord", () => {
     assert.equal(record.cached_tokens, null)
     assert.equal(record.cache_hit_ratio, 0)
     assert.equal(record.status, 502)
+    assert.equal(record.proxy_error, null)
+  })
+
+  test("preserves proxy_error when provided", () => {
+    const record = buildUsageRecord({
+      ts: "2026-05-23T11:00:00.000Z",
+      status: 502,
+      duration_ms: 50,
+      usage: null,
+      is_stream: false,
+      proxy_error: "fetch failed: ECONNREFUSED",
+    })
+    assert.equal(record.proxy_error, "fetch failed: ECONNREFUSED")
   })
 })
 
@@ -136,6 +149,26 @@ describe("createUsageRecorder.record", () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+
+  test("skips records that exceed PIPE_BUF safety margin", async () => {
+    const warnings = []
+    const appended = []
+    const recorder = createUsageRecorder({
+      filePath: "/tmp/limit-test.jsonl",
+      mkdirImpl: async () => {},
+      appendImpl: async (_, line) => {
+        appended.push(line)
+      },
+      logger: { warn: (msg) => warnings.push(msg) },
+    })
+    // 4500-byte JSON value: well over the 3500-byte cap.
+    await recorder.record({
+      ts: "t",
+      bloated: "x".repeat(4500),
+    })
+    assert.equal(appended.length, 0, "oversized record should not be written")
+    assert.match(warnings[0], /exceeds 3500 bytes/)
   })
 
   test("warns but does not throw when append fails", async () => {

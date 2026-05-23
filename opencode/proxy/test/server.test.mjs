@@ -434,6 +434,86 @@ describe("createBailianCacheProxy", () => {
     }
   })
 
+  test("records a failure entry when upstream fetch never reaches the pipeline", async () => {
+    // Point the proxy at a port nothing is listening on; fetch should reject.
+    const records = []
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: "http://127.0.0.1:1/compatible-mode/v1",
+      lifecycle: false,
+      usageRecorder: {
+        fireAndForget: (entry) => records.push(entry),
+        record: async () => {},
+        filePath: "<test>",
+      },
+      logger: { error: () => {}, warn: () => {} },
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "qwen3.6-flash",
+            messages: [{ role: "user", content: "hi" }],
+          }),
+        },
+      )
+      assert.equal(response.status, 502)
+      await response.json()
+
+      assert.equal(records.length, 1, "fetch failure must still produce one record")
+      assert.equal(records[0].status, 502)
+      assert.equal(records[0].model, "qwen3.6-flash")
+      assert.match(String(records[0].proxy_error), /(ECONNREFUSED|fetch failed|connect)/i)
+    } finally {
+      await close(proxy.server)
+    }
+  })
+
+  test("records oversized request as 413 without contacting upstream", async () => {
+    const upstreamCalls = []
+    const upstream = createServer((request, response) => {
+      upstreamCalls.push(request.url)
+      response.writeHead(200)
+      response.end()
+    })
+    const upstreamAddress = await listen(upstream)
+    const records = []
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+      lifecycle: false,
+      maxBodyBytes: 64,
+      usageRecorder: {
+        fireAndForget: (entry) => records.push(entry),
+        record: async () => {},
+        filePath: "<test>",
+      },
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ model: "qwen3.6-flash", messages: [{ role: "user", content: "x".repeat(200) }] }),
+        },
+      )
+      assert.equal(response.status, 413)
+      assert.equal(upstreamCalls.length, 0)
+      assert.equal(records.length, 1)
+      assert.equal(records[0].status, 413)
+      assert.equal(records[0].proxy_error, "payload_too_large")
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
   test("only forwards chat completions paths to Bailian", async () => {
     let upstreamCalled = false
     const upstream = createServer((request, response) => {

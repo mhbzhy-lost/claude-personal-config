@@ -173,14 +173,33 @@ export const createBailianCacheProxy = ({
     const requestStart = now()
     let parsedRequestModel = null
     let isStream = false
+    let recorded = false
+    const recordOnce = (overrides) => {
+      if (recorded) return
+      recorded = true
+      usageRecorder.fireAndForget(
+        buildUsageRecord({
+          ts: new Date(requestStart).toISOString(),
+          model: parsedRequestModel,
+          duration_ms: now() - requestStart,
+          is_stream: isStream,
+          stream_usage_seen: false,
+          usage: null,
+          request_id: null,
+          ...overrides,
+        }),
+      )
+    }
 
     try {
       if (!isAllowedUpstreamPath(request)) {
         writeJson(response, 404, { error: "not_found" })
+        recordOnce({ status: 404, proxy_error: "not_found" })
         return
       }
       if (hasUnsupportedContentEncoding(request)) {
         writeJson(response, 415, { error: "unsupported_content_encoding" })
+        recordOnce({ status: 415, proxy_error: "unsupported_content_encoding" })
         return
       }
 
@@ -208,18 +227,7 @@ export const createBailianCacheProxy = ({
 
       if (!upstreamResponse.body) {
         response.end()
-        usageRecorder.fireAndForget(
-          buildUsageRecord({
-            ts: new Date(requestStart).toISOString(),
-            model: parsedRequestModel,
-            status: upstreamResponse.status,
-            duration_ms: now() - requestStart,
-            usage: null,
-            request_id: null,
-            is_stream: isStream,
-            stream_usage_seen: false,
-          }),
-        )
+        recordOnce({ status: upstreamResponse.status })
         return
       }
 
@@ -243,30 +251,35 @@ export const createBailianCacheProxy = ({
         }
       }
 
+      let pipelineError = null
       try {
         await pipeline(Readable.fromWeb(upstreamResponse.body), collect, response)
+      } catch (err) {
+        pipelineError = err
+        throw err
       } finally {
         const extracted = extractUsage({ buffer: sniffBuf, isStream })
-        usageRecorder.fireAndForget(
-          buildUsageRecord({
-            ts: new Date(requestStart).toISOString(),
-            model: parsedRequestModel,
-            status: upstreamResponse.status,
-            duration_ms: now() - requestStart,
-            usage: extracted.usage,
-            request_id: extracted.request_id,
-            is_stream: isStream,
-            stream_usage_seen: extracted.stream_usage_seen,
-          }),
-        )
+        recordOnce({
+          // A torn pipeline means the client did not receive a clean response,
+          // so degrade the recorded status from 200 to 502 to keep the stats
+          // honest even though writeHead has already flushed upstream's status.
+          status: pipelineError ? 502 : upstreamResponse.status,
+          usage: extracted.usage,
+          request_id: extracted.request_id,
+          stream_usage_seen: extracted.stream_usage_seen,
+          proxy_error: pipelineError ? String(pipelineError.message || pipelineError) : null,
+        })
       }
     } catch (err) {
       if (err.statusCode === 413) {
         writeProxyError(response, 413, { error: "payload_too_large", message: err.message })
+        recordOnce({ status: 413, proxy_error: "payload_too_large" })
         return
       }
       logger.error?.(`bailian-cache-proxy: ${err.stack || err}`)
       writeProxyError(response, 502, { error: "bailian_proxy_failed", message: String(err.message || err) })
+      // recordOnce is a no-op if the pipeline finally already wrote a record.
+      recordOnce({ status: 502, proxy_error: String(err.message || err) })
     }
   })
 

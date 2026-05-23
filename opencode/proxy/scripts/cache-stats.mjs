@@ -26,11 +26,19 @@ const args = {
   by: "model",
   json: false,
 }
+const requireValue = (flag, value) => {
+  if (value === undefined) {
+    console.error(`${flag} requires a value`)
+    process.exit(2)
+  }
+  return value
+}
+
 for (let i = 0; i < argv.length; i += 1) {
   const a = argv[i]
-  if (a === "--since") args.since = argv[++i]
-  else if (a === "--log") args.log = argv[++i]
-  else if (a === "--by") args.by = argv[++i]
+  if (a === "--since") args.since = requireValue("--since", argv[++i])
+  else if (a === "--log") args.log = requireValue("--log", argv[++i])
+  else if (a === "--by") args.by = requireValue("--by", argv[++i])
   else if (a === "--json") args.json = true
   else if (a === "-h" || a === "--help") {
     process.stdout.write(

@@ -4,6 +4,9 @@ import { dirname, join } from "node:path"
 
 const DEFAULT_DIR_NAME = "bailian-cache-proxy"
 const DEFAULT_FILE_NAME = "usage.jsonl"
+// PIPE_BUF on macOS/Linux is 4096; we keep a margin so trailing newline plus
+// any kernel/userland buffering stays within the atomic-write guarantee.
+const LINE_LIMIT_BYTES = 3500
 
 export const defaultUsageLogPath = () => {
   if (process.env.BAILIAN_CACHE_PROXY_USAGE_LOG) {
@@ -14,15 +17,6 @@ export const defaultUsageLogPath = () => {
     (process.platform === "darwin" ? join(homedir(), ".cache") : join(homedir(), ".cache"))
   return join(cacheRoot, DEFAULT_DIR_NAME, DEFAULT_FILE_NAME)
 }
-
-const ensureDirOnce = (() => {
-  const created = new Set()
-  return async (dir) => {
-    if (created.has(dir)) return
-    await mkdir(dir, { recursive: true })
-    created.add(dir)
-  }
-})()
 
 export const computeCacheHitRatio = (record) => {
   const prompt = Number(record?.prompt_tokens || 0)
@@ -42,6 +36,7 @@ export const buildUsageRecord = ({
   stream_usage_seen,
   proxy_pid = process.pid,
   opencode_pid = null,
+  proxy_error = null,
 }) => {
   const details = usage?.prompt_tokens_details || usage?.input_tokens_details || {}
   const prompt_tokens = usage?.prompt_tokens ?? usage?.input_tokens ?? null
@@ -63,6 +58,7 @@ export const buildUsageRecord = ({
     cached_tokens,
     cache_creation_input_tokens,
     request_id: request_id ?? null,
+    proxy_error: proxy_error ?? null,
   }
   record.cache_hit_ratio = computeCacheHitRatio(record)
   return record
@@ -84,8 +80,18 @@ export const createUsageRecorder = ({
 
   const record = async (entry) => {
     try {
+      const line = `${JSON.stringify(entry)}\n`
+      if (Buffer.byteLength(line, "utf8") > LINE_LIMIT_BYTES) {
+        // O_APPEND is only atomic for writes ≤ PIPE_BUF (4096); skip oversized
+        // lines rather than risk interleaved writes from concurrent proxy
+        // instances. This is conservative — the standard record is ~400 bytes.
+        logger.warn?.(
+          `bailian-cache-proxy: usage record skipped, exceeds ${LINE_LIMIT_BYTES} bytes (atomicity guarantee limit)`,
+        )
+        return
+      }
       await ensureDir()
-      await appendImpl(filePath, `${JSON.stringify(entry)}\n`, { encoding: "utf8" })
+      await appendImpl(filePath, line, { encoding: "utf8" })
     } catch (err) {
       logger.warn?.(`bailian-cache-proxy: usage record failed: ${err.message || err}`)
     }
