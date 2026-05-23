@@ -4,6 +4,7 @@ import { pipeline } from "node:stream/promises"
 
 import { planBailianCacheMarkers } from "./cache-planner.mjs"
 import { createLifecycleTracker } from "./lifecycle.mjs"
+import { applyThinkModeRewrite } from "./think-mode-rewriter.mjs"
 import { ensureStreamUsageOption, extractUsage } from "./usage-extractor.mjs"
 import { buildUsageRecord, createUsageRecorder } from "./usage-recorder.mjs"
 
@@ -206,13 +207,20 @@ export const createBailianCacheProxy = ({
       let bodyBuffer = await readBody(request, maxBodyBytes)
       if (shouldPlanCache(request)) {
         const body = JSON.parse(bodyBuffer.toString("utf8"))
-        let planned = planBailianCacheMarkers(body, cacheOptions)
-        // Inject stream_options.include_usage so streaming responses still
-        // expose token usage in their trailing SSE frame. Without this, every
-        // OpenCode AI-SDK call (which defaults to stream=true) would log no
-        // usage and the cache hit-rate dataset would be empty.
+        // 1. Resolve OpenCode-facing model alias (e.g. qwen3.6-flash-nothink)
+        //    to the real upstream model + any enable_thinking override BEFORE
+        //    we plan cache markers; the cache planner only cares about the
+        //    messages array and is alias-agnostic.
+        const { body: aliased, alias } = applyThinkModeRewrite(body)
+        // The alias is what the user picked in OpenCode — keep it on the
+        // usage record so cache-stats can split -nothink vs default cohorts.
+        parsedRequestModel = alias
+        let planned = planBailianCacheMarkers(aliased, cacheOptions)
+        // 2. Inject stream_options.include_usage so streaming responses still
+        //    expose token usage in their trailing SSE frame. Without this,
+        //    every OpenCode AI-SDK call (defaults to stream=true) would log
+        //    no usage and the cache hit-rate dataset would be empty.
         planned = ensureStreamUsageOption(planned)
-        parsedRequestModel = planned?.model ?? null
         isStream = planned?.stream === true
         bodyBuffer = Buffer.from(JSON.stringify(planned))
       }

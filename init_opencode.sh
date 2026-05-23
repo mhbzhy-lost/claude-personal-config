@@ -421,10 +421,18 @@ desired_bailian_cache = {
     # only qwen-family text models that actually exist on the user endpoint.
     # Adding non-existent ids would 400 with Model not exist the moment a
     # user picks them in the OpenCode UI.
+    #
+    # Each real model is exposed twice — bare alias keeps the model default
+    # (enable_thinking=true, budget=max) and the -nothink variant tells the
+    # proxy to inject enable_thinking=false. The proxy strips the -nothink
+    # suffix before forwarding so the upstream sees only the real model id.
     "models": {
         "qwen3.6-plus": {"name": "Qwen 3.6 Plus"},
+        "qwen3.6-plus-nothink": {"name": "Qwen 3.6 Plus (no thinking)"},
         "qwen3.6-flash": {"name": "Qwen 3.6 Flash"},
+        "qwen3.6-flash-nothink": {"name": "Qwen 3.6 Flash (no thinking)"},
         "qwen3.7-max": {"name": "Qwen 3.7 Max"},
+        "qwen3.7-max-nothink": {"name": "Qwen 3.7 Max (no thinking)"},
     },
 }
 if providers.pop("bailian-cache", None) is not None:

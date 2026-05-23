@@ -581,6 +581,111 @@ describe("createBailianCacheProxy", () => {
     }
   })
 
+  test("rewrites -nothink alias to upstream model + enable_thinking=false", async () => {
+    let receivedBody
+    const upstream = createServer(async (request, response) => {
+      receivedBody = await readJson(request)
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(
+        JSON.stringify({
+          id: "chatcmpl-nothink",
+          model: "qwen3.6-flash",
+          usage: {
+            prompt_tokens: 50,
+            completion_tokens: 3,
+            prompt_tokens_details: { cached_tokens: 0, cache_creation_input_tokens: 0 },
+          },
+        }),
+      )
+    })
+    const upstreamAddress = await listen(upstream)
+    const records = []
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+      lifecycle: false,
+      usageRecorder: {
+        fireAndForget: (entry) => records.push(entry),
+        record: async () => {},
+        filePath: "<test>",
+      },
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "qwen3.6-flash-nothink",
+            messages: [{ role: "user", content: "hi" }],
+          }),
+        },
+      )
+      assert.equal(response.status, 200)
+      await response.json()
+
+      // Upstream sees the real model + the injected override.
+      assert.equal(receivedBody.model, "qwen3.6-flash")
+      assert.equal(receivedBody.enable_thinking, false)
+
+      // Usage record keeps the user-facing alias so cache-stats can group by
+      // -nothink vs default cohort.
+      assert.equal(records.length, 1)
+      assert.equal(records[0].model, "qwen3.6-flash-nothink")
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
+  test("plain alias passes upstream untouched (no enable_thinking injected)", async () => {
+    let receivedBody
+    const upstream = createServer(async (request, response) => {
+      receivedBody = await readJson(request)
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({ id: "chatcmpl-plain", model: "qwen3.6-flash", usage: {} }))
+    })
+    const upstreamAddress = await listen(upstream)
+    const records = []
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+      lifecycle: false,
+      usageRecorder: {
+        fireAndForget: (entry) => records.push(entry),
+        record: async () => {},
+        filePath: "<test>",
+      },
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "qwen3.6-flash",
+            messages: [{ role: "user", content: "hi" }],
+          }),
+        },
+      )
+
+      assert.equal(receivedBody.model, "qwen3.6-flash")
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(receivedBody, "enable_thinking"),
+        false,
+        "must NOT inject enable_thinking for plain alias",
+      )
+      assert.equal(records[0].model, "qwen3.6-flash")
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
   test("only forwards chat completions paths to Bailian", async () => {
     let upstreamCalled = false
     const upstream = createServer((request, response) => {
