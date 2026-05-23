@@ -87,9 +87,16 @@ sync_opencode_plugins() {
     fi
   fi
 
+  # 仓内 opencode/plugins/ 目前是平铺文件，不递归处理子目录；若未来添加
+  # 子目录形态的 plugin，需要在此扩展递归逻辑。
   local src_file dst_file basename current_target
   for src_file in "$src_path"/*; do
     [ -e "$src_file" ] || continue
+    if [ -d "$src_file" ]; then
+      basename=$(basename "$src_file")
+      echo "[plugin] 跳过仓内子目录 $basename/（per-file 模式只处理平铺文件）"
+      continue
+    fi
     [ -f "$src_file" ] || continue
     basename=$(basename "$src_file")
     dst_file="$dst_path/$basename"
@@ -120,9 +127,32 @@ sync_opencode_plugins() {
       continue
     fi
 
+    # 是目录（与本仓 plugin 同名的目录）→ 警告不动，避免 ln -s 失败让
+    # set -e 中断整个 init 流程
+    if [ -d "$dst_file" ]; then
+      echo "[warn]  $dst_file 是目录，与本仓 plugin 同名；人工核对（移除或重命名）后再重跑 init"
+      continue
+    fi
+
     # 不存在 → 直接建软链
     ln -s "$src_file" "$dst_file"
     echo "[plugin] $basename → 软链（首次同步）"
+  done
+
+  # 扫描 dst 中指向本仓但本仓已无该文件的孤儿软链（仓内删 plugin 后 user
+  # 环境的残留）。只 warn 不自动删——保守，让 user 自己决定；自动删可能
+  # 误删 user 改过软链 target 的情况。
+  local dst_entry orphan_target
+  for dst_entry in "$dst_path"/*; do
+    [ -L "$dst_entry" ] || continue
+    orphan_target=$(readlink "$dst_entry")
+    case "$orphan_target" in
+      "$src_path"/*)
+        if [ ! -e "$orphan_target" ]; then
+          echo "[warn]  $dst_entry 是指向本仓的软链但 target ${orphan_target} 已不存在；本仓可能删除了该 plugin，请确认后 rm $dst_entry"
+        fi
+        ;;
+    esac
   done
 }
 

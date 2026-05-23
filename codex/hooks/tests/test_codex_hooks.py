@@ -651,6 +651,81 @@ sync_codex_skills
             # The repo plugin should be a symlink now
             self.assertTrue((config_dir / "plugins" / "managed.js").is_symlink())
 
+    def test_sync_opencode_plugins_warns_instead_of_crashing_on_directory_conflict(self) -> None:
+        # Defence: if user environment has a directory with the same name as a
+        # repo plugin, ln -s would fail and `set -e` would abort the whole
+        # init. Verify we warn and continue past it.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo_plugins = repo / "opencode" / "plugins"
+            repo_plugins.mkdir(parents=True)
+            (repo_plugins / "p.js").write_text("export default 1\n")
+            (repo_plugins / "later.js").write_text("export default 2\n")
+
+            config_dir = tmp_path / "user-config"
+            (config_dir / "plugins").mkdir(parents=True)
+            # Hostile: same name as a repo plugin, but it's a directory.
+            (config_dir / "plugins" / "p.js").mkdir()
+
+            proc = self._run_sync_opencode_plugins(repo_root=repo, config_dir=config_dir)
+            self.assertEqual(proc.returncode, 0, f"stderr={proc.stderr}\nstdout={proc.stdout}")
+            self.assertIn("是目录", proc.stdout)
+            # Directory must not be removed.
+            self.assertTrue((config_dir / "plugins" / "p.js").is_dir())
+            # AND the rest of the loop must continue — later.js should still
+            # be linked despite the directory conflict on p.js.
+            self.assertTrue((config_dir / "plugins" / "later.js").is_symlink())
+
+    def test_sync_opencode_plugins_warns_about_dangling_repo_symlinks(self) -> None:
+        # Scenario: repo previously shipped deprecated.js, user environment
+        # symlinked to it. Repo deletes deprecated.js. The dangling symlink
+        # in user dst should produce a warning so user knows to clean up.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo_plugins = repo / "opencode" / "plugins"
+            repo_plugins.mkdir(parents=True)
+            (repo_plugins / "current.js").write_text("export default 1\n")
+
+            config_dir = tmp_path / "user-config"
+            (config_dir / "plugins").mkdir(parents=True)
+            # Pre-existing dangling symlink that points at a (now-deleted)
+            # repo plugin path.
+            (config_dir / "plugins" / "deprecated.js").symlink_to(
+                repo_plugins / "deprecated.js"
+            )
+
+            proc = self._run_sync_opencode_plugins(repo_root=repo, config_dir=config_dir)
+            self.assertEqual(proc.returncode, 0, f"stderr={proc.stderr}\nstdout={proc.stdout}")
+            self.assertIn("deprecated.js", proc.stdout)
+            self.assertIn("已不存在", proc.stdout)
+            # Conservative: do NOT auto-rm; user must clean up.
+            self.assertTrue((config_dir / "plugins" / "deprecated.js").is_symlink())
+
+    def test_sync_opencode_plugins_skips_repo_subdirectories(self) -> None:
+        # Defence: if the repo ever ships a sub-directory inside plugins/,
+        # the per-file mode currently can't handle it; we should warn instead
+        # of silently dropping it.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo_plugins = repo / "opencode" / "plugins"
+            repo_plugins.mkdir(parents=True)
+            (repo_plugins / "flat.js").write_text("export default 1\n")
+            (repo_plugins / "subplugin").mkdir()
+            (repo_plugins / "subplugin" / "index.js").write_text("// nested\n")
+
+            config_dir = tmp_path / "user-config"
+            (config_dir / "plugins").mkdir(parents=True)
+
+            proc = self._run_sync_opencode_plugins(repo_root=repo, config_dir=config_dir)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("跳过仓内子目录 subplugin", proc.stdout)
+            # Flat plugin still linked, sub-directory not.
+            self.assertTrue((config_dir / "plugins" / "flat.js").is_symlink())
+            self.assertFalse((config_dir / "plugins" / "subplugin").exists())
+
     def test_sync_opencode_plugins_idempotent_when_already_symlinked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
