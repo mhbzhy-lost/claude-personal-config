@@ -194,6 +194,43 @@ sync_opencode_shared() {
 
 sync_opencode_shared
 
+# ── docs/ 软链 ──────────────────────────────────────────
+# OpenCode plugin（如 git-commit-hint.js）会在 hint 文本里嵌入指向 docs/knowledge/
+# 的绝对路径。CLAUDE_CONFIG_HOME 未注入时（如 GUI 启动），fallback 路径解析到
+# ~/.config/opencode/docs/...，需要软链才能让 user 真能点开那个 README。
+sync_opencode_docs() {
+  local src_path="$SRC/docs"
+  local dst_path="$OPENCODE_CONFIG_DIR/docs"
+
+  if [ ! -d "$src_path" ]; then
+    echo "[skip]  docs/ 不存在，跳过"
+    return
+  fi
+
+  mkdir -p "$OPENCODE_CONFIG_DIR"
+
+  if [ ! -e "$dst_path" ] && [ ! -L "$dst_path" ]; then
+    ln -s "$src_path" "$dst_path"
+    echo "[docs]   $dst_path -> ${src_path}"
+    return
+  fi
+
+  if [ -L "$dst_path" ]; then
+    local cur
+    cur=$(readlink "$dst_path")
+    if [ "$cur" = "$src_path" ]; then
+      echo "[docs]   $dst_path -> ${src_path}（已就绪）"
+    else
+      echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 docs/），人工核对后再处理"
+    fi
+    return
+  fi
+
+  echo "[warn]  $dst_path 已存在且不是软链；请手动核对后指向 $src_path"
+}
+
+sync_opencode_docs
+
 # ── MCP 变量（与 init_claude.sh 保持一致） ──────────────
 SKILL_CATALOG_DIR="$SRC/mcp/skill-catalog"
 SKILL_CATALOG_VENV="$SKILL_CATALOG_DIR/.venv"

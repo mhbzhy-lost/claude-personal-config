@@ -22,7 +22,7 @@ log() {
 
 log "fired"
 
-RESPONSE="$(POLICY_PATH="$POLICY_PATH" HINT_HOST="codex" STDIN_PAYLOAD="$STDIN" python3 <<'PY' 2>/dev/null
+RESPONSE="$(POLICY_PATH="$POLICY_PATH" HINT_HOST="codex" STDIN_PAYLOAD="$STDIN" python3 <<'PY' 2>>"$LOG_FILE"
 import json
 import os
 import sys
