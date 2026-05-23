@@ -39,11 +39,11 @@ OPENCODE_JSON="$OPENCODE_CONFIG_DIR/opencode.json"
 #       · 真文件副本与仓内不一致时警告保留（疑似用户本地改动）
 #       · 用户自管文件（不在仓内 opencode/plugins/ 中）原样不动
 sync_opencode_plugins() {
-  local src_path="$SRC/opencode/plugins"
+  local src_path="$SRC/vendor/opencode-cache-proxy/plugins"
   local dst_path="$OPENCODE_CONFIG_DIR/plugins"
 
   if [ ! -d "$src_path" ]; then
-    echo "[skip]  opencode/plugins/ 不存在，跳过"
+    echo "[skip]  vendor/opencode-cache-proxy/plugins/ 不存在，跳过"
     return
   fi
 
@@ -68,7 +68,7 @@ sync_opencode_plugins() {
       ln -s "$src_path" "$dst_path"
       echo "[plugin] $dst_path 从旧路径 ${legacy_src_path} 迁移到 ${src_path}"
     else
-      echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 opencode/plugins/），人工核对后再处理"
+      echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 vendor/opencode-cache-proxy/plugins/），人工核对后再处理"
     fi
     return
   fi
@@ -157,11 +157,11 @@ sync_opencode_plugins() {
 }
 
 sync_opencode_proxy() {
-  local src_path="$SRC/opencode/proxy"
+  local src_path="$SRC/vendor/opencode-cache-proxy/proxy"
   local dst_path="$OPENCODE_CONFIG_DIR/proxy"
 
   if [ ! -d "$src_path" ]; then
-    echo "[skip]  opencode/proxy/ 不存在，跳过"
+    echo "[skip]  vendor/opencode-cache-proxy/proxy/ 不存在，跳过"
     return
   fi
 
@@ -179,7 +179,7 @@ sync_opencode_proxy() {
     if [ "$cur" = "$src_path" ]; then
       echo "[proxy]  $dst_path -> ${src_path}（已就绪）"
     else
-      echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 opencode/proxy/），人工核对后再处理"
+      echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 vendor/opencode-cache-proxy/proxy/），人工核对后再处理"
     fi
     return
   fi

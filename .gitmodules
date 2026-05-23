@@ -1,3 +1,6 @@
 [submodule "vendor/superpowers"]
 	path = vendor/superpowers
 	url = https://github.com/obra/superpowers.git
+[submodule "vendor/opencode-cache-proxy"]
+	path = vendor/opencode-cache-proxy
+	url = git@github.com:mhbzhy-lost/opencode-cache-proxy.git
