@@ -46,6 +46,7 @@ const upstreamBaseUrl =
   process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1"
 const model = process.env.DASHSCOPE_E2E_MODEL || "qwen3.6-flash"
 const cacheCreationWaitMs = Number(process.env.DASHSCOPE_E2E_WAIT_MS || 8000)
+const fetchTimeoutMs = Number(process.env.DASHSCOPE_E2E_FETCH_TIMEOUT_MS || 30_000)
 
 if (!apiKey) {
   console.error("❌ DASHSCOPE_API_KEY missing in .env")
@@ -88,6 +89,7 @@ const callOnce = async (turn) => {
       max_tokens: 8,
       enable_thinking: false,
     }),
+    signal: AbortSignal.timeout(fetchTimeoutMs),
   })
   let body
   try {

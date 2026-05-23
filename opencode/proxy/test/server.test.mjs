@@ -192,11 +192,17 @@ describe("createBailianCacheProxy", () => {
     const gzipped = gzipSync(Buffer.from(payload))
     const upstream = createServer(async (request, response) => {
       await readJson(request)
+      // Mix of transport-level + business headers. transfer-encoding/trailer
+      // are not asserted: combining them with content-length is a protocol
+      // violation that either undici fetch or Node http server refuses. The
+      // strip set still covers them via HOP_BY_HOP_HEADERS by source
+      // inspection.
       response.writeHead(200, {
         "content-type": "application/json",
         "content-encoding": "gzip",
         "content-length": String(gzipped.length),
         "connection": "close",
+        "proxy-authenticate": "Basic realm=upstream",
         "x-request-id": "trace-123",
       })
       response.end(gzipped)
@@ -222,8 +228,20 @@ describe("createBailianCacheProxy", () => {
       )
 
       assert.equal(response.status, 200)
-      assert.equal(response.headers.get("content-encoding"), null)
-      assert.equal(response.headers.get("content-length"), null)
+      // Transport-level headers must be stripped; client should never see
+      // upstream's encoding/length/hop-by-hop signals.
+      for (const stripped of [
+        "content-encoding",
+        "content-length",
+        "proxy-authenticate",
+      ]) {
+        assert.equal(
+          response.headers.get(stripped),
+          null,
+          `expected ${stripped} to be stripped`,
+        )
+      }
+      // Business headers from upstream must be preserved.
       assert.equal(response.headers.get("x-request-id"), "trace-123")
       const body = await response.json()
       assert.deepEqual(body, { ok: true, usage: { prompt_tokens: 7 } })
