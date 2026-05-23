@@ -3,7 +3,7 @@ import { createServer } from "node:http"
 import { describe, test } from "node:test"
 import { gzipSync } from "node:zlib"
 
-import { createBailianCacheProxy } from "../src/server.mjs"
+import { createBailianCacheProxy, NOOP_USAGE_RECORDER } from "../src/server.mjs"
 
 const listen = (server) =>
   new Promise((resolve) => {
@@ -734,6 +734,56 @@ describe("createBailianCacheProxy", () => {
       await close(proxy.server)
       await close(upstream)
     }
+  })
+
+  test("NOOP_USAGE_RECORDER is frozen and never throws", () => {
+    // The exported no-op must be safe to share across the whole test suite
+    // and any future caller that doesn't want stats persisted.
+    assert.equal(Object.isFrozen(NOOP_USAGE_RECORDER), true)
+    assert.doesNotThrow(() =>
+      NOOP_USAGE_RECORDER.fireAndForget({ ts: "x", model: "y" }),
+    )
+    return NOOP_USAGE_RECORDER.record({ ts: "x" }) // returns a promise that resolves
+  })
+
+  test("server.mjs defaults usageRecorder to NOOP, not a live filesystem recorder", async () => {
+    // Regression: the previous default was createUsageRecorder({...}), which
+    // appended to ~/.cache/bailian-cache-proxy/usage.jsonl whenever a unit
+    // test forgot to inject a mock. Verify by source inspection — this is
+    // the cheapest way to catch a future revert without spying on fs.
+    const { readFileSync } = await import("node:fs")
+    const { fileURLToPath } = await import("node:url")
+    const { dirname, join } = await import("node:path")
+    const here = dirname(fileURLToPath(import.meta.url))
+    const serverSrc = readFileSync(join(here, "..", "src", "server.mjs"), "utf8")
+    assert.match(
+      serverSrc,
+      /usageRecorder\s*=\s*NOOP_USAGE_RECORDER/,
+      "createBailianCacheProxy must default usageRecorder to NOOP_USAGE_RECORDER",
+    )
+    assert.doesNotMatch(
+      serverSrc,
+      /usageRecorder\s*=\s*createUsageRecorder\(/,
+      "src/server.mjs must NOT default usageRecorder to a live createUsageRecorder()",
+    )
+  })
+
+  test("bin/bailian-cache-proxy.mjs is the only place that opts into a live usage recorder", async () => {
+    const { readFileSync } = await import("node:fs")
+    const { fileURLToPath } = await import("node:url")
+    const { dirname, join } = await import("node:path")
+    const here = dirname(fileURLToPath(import.meta.url))
+    const binSrc = readFileSync(join(here, "..", "bin", "bailian-cache-proxy.mjs"), "utf8")
+    assert.match(
+      binSrc,
+      /createUsageRecorder\(/,
+      "production entrypoint must explicitly construct a real recorder",
+    )
+    assert.match(
+      binSrc,
+      /usageRecorder\s*[,}]/,
+      "production entrypoint must pass usageRecorder into createBailianCacheProxy",
+    )
   })
 
   test("only forwards chat completions paths to Bailian", async () => {

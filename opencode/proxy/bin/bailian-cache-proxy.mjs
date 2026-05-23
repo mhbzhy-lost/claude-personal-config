@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 
 import { loadEnvFile } from "../src/load-env.mjs"
 import { createBailianCacheProxy } from "../src/server.mjs"
+import { createUsageRecorder } from "../src/usage-recorder.mjs"
 
 // The proxy is normally spawned by the OpenCode plugin and inherits whatever
 // env that parent process happened to have. OpenCode launched from a desktop
@@ -48,6 +49,12 @@ const port = envNumber("BAILIAN_CACHE_PROXY_PORT", 48761)
 const upstreamBaseUrl =
   process.env.BAILIAN_UPSTREAM_BASE_URL || process.env.DASHSCOPE_BASE_URL
 
+// Production recorder writes to ~/.cache/bailian-cache-proxy/usage.jsonl.
+// createBailianCacheProxy itself defaults to a no-op recorder so unit tests
+// don't pollute the user's stats file; this entrypoint is the only place that
+// opts into the real one.
+const usageRecorder = createUsageRecorder({})
+
 const { server } = createBailianCacheProxy({
   upstreamBaseUrl,
   idleExitMs: envNumber("BAILIAN_CACHE_PROXY_IDLE_EXIT_MS", 60_000),
@@ -57,6 +64,7 @@ const { server } = createBailianCacheProxy({
     minCacheTokens: envNumber("BAILIAN_CACHE_PROXY_MIN_TOKENS", 1024),
     maxLookbackContentBlocks: envNumber("BAILIAN_CACHE_PROXY_MAX_LOOKBACK_BLOCKS", 20),
   },
+  usageRecorder,
 })
 
 server.listen(port, host, () => {

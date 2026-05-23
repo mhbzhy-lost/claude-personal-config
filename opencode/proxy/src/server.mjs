@@ -147,6 +147,17 @@ const writeProxyError = (response, statusCode, body) => {
   writeJson(response, statusCode, body)
 }
 
+// Used as the default usage recorder to avoid silently writing to the user's
+// real ~/.cache/bailian-cache-proxy/usage.jsonl when callers don't explicitly
+// opt in. The production entrypoint (bin/bailian-cache-proxy.mjs) constructs
+// a real recorder via createUsageRecorder(); unit tests either pass their own
+// mock or get this no-op so they never pollute the user's stats data.
+export const NOOP_USAGE_RECORDER = Object.freeze({
+  fireAndForget: () => {},
+  record: async () => {},
+  filePath: null,
+})
+
 export const createBailianCacheProxy = ({
   upstreamBaseUrl = DEFAULT_UPSTREAM_BASE_URL,
   apiKey = process.env.DASHSCOPE_API_KEY || process.env.BAILIAN_API_KEY || "",
@@ -157,7 +168,7 @@ export const createBailianCacheProxy = ({
   maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
   onIdleExit = () => process.exit(0),
   logger = console,
-  usageRecorder = createUsageRecorder({ logger }),
+  usageRecorder = NOOP_USAGE_RECORDER,
   usageSniffBytes = DEFAULT_USAGE_SNIFF_BYTES,
   now = () => Date.now(),
 } = {}) => {
