@@ -3,6 +3,10 @@
  * existing values. Quoted values (single/double) are unwrapped. Lines starting
  * with `#` and blank lines are skipped.
  *
+ * **CAUTION — synchronous I/O.** This function uses readFileSync and is meant
+ * for one-shot startup work only. Do **not** call it from request handlers,
+ * tool.execute hooks, or any hot path — it will block the Node event loop.
+ *
  * Used by:
  *   - bin/bailian-cache-proxy.mjs   so the proxy is self-sufficient when
  *                                   spawned by the OpenCode plugin (the

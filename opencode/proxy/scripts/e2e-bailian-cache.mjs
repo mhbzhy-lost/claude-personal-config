@@ -21,7 +21,18 @@ import { createBailianCacheProxy } from "../src/server.mjs"
 const here = dirname(fileURLToPath(import.meta.url))
 const envPath = join(here, "..", ".env")
 
-loadEnvFile(envPath)
+// e2e — unlike the production proxy — must hard-fail when .env is missing or
+// unreadable. Silently degrading would let the script continue with no creds
+// and surface the failure as an opaque 401 from upstream, which the previous
+// inline loader caught immediately by throwing on read.
+{
+  const result = loadEnvFile(envPath)
+  if (!result.loaded) {
+    const reason = result.error ? `unreadable: ${result.error.message}` : "not found"
+    console.error(`❌ ${envPath} ${reason}; e2e cannot run without DASHSCOPE_API_KEY`)
+    process.exit(1)
+  }
+}
 
 const apiKey = process.env.DASHSCOPE_API_KEY
 const upstreamBaseUrl =
