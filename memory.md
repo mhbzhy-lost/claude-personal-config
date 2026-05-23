@@ -238,3 +238,40 @@ uv venv --clear --python 3.14 .venv
 
 若项目声明 `requires-python >=3.11`，不要用 macOS `/usr/bin/python3`（常见为
 3.9.x）；优先用 `uv` 管理的 Python。
+
+## Codex subagent 派发时的提权提示
+
+**场景**：Codex 主会话创建 subagent，让其再调用需要外部服务、隔离 worktree 或
+写入 `.git/worktrees` 的 worker（例如 `opencode-deepseek-worker`）。
+
+**已知问题**：subagent 遇到权限审查 / sandbox 拦截时，可能直接把任务标记为
+blocked，而不是像主会话一样发起 `require_escalated` 请求。实际成功案例表明：
+在 prompt 中明确要求 subagent 遇到审查拦截时尝试提权重跑，审批可通过并完成任务。
+
+**规避**：以后 Codex 派发 subagent 时，worker prompt 必须写明：
+
+- 如果创建 worktree、调用外部 worker、访问授权资源时被 sandbox / 审查拦截，不要立刻放弃。
+- 先按当前任务已授权范围发起 `require_escalated` 请求，并使用合理的 `prefix_rule`。
+- 只有提权请求被明确拒绝、或授权范围与任务不匹配时，才返回 blocked。
+
+## Generated artifact 的 EOF 空白必须修生成器
+
+**现象**：`git diff --check <base>..HEAD` 对新增生成文件报
+`new blank line at EOF`。单看文件时只是末尾多一个空行，例如 generated Markdown
+最后一节自带换行，外层 renderer 又追加一次终止换行。
+
+**常见误修**：直接手删生成物末尾空行。若项目有 render-equivalence / canonical
+renderer 校验，这会让生成物与 canonical output 不一致，下一次 `check` 或重新渲染
+又会失败 / 反复产生 diff。
+
+**正确处理**：
+
+1. 先确认生成链路：artifact 是由哪个 renderer / serializer / formatter 写出的。
+2. 在生成器层修复尾随空白，只保留一个 POSIX 文件终止换行，不保留 EOF 空白行。
+3. 加单测直接断言生成文本不以 `"\n\n"` 结尾。
+4. 重新生成受影响 artifact，再同时跑：
+   - artifact 的 equivalence/check 命令
+   - `git diff --check <base>..HEAD`
+
+**判断原则**：凡是 generated artifact 被 canonical check 管控，空白问题默认先查
+generator，不要把手工编辑生成物当成修复。
