@@ -644,7 +644,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--api-timeout-seconds",
         type=int,
         default=180,
-        help="hard timeout around the provider API call (default 180; set <=0 to disable)",
+        help=(
+            "hard wall-clock timeout around the API call (default 180). "
+            "Set <=0 to drop the wall-clock cap and fall back to the OpenAI "
+            "SDK default (~600s)."
+        ),
     )
     return parser
 
@@ -653,14 +657,24 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
     legacy_format = os.environ.get("EXTERNAL_LLM_API_FORMAT", "").strip()
     if legacy_format and legacy_format.lower() != "chat":
         print(
-            f"ERROR: EXTERNAL_LLM_API_FORMAT={legacy_format!r} is no longer supported. "
-            "Only chat-completions and claude-code-cli backends remain. "
-            "If you previously used 'anthropic' format, switch to "
-            "EXTERNAL_LLM_REVIEW_BACKEND=claude-code-cli with ANTHROPIC_BASE_URL "
-            "(see .env.example).",
+            f"ERROR: EXTERNAL_LLM_API_FORMAT={legacy_format!r} is no longer read by "
+            "reviewer.py. Only OpenAI Chat Completions (backend=api) and the local "
+            "Claude CLI (backend=claude-code-cli) remain. Please remove this "
+            "variable from your .env file. If you previously used 'anthropic' "
+            "format, set EXTERNAL_LLM_REVIEW_BACKEND=claude-code-cli with "
+            "ANTHROPIC_BASE_URL instead (see .env.example).",
             file=sys.stderr,
         )
         return 1
+
+    for legacy_var in ("EXTERNAL_LLM_CACHE_MODE", "EXTERNAL_LLM_CACHE_DIFF"):
+        if os.environ.get(legacy_var, "").strip():
+            print(
+                f"WARN: {legacy_var} is set but no longer honored "
+                "(qwen-explicit cache support has been removed). Remove it from "
+                "your .env to silence this warning.",
+                file=sys.stderr,
+            )
 
     try:
         backend = resolve_review_backend(args, env=os.environ)

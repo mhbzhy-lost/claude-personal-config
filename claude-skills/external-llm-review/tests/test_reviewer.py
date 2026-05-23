@@ -298,10 +298,13 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
 
         args = reviewer.build_arg_parser().parse_args(["base", "head"])
         skill_dir = Path(__file__).resolve().parent.parent
+        # clear=True isolates from CI/host env so the assertion only depends on
+        # the legacy var we inject; a different host EXTERNAL_LLM_* must not be
+        # able to make this test exit on a different code path.
         with patch.dict(
             "os.environ",
             {"EXTERNAL_LLM_API_FORMAT": "anthropic"},
-            clear=False,
+            clear=True,
         ), patch("sys.stderr", new_callable=StringIO) as stderr:
             exit_code = asyncio.run(
                 reviewer.run_review(args=args, skill_dir=skill_dir)
@@ -309,7 +312,7 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertIn("EXTERNAL_LLM_API_FORMAT", stderr.getvalue())
-        self.assertIn("no longer supported", stderr.getvalue())
+        self.assertIn("no longer read", stderr.getvalue())
 
     def test_describe_api_exception_decodes_and_redacts_response_body(self):
         class Response:

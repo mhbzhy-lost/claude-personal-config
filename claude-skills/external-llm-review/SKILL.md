@@ -106,7 +106,7 @@ uv run --no-project \
 - `--review-round` —— 当前 diff 的评审轮次，只允许 `1` 或 `2`；默认 `1`
 - `--max-issues` —— 单轮最多报告的问题数，默认 `25`；同类问题归并为模式级 issue
 - `--max-output-tokens` —— 模型输出 token 上限，默认 `16000`，支撑 reasoning 模型和穷举式报告
-- `--api-timeout-seconds` —— provider API 调用外层硬超时，默认 `180`；设 `<=0` 关闭
+- `--api-timeout-seconds` —— provider API 调用外层硬超时，默认 `180`。设 `<=0` 时**不**完全关闭，而是退回 OpenAI SDK 默认（约 600s）
 
 **stdout 输出**：模型返回的 review markdown（Strengths / Critical / Important / Minor / Checklist Coverage / Assessment）。**stderr** 是诊断信息。
 
