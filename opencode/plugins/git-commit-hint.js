@@ -46,8 +46,13 @@ const toolEnvRequestsSkip = (args) => {
   return false
 }
 
-const commandEnvPrefixRequestsSkip = (command) => {
-  let tokens = command.trim().split(/\s+/).filter(Boolean)
+// Parse one shell-semantic segment: strip optional `env` prefix, then walk
+// leading `VAR=value` tokens to find the skip flag, then require `git commit`
+// at the first non-VAR position. Returns true only when the skip flag lives
+// in the same segment as `git commit`, which matches the documented escape:
+// "命令前缀 GIT_COMMIT_HINT_SKIP=1 git commit ...".
+const segmentRequestsSkip = (segment) => {
+  let tokens = segment.trim().split(/\s+/).filter(Boolean)
   if (tokens[0] === "env") tokens = tokens.slice(1)
 
   let skipRequested = false
@@ -59,6 +64,16 @@ const commandEnvPrefixRequestsSkip = (command) => {
   }
 
   return skipRequested && tokens[index] === "git" && tokens[index + 1] === "commit"
+}
+
+const commandEnvPrefixRequestsSkip = (command) => {
+  // A full bash invocation often strings commands with `;` / `&&` / `||`:
+  //   export FOO=1... ; GIT_COMMIT_HINT_SKIP=1 git commit -m "..."
+  // The prefix-only parser above would choke on `export` at token 0 and
+  // never see the skip flag on the subsequent segment. Split along shell
+  // operators so each segment is parsed independently.
+  const segments = command.split(/\s*(?:;|&&|\|\|)\s*/)
+  return segments.some(segmentRequestsSkip)
 }
 
 export const GitCommitHintPlugin = async (ctx) => {
