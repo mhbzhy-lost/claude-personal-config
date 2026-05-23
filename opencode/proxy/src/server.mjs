@@ -4,11 +4,16 @@ import { pipeline } from "node:stream/promises"
 
 import { planBailianCacheMarkers } from "./cache-planner.mjs"
 import { createLifecycleTracker } from "./lifecycle.mjs"
+import { ensureStreamUsageOption, extractUsage } from "./usage-extractor.mjs"
+import { buildUsageRecord, createUsageRecorder } from "./usage-recorder.mjs"
 
 const DEFAULT_UPSTREAM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 const DEFAULT_IDLE_EXIT_MS = 60_000
 const DEFAULT_LIFECYCLE_CHECK_MS = 5_000
 const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024
+// Cap how many response bytes we retain for usage extraction. SSE usage frames
+// land in the tail; capping bounds memory regardless of conversation length.
+const DEFAULT_USAGE_SNIFF_BYTES = 64 * 1024
 const CONTROL_PREFIX = "/__bailian_cache_proxy"
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
@@ -143,6 +148,9 @@ export const createBailianCacheProxy = ({
   maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
   onIdleExit = () => process.exit(0),
   logger = console,
+  usageRecorder = createUsageRecorder({ logger }),
+  usageSniffBytes = DEFAULT_USAGE_SNIFF_BYTES,
+  now = () => Date.now(),
 } = {}) => {
   const tracker = createLifecycleTracker()
   let lastActiveAt = Date.now()
@@ -162,6 +170,10 @@ export const createBailianCacheProxy = ({
       return
     }
 
+    const requestStart = now()
+    let parsedRequestModel = null
+    let isStream = false
+
     try {
       if (!isAllowedUpstreamPath(request)) {
         writeJson(response, 404, { error: "not_found" })
@@ -175,7 +187,15 @@ export const createBailianCacheProxy = ({
       let bodyBuffer = await readBody(request, maxBodyBytes)
       if (shouldPlanCache(request)) {
         const body = JSON.parse(bodyBuffer.toString("utf8"))
-        bodyBuffer = Buffer.from(JSON.stringify(planBailianCacheMarkers(body, cacheOptions)))
+        let planned = planBailianCacheMarkers(body, cacheOptions)
+        // Inject stream_options.include_usage so streaming responses still
+        // expose token usage in their trailing SSE frame. Without this, every
+        // OpenCode AI-SDK call (which defaults to stream=true) would log no
+        // usage and the cache hit-rate dataset would be empty.
+        planned = ensureStreamUsageOption(planned)
+        parsedRequestModel = planned?.model ?? null
+        isStream = planned?.stream === true
+        bodyBuffer = Buffer.from(JSON.stringify(planned))
       }
 
       const upstreamResponse = await fetch(buildUpstreamUrl(request.url, upstreamBaseUrl), {
@@ -185,10 +205,60 @@ export const createBailianCacheProxy = ({
       })
 
       response.writeHead(upstreamResponse.status, responseHeadersToObject(upstreamResponse.headers))
-      if (upstreamResponse.body) {
-        await pipeline(Readable.fromWeb(upstreamResponse.body), response)
-      } else {
+
+      if (!upstreamResponse.body) {
         response.end()
+        usageRecorder.fireAndForget(
+          buildUsageRecord({
+            ts: new Date(requestStart).toISOString(),
+            model: parsedRequestModel,
+            status: upstreamResponse.status,
+            duration_ms: now() - requestStart,
+            usage: null,
+            request_id: null,
+            is_stream: isStream,
+            stream_usage_seen: false,
+          }),
+        )
+        return
+      }
+
+      // Sniff up to the last `usageSniffBytes` bytes of the response so we can
+      // extract usage without holding the full streamed body in memory.
+      let sniffBuf = Buffer.alloc(0)
+      const collect = async function* (source) {
+        for await (const chunk of source) {
+          if (sniffBuf.length < usageSniffBytes) {
+            sniffBuf = Buffer.concat([sniffBuf, chunk])
+            if (sniffBuf.length > usageSniffBytes) {
+              sniffBuf = sniffBuf.subarray(sniffBuf.length - usageSniffBytes)
+            }
+          } else {
+            // Already at cap; slide window so we keep the tail (usage frame).
+            sniffBuf = Buffer.concat([sniffBuf, chunk]).subarray(
+              Math.max(0, sniffBuf.length + chunk.length - usageSniffBytes),
+            )
+          }
+          yield chunk
+        }
+      }
+
+      try {
+        await pipeline(Readable.fromWeb(upstreamResponse.body), collect, response)
+      } finally {
+        const extracted = extractUsage({ buffer: sniffBuf, isStream })
+        usageRecorder.fireAndForget(
+          buildUsageRecord({
+            ts: new Date(requestStart).toISOString(),
+            model: parsedRequestModel,
+            status: upstreamResponse.status,
+            duration_ms: now() - requestStart,
+            usage: extracted.usage,
+            request_id: extracted.request_id,
+            is_stream: isStream,
+            stream_usage_seen: extracted.stream_usage_seen,
+          }),
+        )
       }
     } catch (err) {
       if (err.statusCode === 413) {

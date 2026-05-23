@@ -251,6 +251,189 @@ describe("createBailianCacheProxy", () => {
     }
   })
 
+  test("records usage for non-streaming completions via the recorder", async () => {
+    const upstream = createServer(async (request, response) => {
+      await readJson(request)
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(
+        JSON.stringify({
+          id: "chatcmpl-non-stream",
+          usage: {
+            prompt_tokens: 200,
+            completion_tokens: 5,
+            prompt_tokens_details: {
+              cached_tokens: 150,
+              cache_creation_input_tokens: 0,
+            },
+          },
+        }),
+      )
+    })
+    const upstreamAddress = await listen(upstream)
+    const records = []
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+      lifecycle: false,
+      usageRecorder: {
+        fireAndForget(entry) {
+          records.push(entry)
+        },
+        record: async () => {},
+        filePath: "<test>",
+      },
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer sk-test",
+          },
+          body: JSON.stringify({
+            model: "qwen3.6-flash",
+            messages: [{ role: "user", content: "hi" }],
+          }),
+        },
+      )
+      assert.equal(response.status, 200)
+      await response.json()
+
+      assert.equal(records.length, 1)
+      const record = records[0]
+      assert.equal(record.model, "qwen3.6-flash")
+      assert.equal(record.is_stream, false)
+      assert.equal(record.stream_usage_seen, null)
+      assert.equal(record.prompt_tokens, 200)
+      assert.equal(record.cached_tokens, 150)
+      assert.equal(record.cache_hit_ratio, 0.75)
+      assert.equal(record.request_id, "chatcmpl-non-stream")
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
+  test("injects stream_options.include_usage and records usage from SSE", async () => {
+    let receivedBody
+    const upstream = createServer(async (request, response) => {
+      receivedBody = await readJson(request)
+      response.writeHead(200, { "content-type": "text/event-stream" })
+      response.write(
+        'data: {"id":"chatcmpl-stream","choices":[{"delta":{"content":"hi"}}],"usage":null}\n\n',
+      )
+      response.write(
+        'data: {"id":"chatcmpl-stream","choices":[],"usage":{"prompt_tokens":300,"completion_tokens":1,"prompt_tokens_details":{"cached_tokens":288,"cache_creation_input_tokens":0}}}\n\n',
+      )
+      response.write("data: [DONE]\n\n")
+      response.end()
+    })
+    const upstreamAddress = await listen(upstream)
+    const records = []
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+      lifecycle: false,
+      usageRecorder: {
+        fireAndForget: (entry) => records.push(entry),
+        record: async () => {},
+        filePath: "<test>",
+      },
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer sk-test",
+          },
+          body: JSON.stringify({
+            model: "qwen3.6-plus",
+            stream: true,
+            messages: [{ role: "user", content: "go" }],
+          }),
+        },
+      )
+      assert.equal(response.status, 200)
+      // Drain so the upstream pipeline finishes and finally fires.
+      const reader = response.body.getReader()
+      while (!(await reader.read()).done) {
+        // discard
+      }
+
+      assert.equal(receivedBody.stream_options.include_usage, true)
+      assert.equal(records.length, 1)
+      const record = records[0]
+      assert.equal(record.is_stream, true)
+      assert.equal(record.stream_usage_seen, true)
+      assert.equal(record.model, "qwen3.6-plus")
+      assert.equal(record.prompt_tokens, 300)
+      assert.equal(record.cached_tokens, 288)
+      assert.equal(record.cache_hit_ratio, 0.96)
+      assert.equal(record.request_id, "chatcmpl-stream")
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
+  test("records a streaming entry with stream_usage_seen=false when upstream omits usage", async () => {
+    const upstream = createServer(async (request, response) => {
+      await readJson(request)
+      response.writeHead(200, { "content-type": "text/event-stream" })
+      response.write('data: {"id":"chatcmpl-no-usage","choices":[{"delta":{"content":"x"}}]}\n\n')
+      response.write("data: [DONE]\n\n")
+      response.end()
+    })
+    const upstreamAddress = await listen(upstream)
+    const records = []
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+      lifecycle: false,
+      usageRecorder: {
+        fireAndForget: (entry) => records.push(entry),
+        record: async () => {},
+        filePath: "<test>",
+      },
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "qwen3.6-flash",
+            stream: true,
+            stream_options: { include_usage: false },
+            messages: [{ role: "user", content: "x" }],
+          }),
+        },
+      )
+      const reader = response.body.getReader()
+      while (!(await reader.read()).done) {
+        // drain
+      }
+
+      assert.equal(records.length, 1)
+      assert.equal(records[0].is_stream, true)
+      assert.equal(records[0].stream_usage_seen, false)
+      assert.equal(records[0].cached_tokens, null)
+      assert.equal(records[0].request_id, "chatcmpl-no-usage")
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
   test("only forwards chat completions paths to Bailian", async () => {
     let upstreamCalled = false
     const upstream = createServer((request, response) => {

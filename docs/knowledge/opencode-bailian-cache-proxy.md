@@ -59,6 +59,42 @@ https://dashscope.aliyuncs.com/compatible-mode/v1
 content block 回溯窗口和最小 cacheable token 数限制。把策略放在本地代理中，可以
 独立于 OpenCode 的通用 provider 缓存逻辑迭代，并且不会影响其他 provider。
 
+## Usage 观测（缓存命中率统计）
+
+每次经过代理的 `/chat/completions` 请求结束后，都会把一条
+**metadata-only** 记录（不含 prompt/completion 原文）追加到：
+
+```text
+${BAILIAN_CACHE_PROXY_USAGE_LOG:-${XDG_CACHE_HOME:-~/.cache}/bailian-cache-proxy/usage.jsonl}
+```
+
+字段含 `ts / proxy_pid / opencode_pid / model / status / duration_ms /
+prompt_tokens / cached_tokens / cache_creation_input_tokens /
+completion_tokens / cache_hit_ratio / request_id / is_stream /
+stream_usage_seen`。
+
+并发安全：写入用 `fs.promises.appendFile`（POSIX `O_APPEND`），单行 JSON
+≤ PIPE_BUF (4096B)，多 OpenCode 进程共用一个代理时同进程内并发请求、
+极端 race 下多个代理实例并发 append 都不会交错。
+
+**Streaming 注入**：OpenCode AI SDK 默认 `stream=true`，代理在请求侧
+自动注入 `stream_options.include_usage=true`（除非客户端显式设
+`include_usage=false`），保证 SSE 末帧带 usage。否则 stream 路径完全
+采不到 usage。
+
+分析工具：
+
+```bash
+node opencode/proxy/scripts/cache-stats.mjs           # 默认 since=today
+node opencode/proxy/scripts/cache-stats.mjs --since 2h
+node opencode/proxy/scripts/cache-stats.mjs --since all --by status
+node opencode/proxy/scripts/cache-stats.mjs --since today --json   # 给后续脚本喂数据
+```
+
+输出包括 overall + 按 model（或 status）分组的总命中率、avg duration、
+streaming usage capture 率等。失败请求（status >= 400）也会记录，
+便于看错误分布。
+
 ## 修改时注意
 
 - provider id 固定为 `bailian-custom-cached`；不要改回通用 `bailian` 或影响其他

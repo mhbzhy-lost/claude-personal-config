@@ -165,5 +165,8 @@ try {
   exitCode = 1
 } finally {
   server.close()
+  // Give fire-and-forget usage records a moment to flush before we exit,
+  // otherwise process.exit can drop the second-run record on the floor.
+  await new Promise((resolve) => setTimeout(resolve, 200))
   process.exit(exitCode)
 }
