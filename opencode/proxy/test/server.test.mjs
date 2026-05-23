@@ -473,6 +473,73 @@ describe("createBailianCacheProxy", () => {
     }
   })
 
+  test("captures usage from a non-streaming response larger than the sniff window", async () => {
+    // Build a response whose JSON exceeds the default 64KB sliding window.
+    // A naive sniffer that only retains the tail would lose the leading `{`
+    // and JSON.parse would silently fail, yielding null usage.
+    const fillerChoices = Array.from({ length: 800 }, (_, i) => ({
+      index: i,
+      message: { role: "assistant", content: "x".repeat(100) },
+    }))
+    const upstream = createServer(async (request, response) => {
+      await readJson(request)
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(
+        JSON.stringify({
+          id: "chatcmpl-big",
+          choices: fillerChoices,
+          usage: {
+            prompt_tokens: 5000,
+            completion_tokens: 600,
+            prompt_tokens_details: {
+              cached_tokens: 4900,
+              cache_creation_input_tokens: 0,
+            },
+          },
+        }),
+      )
+    })
+    const upstreamAddress = await listen(upstream)
+    const records = []
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+      lifecycle: false,
+      usageSniffBytes: 16 * 1024, // small window to force the would-be-truncated case
+      usageRecorder: {
+        fireAndForget: (entry) => records.push(entry),
+        record: async () => {},
+        filePath: "<test>",
+      },
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "qwen3.6-flash",
+            messages: [{ role: "user", content: "hi" }],
+          }),
+        },
+      )
+      assert.equal(response.status, 200)
+      const body = await response.json()
+      assert.equal(body.choices.length, 800)
+
+      assert.equal(records.length, 1)
+      assert.equal(records[0].prompt_tokens, 5000)
+      assert.equal(records[0].cached_tokens, 4900)
+      assert.equal(records[0].request_id, "chatcmpl-big")
+      assert.equal(records[0].proxy_error, null)
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
   test("records oversized request as 413 without contacting upstream", async () => {
     const upstreamCalls = []
     const upstream = createServer((request, response) => {

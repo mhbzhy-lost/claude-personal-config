@@ -1,6 +1,6 @@
 import { mkdir, appendFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, isAbsolute, join, resolve } from "node:path"
 
 const DEFAULT_DIR_NAME = "bailian-cache-proxy"
 const DEFAULT_FILE_NAME = "usage.jsonl"
@@ -9,12 +9,13 @@ const DEFAULT_FILE_NAME = "usage.jsonl"
 const LINE_LIMIT_BYTES = 3500
 
 export const defaultUsageLogPath = () => {
-  if (process.env.BAILIAN_CACHE_PROXY_USAGE_LOG) {
-    return process.env.BAILIAN_CACHE_PROXY_USAGE_LOG
+  const explicit = process.env.BAILIAN_CACHE_PROXY_USAGE_LOG
+  if (explicit) {
+    // Always resolve to absolute so a stray relative override does not write
+    // the log file relative to whichever cwd the proxy happened to spawn in.
+    return isAbsolute(explicit) ? explicit : resolve(explicit)
   }
-  const cacheRoot =
-    process.env.XDG_CACHE_HOME ||
-    (process.platform === "darwin" ? join(homedir(), ".cache") : join(homedir(), ".cache"))
+  const cacheRoot = process.env.XDG_CACHE_HOME || join(homedir(), ".cache")
   return join(cacheRoot, DEFAULT_DIR_NAME, DEFAULT_FILE_NAME)
 }
 

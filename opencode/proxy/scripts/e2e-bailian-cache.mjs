@@ -12,6 +12,7 @@
  */
 
 import { readFileSync } from "node:fs"
+import { readFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -47,6 +48,28 @@ const upstreamBaseUrl =
 const model = process.env.DASHSCOPE_E2E_MODEL || "qwen3.6-flash"
 const cacheCreationWaitMs = Number(process.env.DASHSCOPE_E2E_WAIT_MS || 8000)
 const fetchTimeoutMs = Number(process.env.DASHSCOPE_E2E_FETCH_TIMEOUT_MS || 30_000)
+
+const usageLogPath =
+  process.env.BAILIAN_CACHE_PROXY_USAGE_LOG ||
+  join(
+    process.env.XDG_CACHE_HOME || join(process.env.HOME || "", ".cache"),
+    "bailian-cache-proxy",
+    "usage.jsonl",
+  )
+
+const countUsageLines = async () => {
+  try {
+    const text = await readFile(usageLogPath, "utf8")
+    return text.split("\n").filter((l) => l.trim()).length
+  } catch {
+    return 0
+  }
+}
+
+// Snapshot baseline before we run requests so polling later only counts new
+// records produced by this script — prevents stale logs from making the wait
+// return immediately with leftover lines from a previous failed run.
+const usageLogBaseline = await countUsageLines()
 
 if (!apiKey) {
   console.error("❌ DASHSCOPE_API_KEY missing in .env")
@@ -165,24 +188,15 @@ try {
   exitCode = 1
 } finally {
   server.close()
-  // Wait for fire-and-forget usage records to land. We do NOT hardcode a sleep
-  // here because CI / busy disks can blow past it — instead poll the usage log
-  // until the expected line count appears or we hit a generous timeout. This
-  // is best-effort for verification; production proxy never exits this way.
-  const usageLogPath =
-    process.env.BAILIAN_CACHE_PROXY_USAGE_LOG ||
-    join(process.env.XDG_CACHE_HOME || join(process.env.HOME || "", ".cache"), "bailian-cache-proxy", "usage.jsonl")
-  const expectedLines = 2
+  // Wait for fire-and-forget usage records to land. Poll until we observe at
+  // least usageLogBaseline + expectedRuns *new* records, with a 5s timeout.
+  // Comparing against the baseline (captured at script start) prevents stale
+  // logs from satisfying the predicate without our writes ever finishing.
+  const expectedRuns = 2
+  const target = usageLogBaseline + expectedRuns
   const pollDeadline = Date.now() + 5000
   while (Date.now() < pollDeadline) {
-    try {
-      const { readFile } = await import("node:fs/promises")
-      const text = await readFile(usageLogPath, "utf8")
-      const lines = text.split("\n").filter((l) => l.trim()).length
-      if (lines >= expectedLines) break
-    } catch {
-      // file may not exist yet
-    }
+    if ((await countUsageLines()) >= target) break
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
   process.exit(exitCode)

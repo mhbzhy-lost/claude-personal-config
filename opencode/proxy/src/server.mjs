@@ -231,21 +231,32 @@ export const createBailianCacheProxy = ({
         return
       }
 
-      // Sniff up to the last `usageSniffBytes` bytes of the response so we can
-      // extract usage without holding the full streamed body in memory.
+      // For streaming responses we only need the tail (usage SSE frame is at
+      // the end), so a sliding window bounded by usageSniffBytes is enough.
+      // For non-streaming responses the body is one JSON object — we MUST
+      // accumulate the full body or JSON.parse will fail on the truncated
+      // prefix when the response is larger than usageSniffBytes. Cap at
+      // nonStreamMaxSniffBytes so a runaway response cannot OOM the proxy.
+      const nonStreamMaxSniffBytes = Math.max(usageSniffBytes, 2 * 1024 * 1024)
       let sniffBuf = Buffer.alloc(0)
+      let sniffOverflowed = false
       const collect = async function* (source) {
         for await (const chunk of source) {
-          if (sniffBuf.length < usageSniffBytes) {
+          if (isStream) {
             sniffBuf = Buffer.concat([sniffBuf, chunk])
             if (sniffBuf.length > usageSniffBytes) {
               sniffBuf = sniffBuf.subarray(sniffBuf.length - usageSniffBytes)
             }
-          } else {
-            // Already at cap; slide window so we keep the tail (usage frame).
-            sniffBuf = Buffer.concat([sniffBuf, chunk]).subarray(
-              Math.max(0, sniffBuf.length + chunk.length - usageSniffBytes),
-            )
+          } else if (!sniffOverflowed) {
+            const projected = sniffBuf.length + chunk.length
+            if (projected > nonStreamMaxSniffBytes) {
+              // Body exceeded our non-stream sniff cap; usage will be missed
+              // but we still forward the bytes to the client untouched.
+              sniffOverflowed = true
+              sniffBuf = Buffer.alloc(0)
+            } else {
+              sniffBuf = Buffer.concat([sniffBuf, chunk])
+            }
           }
           yield chunk
         }
@@ -258,7 +269,9 @@ export const createBailianCacheProxy = ({
         pipelineError = err
         throw err
       } finally {
-        const extracted = extractUsage({ buffer: sniffBuf, isStream })
+        const extracted = sniffOverflowed
+          ? { usage: null, request_id: null, stream_usage_seen: null }
+          : extractUsage({ buffer: sniffBuf, isStream })
         recordOnce({
           // A torn pipeline means the client did not receive a clean response,
           // so degrade the recorded status from 200 to 502 to keep the stats
@@ -267,7 +280,11 @@ export const createBailianCacheProxy = ({
           usage: extracted.usage,
           request_id: extracted.request_id,
           stream_usage_seen: extracted.stream_usage_seen,
-          proxy_error: pipelineError ? String(pipelineError.message || pipelineError) : null,
+          proxy_error: pipelineError
+            ? String(pipelineError.message || pipelineError)
+            : sniffOverflowed
+              ? "non_stream_body_exceeded_sniff_cap"
+              : null,
         })
       }
     } catch (err) {

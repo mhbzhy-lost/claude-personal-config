@@ -16,7 +16,9 @@
  *   --json               emit summary as JSON instead of formatted text
  */
 
-import { readFile } from "node:fs/promises"
+import { createReadStream } from "node:fs"
+import { stat } from "node:fs/promises"
+import { createInterface } from "node:readline"
 import { defaultUsageLogPath } from "../src/usage-recorder.mjs"
 
 const argv = process.argv.slice(2)
@@ -81,9 +83,8 @@ const parseSince = (spec) => {
 
 const sinceMs = parseSince(args.since)
 
-let raw
 try {
-  raw = await readFile(logPath, "utf8")
+  await stat(logPath)
 } catch (err) {
   if (err.code === "ENOENT") {
     console.error(`no usage log at ${logPath}`)
@@ -94,10 +95,18 @@ try {
   throw err
 }
 
+// Stream the file line-by-line so multi-day logs (potentially hundreds of MB)
+// don't have to fit in RAM all at once.
 const records = []
-for (const line of raw.split("\n")) {
+let totalLineCount = 0
+const lineStream = createInterface({
+  input: createReadStream(logPath, { encoding: "utf8" }),
+  crlfDelay: Infinity,
+})
+for await (const line of lineStream) {
   const trimmed = line.trim()
   if (!trimmed) continue
+  totalLineCount += 1
   try {
     records.push(JSON.parse(trimmed))
   } catch {
@@ -174,7 +183,7 @@ const summarize = (b) => ({
 const result = {
   log_path: logPath,
   since: args.since,
-  total_records_in_file: records.length,
+  total_records_in_file: totalLineCount,
   records_in_window: filtered.length,
   by: args.by,
   overall: summarize(overall),

@@ -106,6 +106,19 @@ describe("defaultUsageLogPath", () => {
       else process.env.BAILIAN_CACHE_PROXY_USAGE_LOG = original
     }
   })
+
+  test("resolves a relative BAILIAN_CACHE_PROXY_USAGE_LOG to absolute", () => {
+    const original = process.env.BAILIAN_CACHE_PROXY_USAGE_LOG
+    process.env.BAILIAN_CACHE_PROXY_USAGE_LOG = "relative/usage.jsonl"
+    try {
+      const resolved = defaultUsageLogPath()
+      assert.equal(resolved.startsWith("/"), true, `expected absolute, got ${resolved}`)
+      assert.equal(resolved.endsWith("/relative/usage.jsonl"), true)
+    } finally {
+      if (original === undefined) delete process.env.BAILIAN_CACHE_PROXY_USAGE_LOG
+      else process.env.BAILIAN_CACHE_PROXY_USAGE_LOG = original
+    }
+  })
 })
 
 describe("createUsageRecorder.record", () => {
