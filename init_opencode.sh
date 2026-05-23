@@ -586,6 +586,33 @@ elif isinstance(existing_lsp, dict):
 else:
     print("[warn]  lsp 字段类型异常，跳过")
 
+# ── Permission ──
+# opencode-permission.json 是 SSOT 模板，写入 opencode.json.permission。
+# 不做增量合并：整体替换模板内容，保持与仓内 SSOT 文件一致。
+permission_path = os.path.join(src, "opencode", "opencode-permission.json")
+if os.path.exists(permission_path):
+    try:
+        with open(permission_path) as f:
+            perm_ssot_content = json.load(f)
+        perm_template = perm_ssot_content.get("template")
+        if perm_template:
+            existing_perm = config.get("permission")
+            if existing_perm != perm_template:
+                if existing_perm is not None:
+                    print("[permission] permission 已有配置，更新为 SSOT 模板")
+                else:
+                    print("[permission] permission 新增")
+                config["permission"] = perm_template
+                changed = True
+            else:
+                print("[permission] permission 已是最新")
+        else:
+            print(f"[warn]  {permission_path} 中无 template 字段，跳过")
+    except json.JSONDecodeError as e:
+        print(f"[warn]  {permission_path} 不是合法 JSON：{e}，跳过", file=sys.stderr)
+else:
+    print(f"[skip]  opencode/opencode-permission.json 不存在，跳过 permission 同步")
+
 if changed:
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
