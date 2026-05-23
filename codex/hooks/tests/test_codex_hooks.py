@@ -16,7 +16,14 @@ CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK = (
 CLAUDE_GIT_COMMIT_HOOK = REPO_ROOT / "claude" / "hooks" / "git-commit-hint.sh"
 OPENCODE_GIT_COMMIT_PLUGIN = REPO_ROOT / "opencode" / "plugins" / "git-commit-hint.js"
 SHARED_GIT_COMMIT_HINT = (
-    REPO_ROOT / "opencode" / "plugins" / "git-commit-hint-content.json"
+    REPO_ROOT / "shared" / "policies" / "git-commit-hint.json"
+)
+SHARED_SKILL_RESOLVE_PREFLIGHT = (
+    REPO_ROOT / "shared" / "policies" / "skill-resolve-preflight.json"
+)
+CLAUDE_SKILL_PREFLIGHT_HOOK = REPO_ROOT / "claude" / "hooks" / "skill-resolve-preflight.sh"
+OPENCODE_SKILL_PREFLIGHT_PLUGIN = (
+    REPO_ROOT / "opencode" / "plugins" / "skill-resolve-preflight.js"
 )
 KNOWLEDGE_README = REPO_ROOT / "docs" / "knowledge" / "README.md"
 EXTERNAL_REVIEWER = (
@@ -174,7 +181,7 @@ class CodexHooksTest(unittest.TestCase):
             OPENCODE_GIT_COMMIT_PLUGIN,
         ):
             adapter_text = adapter.read_text()
-            self.assertIn("git-commit-hint-content.json", adapter_text)
+            self.assertIn("shared/policies/git-commit-hint.json", adapter_text)
             self.assertNotIn("skip-git-commit-hint", adapter_text)
             self.assertNotIn("知识文档检查", adapter_text)
             self.assertNotIn("Knowledge: updated <path>", adapter_text)
@@ -380,6 +387,118 @@ if (!denied) process.exit(1);
         self.assertIn("CODEX_HOOKS_DIR", init_codex)
         self.assertIn("codex/hooks/git-commit-hint.sh", init_codex)
         self.assertIn("codex/hooks/external-llm-review-permission.sh", init_codex)
+
+    def test_skill_resolve_preflight_policy_is_single_source(self) -> None:
+        # SSOT contract: shared policy file holds the deny reason and per-host
+        # tool name, all three wrappers must point at it and reproduce the same
+        # text instead of carrying their own drifted copies.
+        policy = json.loads(SHARED_SKILL_RESOLVE_PREFLIGHT.read_text())
+        self.assertEqual(policy["tool_names"]["claude"], "mcp__skill-catalog__resolve")
+        self.assertEqual(policy["tool_names"]["codex"], "mcp__skill-catalog__resolve")
+        self.assertEqual(policy["tool_names"]["opencode"], "skill-catalog_resolve")
+        rendered = "".join(policy["deny_reason_template"])
+        self.assertIn("意图识别结果", rendered)
+        self.assertIn("tech_stack / language / capability", rendered)
+        self.assertIn("knowledge-retrieval", rendered)
+
+        for adapter in (
+            CODEX_SKILL_PREFLIGHT_HOOK,
+            CLAUDE_SKILL_PREFLIGHT_HOOK,
+            OPENCODE_SKILL_PREFLIGHT_PLUGIN,
+        ):
+            text = adapter.read_text()
+            self.assertIn("shared/policies/skill-resolve-preflight.json", text)
+            # Drifted hand-written copies of the deny reason must not survive
+            # in any wrapper — that is precisely what SSOT prevents.
+            self.assertNotIn("纯语言题（如'写一段", text)  # legacy claude/codex form
+            self.assertNotIn("请勿调用 mcp__skill-catalog__list_skills", text)
+            self.assertNotIn("具体流程见 claude-skills/knowledge-retrieval", text)
+
+    def test_codex_skill_preflight_denies_when_all_tags_missing(self) -> None:
+        payload = {
+            "tool_name": "mcp__skill-catalog__resolve",
+            "tool_input": {"user_prompt": "write a function"},
+        }
+        output = run_hook(CODEX_SKILL_PREFLIGHT_HOOK, payload)
+        data = json.loads(output)
+        self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
+        reason = data["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("mcp__skill-catalog__resolve", reason)
+        self.assertIn("tech_stack / language / capability", reason)
+
+    def test_codex_skill_preflight_allows_when_any_tag_present(self) -> None:
+        payload = {
+            "tool_name": "mcp__skill-catalog__resolve",
+            "tool_input": {"user_prompt": "x", "language": ["python"]},
+        }
+        output = run_hook(CODEX_SKILL_PREFLIGHT_HOOK, payload)
+        data = json.loads(output)
+        self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "allow")
+
+    def test_codex_skill_preflight_ignores_unrelated_tools(self) -> None:
+        payload = {"tool_name": "Bash", "tool_input": {"command": "ls"}}
+        output = run_hook(CODEX_SKILL_PREFLIGHT_HOOK, payload)
+        self.assertEqual(output, "")
+
+    def test_claude_skill_preflight_denies_when_all_tags_missing(self) -> None:
+        payload = {
+            "tool_name": "mcp__skill-catalog__resolve",
+            "tool_input": {"user_prompt": "write a function"},
+        }
+        output = run_hook(CLAUDE_SKILL_PREFLIGHT_HOOK, payload)
+        data = json.loads(output)
+        self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
+        reason = data["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("mcp__skill-catalog__resolve", reason)
+
+    def test_opencode_skill_preflight_plugin_blocks_and_passes(self) -> None:
+        # Drive the OpenCode plugin via node and assert it raises for missing
+        # tags, lets a tagged call through, and honours the escape-hatch marker.
+        script = f"""
+const mod = await import({json.dumps(OPENCODE_SKILL_PREFLIGHT_PLUGIN.as_uri())});
+const factory = mod.SkillResolvePreflightPlugin;
+const plugin = await factory();
+const before = plugin["tool.execute.before"];
+
+let denied = false;
+try {{
+  await before(
+    {{tool: "skill-catalog_resolve"}},
+    {{args: {{user_prompt: "write something"}}}},
+  );
+}} catch (err) {{
+  denied = String(err.message).includes("tech_stack / language / capability");
+}}
+if (!denied) {{
+  console.error("expected deny when no tags");
+  process.exit(1);
+}}
+
+await before(
+  {{tool: "skill-catalog_resolve"}},
+  {{args: {{language: ["python"]}}}},
+);
+
+await before(
+  {{tool: "skill-catalog_resolve"}},
+  {{args: {{notes: "skip-skill-resolve-preflight please"}}}},
+);
+
+// Wrong tool name passes through untouched.
+await before(
+  {{tool: "bash"}},
+  {{args: {{command: "ls"}}}},
+);
+"""
+        env = dict(__import__("os").environ)
+        env["CLAUDE_CONFIG_HOME"] = str(REPO_ROOT)
+        proc = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True,
+            capture_output=True,
+            env=env,
+        )
+        self.assertEqual(proc.returncode, 0, f"stderr={proc.stderr}\nstdout={proc.stdout}")
 
     def test_sync_codex_skills_prefers_local_override_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

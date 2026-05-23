@@ -8,18 +8,18 @@ import { readFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-const hintContentPath = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "git-commit-hint-content.json",
-)
-const knowledgeReadmePath = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-  "docs",
-  "knowledge",
-  "README.md",
-)
+const pluginDir = dirname(fileURLToPath(import.meta.url))
+// SSOT for hint content: shared across claude / codex / opencode wrappers.
+// CLAUDE_CONFIG_HOME (exported by init_*.sh into ~/.zshrc) is the primary
+// resolution path — it works for both the in-repo plugin and cp-copies under
+// ~/.config/opencode/plugins/. The fallback is sized for the cp-copy layout:
+// init_opencode.sh symlinks ~/.config/opencode/shared/ → repo/shared/, so
+// pluginDir/.. resolves to ~/.config/opencode/ and ../shared/* lands on the
+// SSOT. The in-repo case relies on CLAUDE_CONFIG_HOME being set (it is, in
+// unit tests we inject it explicitly).
+const repoRoot = process.env.CLAUDE_CONFIG_HOME || join(pluginDir, "..")
+const hintContentPath = join(repoRoot, "shared/policies/git-commit-hint.json")
+const knowledgeReadmePath = join(repoRoot, "docs/knowledge/README.md")
 const skipEnvName = "GIT_COMMIT_HINT_SKIP"
 const skipValues = new Set(["1", "true", "yes", "on"])
 

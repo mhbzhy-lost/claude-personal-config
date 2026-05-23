@@ -7,7 +7,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HINT_CONTENT_PATH="${SCRIPT_DIR}/../../opencode/plugins/git-commit-hint-content.json"
+HINT_CONTENT_PATH="${SCRIPT_DIR}/../../shared/policies/git-commit-hint.json"
 
 if ! RESPONSE="$(HINT_CONTENT_PATH="${HINT_CONTENT_PATH}" HINT_HOST="claude" python3 -c '
 import json

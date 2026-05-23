@@ -156,6 +156,44 @@ sync_opencode_proxy() {
 
 sync_opencode_proxy
 
+# ── shared/policies SSOT 软链 ────────────────────────────
+# OpenCode 端 plugin 是 cp 副本（不是软链整目录，因为要保留用户自管 plugin），
+# 副本的 __dirname/../../ fallback 路径会解析到 ~/.config/opencode/，需要
+# shared/ 软链到本仓让 cp 副本仍能找到 SSOT 文件——即使没有 CLAUDE_CONFIG_HOME
+# 环境变量也能工作（GUI 启动 OpenCode 不读 ~/.zshrc 时）。
+sync_opencode_shared() {
+  local src_path="$SRC/shared"
+  local dst_path="$OPENCODE_CONFIG_DIR/shared"
+
+  if [ ! -d "$src_path" ]; then
+    echo "[skip]  shared/ 不存在，跳过"
+    return
+  fi
+
+  mkdir -p "$OPENCODE_CONFIG_DIR"
+
+  if [ ! -e "$dst_path" ] && [ ! -L "$dst_path" ]; then
+    ln -s "$src_path" "$dst_path"
+    echo "[shared] $dst_path -> ${src_path}"
+    return
+  fi
+
+  if [ -L "$dst_path" ]; then
+    local cur
+    cur=$(readlink "$dst_path")
+    if [ "$cur" = "$src_path" ]; then
+      echo "[shared] $dst_path -> ${src_path}（已就绪）"
+    else
+      echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 shared/），人工核对后再处理"
+    fi
+    return
+  fi
+
+  echo "[warn]  $dst_path 已存在且不是软链；请手动核对后指向 $src_path"
+}
+
+sync_opencode_shared
+
 # ── MCP 变量（与 init_claude.sh 保持一致） ──────────────
 SKILL_CATALOG_DIR="$SRC/mcp/skill-catalog"
 SKILL_CATALOG_VENV="$SKILL_CATALOG_DIR/.venv"

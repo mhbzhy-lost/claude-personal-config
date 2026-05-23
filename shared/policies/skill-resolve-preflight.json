@@ -1,0 +1,17 @@
+{
+  "tool_names": {
+    "claude": "mcp__skill-catalog__resolve",
+    "codex": "mcp__skill-catalog__resolve",
+    "opencode": "skill-catalog_resolve"
+  },
+  "escape_hatch_marker": "skip-skill-resolve-preflight",
+  "deny_reason_template": [
+    "[skill-resolve-preflight] 调用 {tool_name} 必须携带意图识别结果：",
+    "tech_stack / language / capability 三个参数至少一个为非空字符串数组。",
+    "请基于当前会话上下文（user_prompt + workspace 信号）先做意图识别，",
+    "分别判断涉及的技术栈、编程语言、能力域，再从合法 tag 闭集中挑选若干标签后重试。",
+    "纯语言题（如 '写一段 C++ 模板'）可仅填 language。",
+    "合法闭集见 SubagentStart 注入的 %skill 规范；未触发注入时勿改调 list_skills，",
+    "流程详见 claude-skills/knowledge-retrieval/references/knowledge-retrieval-process.md。"
+  ]
+}
