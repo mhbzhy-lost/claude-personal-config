@@ -217,8 +217,8 @@ if (!denied) process.exit(1);
 
     def test_codex_permission_hook_allows_external_review_script(self) -> None:
         command = (
-            'EXTERNAL_LLM_API_FORMAT=chat uv run --no-project '
-            '--with "openai>=1.50" --with "anthropic>=0.40" '
+            'uv run --no-project '
+            '--with "openai>=1.50" '
             f"--with python-dotenv python {shlex.quote(str(EXTERNAL_REVIEWER))} HEAD"
         )
         output = run_hook(

@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import reviewer
 
 
-class QwenExplicitCacheMessagesTest(unittest.TestCase):
+class ReviewerProtocolAndBackendTest(unittest.TestCase):
     def test_exhaustive_protocol_asks_for_broad_single_pass_report(self):
         protocol = reviewer.build_review_protocol(
             review_depth="exhaustive",
@@ -52,9 +52,6 @@ class QwenExplicitCacheMessagesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             parser.parse_args(["base", "head", "--review-round", "3"])
 
-    def test_cache_mode_defaults_to_off_without_env(self):
-        self.assertEqual(reviewer.resolve_cache_mode(None, None), "off")
-
     def test_review_backend_defaults_to_raw_api(self):
         args = Namespace(backend=None)
 
@@ -88,26 +85,16 @@ class QwenExplicitCacheMessagesTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Claude model"):
                     reviewer.validate_claude_cli_model(model)
 
-    def test_claude_cli_config_can_fallback_from_anthropic_format_external_env(self):
-        config = reviewer.resolve_claude_cli_config(
-            {
-                "EXTERNAL_LLM_API_FORMAT": "anthropic",
-                "EXTERNAL_LLM_API_BASE": "https://gateway.example.test",
-                "EXTERNAL_LLM_API_KEY": "external-key",
-                "EXTERNAL_LLM_MODEL": "claude-sonnet-4-6",
-            }
-        )
+    def test_claude_cli_config_requires_anthropic_env(self):
+        with self.assertRaisesRegex(ValueError, "ANTHROPIC_BASE_URL"):
+            reviewer.resolve_claude_cli_config({})
 
-        self.assertEqual(config.base_url, "https://gateway.example.test")
-        self.assertEqual(config.api_key, "external-key")
-        self.assertEqual(config.model, "claude-sonnet-4-6")
-
-    def test_claude_cli_config_does_not_fallback_from_non_anthropic_external_env(self):
+    def test_claude_cli_config_does_not_fallback_from_external_llm_env(self):
+        # Explicit: EXTERNAL_LLM_* must NOT be silently used as Claude CLI config.
         with self.assertRaisesRegex(ValueError, "ANTHROPIC_BASE_URL"):
             reviewer.resolve_claude_cli_config(
                 {
-                    "EXTERNAL_LLM_API_FORMAT": "chat",
-                    "EXTERNAL_LLM_API_BASE": "https://openai.example.test/v1",
+                    "EXTERNAL_LLM_API_BASE": "https://gateway.example.test",
                     "EXTERNAL_LLM_API_KEY": "external-key",
                     "EXTERNAL_LLM_MODEL": "claude-sonnet-4-6",
                 }
@@ -222,14 +209,10 @@ class QwenExplicitCacheMessagesTest(unittest.TestCase):
         messages = reviewer.build_chat_messages(
             user_prompt="review this diff",
             spec_block="## Spec\nstable requirements",
-            cache_prefix_blocks=["## Project\nstable project context"],
-            cache_mode="off",
-            cache_diff=False,
         )
 
         self.assertEqual(messages[0]["role"], "system")
         self.assertIsInstance(messages[0]["content"], str)
-        self.assertIn("stable project context", messages[1]["content"])
         self.assertIn("stable requirements", messages[1]["content"])
         self.assertTrue(messages[1]["content"].endswith("review this diff"))
 
@@ -237,43 +220,10 @@ class QwenExplicitCacheMessagesTest(unittest.TestCase):
         user_prompt = reviewer.build_plain_user_prompt(
             user_prompt="review this diff",
             spec_block="## Spec\nstable requirements",
-            cache_prefix_blocks=["## Project\nstable project context"],
         )
 
-        self.assertIn("stable project context", user_prompt)
         self.assertIn("stable requirements", user_prompt)
         self.assertTrue(user_prompt.endswith("review this diff"))
-
-    def test_qwen_explicit_cache_marks_stable_context_only(self):
-        messages = reviewer.build_chat_messages(
-            user_prompt="review this diff",
-            spec_block="## Spec\nstable requirements",
-            cache_prefix_blocks=["## Project\nstable project context"],
-            cache_mode="qwen-explicit",
-            cache_diff=False,
-        )
-
-        user_blocks = messages[1]["content"]
-
-        self.assertIsInstance(messages[0]["content"], str)
-        self.assertIn("cache_control", user_blocks[1])
-        self.assertNotIn("cache_control", user_blocks[-1])
-        self.assertIn("stable requirements", user_blocks[1]["text"])
-        self.assertEqual(user_blocks[-1]["text"], "review this diff")
-
-    def test_qwen_explicit_cache_can_mark_diff_when_requested(self):
-        messages = reviewer.build_chat_messages(
-            user_prompt="review this diff",
-            spec_block="",
-            cache_prefix_blocks=[],
-            cache_mode="qwen-explicit",
-            cache_diff=True,
-        )
-
-        user_diff_block = messages[1]["content"][0]
-
-        self.assertIsInstance(messages[0]["content"], str)
-        self.assertIn("cache_control", user_diff_block)
 
     def test_extract_chat_content_rejects_empty_choices(self):
         class Response:

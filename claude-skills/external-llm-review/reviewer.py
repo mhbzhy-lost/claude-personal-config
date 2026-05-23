@@ -1,20 +1,22 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["openai>=1.50", "anthropic>=0.40", "python-dotenv"]
+# dependencies = ["openai>=1.50", "python-dotenv"]
 # ///
-"""External LLM cross-model code reviewer (OpenAI Chat Completions compatible).
+"""External LLM cross-model code reviewer.
 
-Reads .env from this skill directory for EXTERNAL_LLM_API_BASE / EXTERNAL_LLM_API_KEY /
-EXTERNAL_LLM_MODEL, runs `git diff <base>..<head>` against the target worktree, sends
-the diff (plus an optional spec file) to the configured OpenAI-compatible
-chat-completions endpoint, and prints the model's structured review to stdout.
+Two backends only:
+  - api             OpenAI Chat Completions raw request (intended for DeepSeek)
+  - claude-code-cli local `claude` CLI talking to an Anthropic-compatible gateway
+
+Reads .env from this skill directory. For backend=api set EXTERNAL_LLM_API_BASE /
+EXTERNAL_LLM_API_KEY / EXTERNAL_LLM_MODEL. For backend=claude-code-cli set
+ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN) / ANTHROPIC_MODEL.
 
 Usage:
     python reviewer.py <BASE_SHA> <HEAD_SHA> \
         [--worktree PATH] [--spec FILE] [--max-diff N]
         [--review-depth standard|exhaustive] [--review-round 1|2]
         [--max-issues N] [--max-output-tokens N] [--api-timeout-seconds N]
-        [--cache-mode off|qwen-explicit] [--cache-prefix FILE] [--cache-diff]
 
 Sandbox warning: this script POSTs source diffs to an external endpoint. Run only
 when that endpoint is authorized for the project's compliance posture. See SKILL.md.
@@ -34,11 +36,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import urlparse
 
-from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
-_CACHE_MODES = ("off", "qwen-explicit")
 _REVIEW_DEPTHS = ("standard", "exhaustive")
 _REVIEW_ROUNDS = (1, 2)
 _REVIEW_BACKENDS = ("api", "claude-code-cli")
@@ -202,37 +202,20 @@ def _env_value(env: Mapping[str, str], name: str) -> str:
     return env.get(name, "").strip()
 
 
-def _external_env_can_feed_claude_cli(env: Mapping[str, str]) -> bool:
-    return _env_value(env, "EXTERNAL_LLM_API_FORMAT").lower() == "anthropic"
-
-
 def resolve_claude_cli_config(env: Mapping[str, str]) -> ClaudeCliConfig:
-    external_anthropic = _external_env_can_feed_claude_cli(env)
     base_url = _env_value(env, "ANTHROPIC_BASE_URL")
     api_key = _env_value(env, "ANTHROPIC_API_KEY")
     auth_token = _env_value(env, "ANTHROPIC_AUTH_TOKEN")
     model = _env_value(env, "ANTHROPIC_MODEL")
 
-    if external_anthropic:
-        base_url = base_url or _env_value(env, "EXTERNAL_LLM_API_BASE")
-        api_key = api_key or _env_value(env, "EXTERNAL_LLM_API_KEY")
-        model = model or _env_value(env, "EXTERNAL_LLM_MODEL")
-
     if not base_url:
-        raise ValueError(
-            "ANTHROPIC_BASE_URL is required for --backend claude-code-cli "
-            "(or EXTERNAL_LLM_API_BASE when EXTERNAL_LLM_API_FORMAT=anthropic)"
-        )
+        raise ValueError("ANTHROPIC_BASE_URL is required for --backend claude-code-cli")
     if not api_key and not auth_token:
         raise ValueError(
-            "ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is required for --backend claude-code-cli "
-            "(or EXTERNAL_LLM_API_KEY when EXTERNAL_LLM_API_FORMAT=anthropic)"
+            "ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is required for --backend claude-code-cli"
         )
     if not model:
-        raise ValueError(
-            "ANTHROPIC_MODEL is required for --backend claude-code-cli "
-            "(or EXTERNAL_LLM_MODEL when EXTERNAL_LLM_API_FORMAT=anthropic)"
-        )
+        raise ValueError("ANTHROPIC_MODEL is required for --backend claude-code-cli")
 
     validate_claude_cli_model(model)
 
@@ -427,13 +410,6 @@ def prepare_claude_cli_runtime(runtime_root: Path, config: ClaudeCliConfig) -> P
     return settings_path
 
 
-def _text_block(text: str, *, cache: bool = False) -> dict[str, object]:
-    block: dict[str, object] = {"type": "text", "text": text}
-    if cache:
-        block["cache_control"] = {"type": "ephemeral"}
-    return block
-
-
 def _join_prompt_blocks(blocks: list[str]) -> str:
     return "\n\n".join(block.strip() for block in blocks if block.strip())
 
@@ -442,9 +418,8 @@ def build_plain_user_prompt(
     *,
     user_prompt: str,
     spec_block: str,
-    cache_prefix_blocks: list[str],
 ) -> str:
-    stable_blocks = [block for block in [*cache_prefix_blocks, spec_block] if block.strip()]
+    stable_blocks = [block for block in [spec_block] if block.strip()]
     return _join_prompt_blocks([*stable_blocks, user_prompt])
 
 
@@ -452,67 +427,18 @@ def build_chat_messages(
     *,
     user_prompt: str,
     spec_block: str,
-    cache_prefix_blocks: list[str],
-    cache_mode: str,
-    cache_diff: bool,
 ) -> list[dict[str, object]]:
-    """Build OpenAI Chat Completions messages.
-
-    Qwen explicit cache is expressed with content-block `cache_control` markers.
-    By default only stable context is cache-marked; the diff is dynamic and is
-    marked only when the caller explicitly asks for it.
-    """
-    stable_blocks = [block for block in [*cache_prefix_blocks, spec_block] if block.strip()]
-
-    if cache_mode == "off":
-        return [
-            {"role": "system", "content": _REVIEW_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": build_plain_user_prompt(
-                    user_prompt=user_prompt,
-                    spec_block=spec_block,
-                    cache_prefix_blocks=cache_prefix_blocks,
-                ),
-            },
-        ]
-
-    if cache_mode != "qwen-explicit":
-        raise ValueError(f"unsupported cache mode: {cache_mode}")
-
-    user_content = []
-    for index, block in enumerate(stable_blocks):
-        user_content.append(
-            _text_block(block.strip(), cache=index == len(stable_blocks) - 1)
-        )
-    user_content.append(_text_block(user_prompt, cache=cache_diff))
-
+    """Build plain OpenAI Chat Completions messages."""
     return [
         {"role": "system", "content": _REVIEW_SYSTEM_PROMPT},
-        {"role": "user", "content": user_content},
+        {
+            "role": "user",
+            "content": build_plain_user_prompt(
+                user_prompt=user_prompt,
+                spec_block=spec_block,
+            ),
+        },
     ]
-
-
-def format_cache_usage(usage: object) -> str | None:
-    if usage is None:
-        return None
-
-    details = getattr(usage, "prompt_tokens_details", None)
-    cached_tokens = getattr(details, "cached_tokens", None) if details else None
-    creation_tokens = (
-        getattr(details, "cache_creation_input_tokens", None) if details else None
-    )
-    prompt_tokens = getattr(usage, "prompt_tokens", None)
-
-    if cached_tokens is None and creation_tokens is None:
-        return None
-
-    return (
-        "[external-llm-review] cache_usage"
-        f" prompt_tokens={prompt_tokens}"
-        f" cached_tokens={cached_tokens}"
-        f" cache_creation_input_tokens={creation_tokens}"
-    )
 
 
 def extract_chat_content(resp: object) -> str:
@@ -605,10 +531,6 @@ def describe_api_exception(exc: Exception) -> str:
 
 def env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
-
-
-def resolve_cache_mode(arg_value: str | None, env_value: str | None) -> str:
-    return (arg_value or (env_value or "off")).strip().lower()
 
 
 def run_claude_cli_review(
@@ -724,24 +646,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=180,
         help="hard timeout around the provider API call (default 180; set <=0 to disable)",
     )
-    parser.add_argument(
-        "--cache-mode",
-        choices=_CACHE_MODES,
-        default=None,
-        help="prompt cache mode (default: EXTERNAL_LLM_CACHE_MODE or off)",
-    )
-    parser.add_argument(
-        "--cache-prefix",
-        action="append",
-        default=[],
-        help="stable context file to place before the diff and cache in qwen-explicit mode; repeatable",
-    )
-    parser.add_argument(
-        "--cache-diff",
-        action="store_true",
-        default=False,
-        help="also mark the diff block cacheable in qwen-explicit mode",
-    )
     return parser
 
 
@@ -752,27 +656,10 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    api_format = os.environ.get("EXTERNAL_LLM_API_FORMAT", "chat").strip().lower()
-    cache_mode = resolve_cache_mode(args.cache_mode, os.environ.get("EXTERNAL_LLM_CACHE_MODE"))
     review_depth = (
         args.review_depth
         or os.environ.get("EXTERNAL_LLM_REVIEW_DEPTH", "exhaustive").strip().lower()
     )
-    cache_diff = args.cache_diff or env_flag("EXTERNAL_LLM_CACHE_DIFF")
-
-    if backend == "api" and api_format not in ("chat", "responses", "anthropic"):
-        print(
-            f"ERROR: EXTERNAL_LLM_API_FORMAT must be 'chat'|'responses'|'anthropic', got {api_format!r}",
-            file=sys.stderr,
-        )
-        return 1
-
-    if cache_mode not in _CACHE_MODES:
-        print(
-            f"ERROR: EXTERNAL_LLM_CACHE_MODE/--cache-mode must be one of {_CACHE_MODES}, got {cache_mode!r}",
-            file=sys.stderr,
-        )
-        return 1
 
     if review_depth not in _REVIEW_DEPTHS:
         print(
@@ -783,13 +670,6 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
 
     if args.max_issues < 1:
         print("ERROR: --max-issues must be >= 1", file=sys.stderr)
-        return 1
-
-    if backend == "api" and cache_mode != "off" and api_format != "chat":
-        print(
-            "ERROR: explicit cache currently supports only EXTERNAL_LLM_API_FORMAT=chat",
-            file=sys.stderr,
-        )
         return 1
 
     cli_config: ClaudeCliConfig | None = None
@@ -846,19 +726,6 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
         except (OSError, ValueError) as e:
             print(f"WARN: could not read --spec {args.spec}: {e}", file=sys.stderr)
 
-    cache_prefix_blocks = []
-    for cache_prefix in args.cache_prefix:
-        try:
-            cache_prefix_blocks.append(
-                read_text_block(
-                    cache_prefix,
-                    label="Cache Prefix",
-                    allowed_roots=allowed_context_roots,
-                )
-            )
-        except (OSError, ValueError) as e:
-            print(f"WARN: could not read --cache-prefix {cache_prefix}: {e}", file=sys.stderr)
-
     user_prompt = build_review_user_prompt(
         base_sha=args.base_sha,
         head_sha=args.head_sha,
@@ -872,7 +739,6 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
     plain_prompt = build_plain_user_prompt(
         user_prompt=user_prompt,
         spec_block=spec_block,
-        cache_prefix_blocks=cache_prefix_blocks,
     )
 
     if backend == "claude-code-cli":
@@ -900,9 +766,8 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
         return 0
 
     print(
-        f"[external-llm-review] backend=api model={model} base={base_url} format={api_format}"
+        f"[external-llm-review] backend=api model={model} base={base_url}"
         f" diff_chars={len(diff)}{' (truncated)' if truncated else ''}"
-        f" cache_mode={cache_mode}{' cache_diff=true' if cache_diff else ''}"
         f" review_depth={review_depth} review_round={args.review_round}"
         f" max_issues={args.max_issues}"
         f" api_timeout_seconds={args.api_timeout_seconds}",
@@ -913,71 +778,30 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
         hard_timeout = args.api_timeout_seconds if args.api_timeout_seconds > 0 else None
         request_timeout = hard_timeout or 180
         async with asyncio.timeout(hard_timeout):
-            if api_format == "anthropic":
-                async with AsyncAnthropic(api_key=api_key, base_url=base_url) as aclient:
-                    resp = await aclient.messages.create(
-                        model=model,
-                        max_tokens=args.max_output_tokens if args.max_output_tokens > 0 else 8192,
-                        system=_REVIEW_SYSTEM_PROMPT,
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": plain_prompt,
-                            }
-                        ],
-                        temperature=0.2,
-                        timeout=request_timeout,
-                    )
-                    content = "".join(
-                        block.text for block in resp.content
-                        if getattr(block, "type", None) == "text"
-                    )
-            else:
-                async with AsyncOpenAI(api_key=api_key, base_url=base_url) as oclient:
-                    if api_format == "responses":
-                        response_kwargs = {}
-                        if args.max_output_tokens > 0:
-                            response_kwargs["max_output_tokens"] = args.max_output_tokens
-                        resp = await oclient.responses.create(
-                            model=model,
-                            instructions=_REVIEW_SYSTEM_PROMPT,
-                            input=plain_prompt,
-                            temperature=0.2,
-                            timeout=request_timeout,
-                            **response_kwargs,
-                        )
-                        content = (resp.output_text or "").strip()
-                    else:
-                        chat_kwargs = {}
-                        if args.max_output_tokens > 0:
-                            chat_kwargs["max_tokens"] = args.max_output_tokens
-                        resp = await oclient.chat.completions.create(
-                            model=model,
-                            messages=build_chat_messages(
-                                user_prompt=user_prompt,
-                                spec_block=spec_block,
-                                cache_prefix_blocks=cache_prefix_blocks,
-                                cache_mode=cache_mode,
-                                cache_diff=cache_diff,
-                            ),
-                            temperature=0.2,
-                            timeout=request_timeout,
-                            **chat_kwargs,
-                        )
-                        cache_usage = format_cache_usage(resp.usage)
-                        if cache_usage:
-                            print(cache_usage, file=sys.stderr)
-                        content = extract_chat_content(resp)
+            async with AsyncOpenAI(api_key=api_key, base_url=base_url) as oclient:
+                chat_kwargs = {}
+                if args.max_output_tokens > 0:
+                    chat_kwargs["max_tokens"] = args.max_output_tokens
+                resp = await oclient.chat.completions.create(
+                    model=model,
+                    messages=build_chat_messages(
+                        user_prompt=user_prompt,
+                        spec_block=spec_block,
+                    ),
+                    temperature=0.2,
+                    timeout=request_timeout,
+                    **chat_kwargs,
+                )
+                content = extract_chat_content(resp)
     except TimeoutError:
         print(
-            f"ERROR: {api_format}.create exceeded api_timeout_seconds="
-            f"{args.api_timeout_seconds}",
+            f"ERROR: chat.create exceeded api_timeout_seconds={args.api_timeout_seconds}",
             file=sys.stderr,
         )
         return 4
     except Exception as exc:
         print(
-            f"ERROR: {api_format}.create failed: {describe_api_exception(exc)}",
+            f"ERROR: chat.create failed: {describe_api_exception(exc)}",
             file=sys.stderr,
         )
         return 4

@@ -1,13 +1,22 @@
 ---
 name: external-llm-review
-description: 用 OpenAI / Responses / Anthropic Messages 兼容协议或显式 opt-in 的 Claude Code CLI 调外部 LLM 做代码评审，作为 Claude 同族 review 的异源交叉验证。同族 code-quality ✅ 通过后跑此 skill，输出 Strengths / Critical / Important / Minor / Assessment，并按"综合判断 4 步"消化，避免误报和盲点。
+description: 调外部 LLM 做代码评审，作为 Claude 同族 review 的异源交叉验证。两条路径——裸请求 deepseek（OpenAI Chat Completions）或经本地 claude CLI 调 Anthropic 兼容网关。同族 code-quality ✅ 通过后跑此 skill，输出 Strengths / Critical / Important / Minor / Assessment，并按"综合判断 4 步"消化。
 ---
 
 # External LLM Cross-Model Code Review
 
 ## 用途
 
-提供**异源模型交叉验证**。同族模型对自己生成的代码倾向于 normalize 通过；接入一个独立训练源的 LLM 复审，可抓出同族盲点（库 API deprecation / cross-cutting 并发风险 / 版本兼容 / 安全 / etc）。
+异源模型交叉验证。同族模型对自己生成的代码倾向于 normalize 通过，接入独立训练源的 reviewer 抓同族盲点（库 API deprecation / cross-cutting 并发风险 / 版本兼容 / 安全等）。
+
+## 两种 backend
+
+| backend | 协议 | 推荐用法 |
+|---|---|---|
+| `api` | OpenAI Chat Completions（POST `<base>/chat/completions`） | DeepSeek 系列（deepseek-chat / deepseek-reasoner / deepseek-v4-pro） |
+| `claude-code-cli` | 本地 `claude --print` 调 Anthropic 兼容网关 | Claude 系列（Opus / Sonnet / Haiku） |
+
+> 其他 OpenAI 兼容 endpoint（Qwen / GLM / Ollama / Anthropic 官方 SDK / Responses API）**不再支持**。如果你想加，写文档建议把 model 名指向那个 endpoint 即可——脚本不再做协议分支。Agent 一般不会在文档未给出建议的情况下使用其他模型。
 
 ## 配置
 
@@ -18,47 +27,34 @@ cp ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/.env.example \
    ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/.env
 ```
 
-或在 shell `export EXTERNAL_LLM_*=...` 然后直接调（reviewer.py 用 python-dotenv，`.env` 缺时不报错，env vars 优先）。
+`.env` 同时配两套 backend 的环境变量；切换通过 `EXTERNAL_LLM_REVIEW_BACKEND` 或 `--backend` 参数完成，互不干扰。
 
-默认后端是裸 API 请求，须兼容以下三种协议之一（`EXTERNAL_LLM_API_FORMAT` 切换）：
+### `api` 后端（裸 deepseek）
 
-- `chat` — OpenAI Chat Completions（POST `<base>/chat/completions`）
-- `responses` — OpenAI Responses API（POST `<base>/responses`）
-- `anthropic` — Anthropic Messages（POST `<base>/v1/messages`，base **不**带 `/v1`）
+```bash
+EXTERNAL_LLM_REVIEW_BACKEND=api
+EXTERNAL_LLM_API_BASE=https://api.deepseek.com
+EXTERNAL_LLM_API_KEY=sk-...
+EXTERNAL_LLM_MODEL=deepseek-v4-pro
+```
 
-**不同协议的 endpoint 可能分别计 quota**。某条路径触发 `Allocated quota exceeded` 或网关 4xx 时可切换协议重试。已配通 Claude Code 自定义网关（即 settings 已成功跑 sonnet/opus）的环境，本 skill 直接复用同一网关的 anthropic 路径通常即可工作。
-
-### Claude Code CLI 模式（仅 Claude review）
-
-有些企业 endpoint 不支持裸 SDK/HTTP 请求，但可以通过 Claude Code CLI 接入。这种情况下才显式启用 CLI 后端：
+### `claude-code-cli` 后端
 
 ```bash
 EXTERNAL_LLM_REVIEW_BACKEND=claude-code-cli
-```
-
-或在命令行传：
-
-```bash
---backend claude-code-cli
+ANTHROPIC_BASE_URL=https://your-approved-anthropic-compatible-gateway
+ANTHROPIC_API_KEY=...
+# 或 ANTHROPIC_AUTH_TOKEN=...
+ANTHROPIC_MODEL=claude-opus-4-7
+# EXTERNAL_LLM_CLAUDE_BIN=claude
+# EXTERNAL_LLM_CLAUDE_TIMEOUT_SECONDS=300
 ```
 
 硬边界：
 
-- `claude-code-cli` **仅用于 Claude / Sonnet / Opus / Haiku 模型 review**。`deepseek-*`、`qwen-*`、`glm-*`、Ollama、本地 OpenAI-compatible 模型仍然走默认 `api` 后端。
-- 不会按 endpoint 或 `EXTERNAL_LLM_API_FORMAT=anthropic` 自动切到 CLI；必须显式设置 `EXTERNAL_LLM_REVIEW_BACKEND=claude-code-cli` 或 `--backend claude-code-cli`。
-- 若 CLI 后端收到非 Claude 模型名，脚本直接报错，提示改回 `--backend api`。
-
-CLI 模式从同一个 skill-local `.env` 读取 Claude Code 变量：
-
-```bash
-ANTHROPIC_BASE_URL=https://your-approved-anthropic-compatible-gateway
-ANTHROPIC_API_KEY=...
-# 或 ANTHROPIC_AUTH_TOKEN=...
-ANTHROPIC_MODEL=claude-sonnet-4-6
-EXTERNAL_LLM_REVIEW_BACKEND=claude-code-cli
-```
-
-也支持在 `EXTERNAL_LLM_API_FORMAT=anthropic` 时复用既有 `EXTERNAL_LLM_API_BASE` / `EXTERNAL_LLM_API_KEY` / `EXTERNAL_LLM_MODEL`，但 OpenAI Chat / Responses 配置不会被当成 Claude CLI 配置。
+- 只接受 Claude / Sonnet / Opus / Haiku 模型名。脚本启动前用正则校验，非 Claude 模型直接报错。
+- 不会从 `EXTERNAL_LLM_*` fallback 任何字段——必须显式配 `ANTHROPIC_BASE_URL` / key / model。
+- 运行时创建临时 `HOME` / `XDG_*` / `CLAUDE_CONFIG_DIR`，**不**加载用户的 hooks、plugins、MCP、skills、auto memory、CLAUDE.md 或会话历史。
 
 目标机器初始化：
 
@@ -67,25 +63,16 @@ command -v claude >/dev/null || npm install -g @anthropic-ai/claude-code
 claude --version
 ```
 
-如果 `command -v claude` 找不到，先搜索常见用户安装目录，Claude Code CLI 可能已经安装但不在当前 `PATH`。
+#### CLI review 单次大小建议
 
-CLI 后端运行时会创建临时 `HOME` / `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_CACHE_HOME` / `XDG_STATE_HOME` / `CLAUDE_CONFIG_DIR`，并用 `claude --print --bare --no-session-persistence --disable-slash-commands --strict-mcp-config --mcp-config '{}' --permission-mode plan --tools ''` 调用。它不加载用户目录的 Claude Code hooks、plugins、MCP、skills、auto memory、CLAUDE.md 或会话历史。
+CLI 后端比裸 API 更容易受本地 CLI 超时、企业网关 socket、长输出流稳定性影响。`--max-diff` 默认仍用于裸 API 防 413，CLI 模式应更保守：
 
-#### Claude Code CLI 单次 review 大小建议
-
-Claude Code CLI 后端比裸 API 后端更容易受本地 CLI 超时、企业网关 socket、以及长输出流稳定性影响。`--max-diff` 的默认值仍用于裸 API 防 413，但 CLI 模式应更保守：
-
-- 推荐单次 CLI review 的 `diff_chars` 控制在 **30k-45k 字符**。
-- **45k-55k 字符**通常还能跑，但可能明显变慢，建议只用于高价值、同一风险面的子集 review。
-- **超过约 60k-70k 字符**容易失败：实测 69k 字符完整 diff 曾出现一次 300s CLI 超时、一次 `socket connection was closed unexpectedly`。
-- 需要 review 更大改动时，按风险面拆分 snapshot，例如 `publish/MC`、`AIMI/prompt`、`UI`、`tests` 等；每个子集仍可附同一份 `--spec`。
-- 如果必须接近 50k 字符，显式设置 `EXTERNAL_LLM_CLAUDE_TIMEOUT_SECONDS=900`，但不要把超时拉长当作替代拆分的常规手段。
-- Round 2 只验证已修复项和新增风险，应优先使用修复后的同一子集 diff，不要重新塞回完整累计 diff。
-
-兼容性要求：endpoint 实现以下任一协议即可：
-- OpenAI Chat Completions schema（最常见，含本地 Ollama `http://localhost:11434/v1`）
-- OpenAI Responses API schema
-- Anthropic Messages API schema
+- 推荐单次 CLI review 的 `diff_chars` 控制在 **30k–45k 字符**
+- **45k–55k** 通常还能跑但明显变慢；只用于高价值、同一风险面的子集
+- 超过 **60k–70k** 容易失败：实测 69k 完整 diff 出过 300s CLI 超时和 `socket connection was closed unexpectedly`
+- 大改动按风险面拆 snapshot，每子集附同一份 `--spec`
+- 接近 50k 字符时显式 `EXTERNAL_LLM_CLAUDE_TIMEOUT_SECONDS=900`，但不要把超时拉长当作替代拆分的常规手段
+- Round 2 优先用修复后的同子集 diff，不要回塞累计 diff
 
 ## 用法
 
@@ -93,9 +80,8 @@ Claude Code CLI 后端比裸 API 后端更容易受本地 CLI 超时、企业网
 
 ```bash
 cd <repo-root>   # 工作树根
-EXTERNAL_LLM_API_FORMAT=chat \
 uv run --no-project \
-    --with "openai>=1.50" --with "anthropic>=0.40" --with python-dotenv \
+    --with "openai>=1.50" --with python-dotenv \
     python ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py \
     <BASE_SHA> <HEAD_SHA> \
     [--worktree PATH] \
@@ -106,27 +92,21 @@ uv run --no-project \
     [--review-round 1|2] \
     [--max-issues 25] \
     [--max-output-tokens 16000] \
-    [--api-timeout-seconds 180] \
-    [--cache-mode off|qwen-explicit] \
-    [--cache-prefix docs/review-context.md] \
-    [--cache-diff]
+    [--api-timeout-seconds 180]
 ```
 
 **参数：**
 - `BASE_SHA` —— 同族评审看的同一个 base
 - `HEAD_SHA` —— subagent 实施后的 HEAD
 - `--worktree` —— 默认 `.`；评 worktree 时填 `.worktrees/<task>`
-- `--backend` —— 默认 `api` 裸请求；只有 Claude review 且企业网关必须通过 Claude Code CLI 时才设 `claude-code-cli`
+- `--backend` —— 默认从 `EXTERNAL_LLM_REVIEW_BACKEND` 读，不设时退到 `api`
 - `--spec` —— 把 spec 文件附给模型做"对契约"评审
 - `--max-diff` —— diff 字符上限（默认 80000，防网关 413）
-- `--review-depth` —— 评审深度；默认 `exhaustive`，要求单轮尽量暴露完整问题面；需要快速 smoke review 时才设 `standard`
+- `--review-depth` —— 评审深度；默认 `exhaustive`，要求单轮尽量暴露完整问题面；快速 smoke review 才设 `standard`
 - `--review-round` —— 当前 diff 的评审轮次，只允许 `1` 或 `2`；默认 `1`
-- `--max-issues` —— 单轮最多报告的问题数，默认 `25`；同类问题应归并为模式级 issue
-- `--max-output-tokens` —— 模型输出 token 上限，默认 `16000`，用于支撑 reasoning 模型和穷举式报告
-- `--api-timeout-seconds` —— provider API 调用外层硬超时，默认 `180`；设 `<=0` 可关闭
-- `--cache-mode` —— prompt cache 模式；默认 `off`。只有确认本次 review 会在 5 分钟缓存窗口内复用稳定上下文，且 endpoint 支持显式 cache 时，才设置 `--cache-mode qwen-explicit` 或 `EXTERNAL_LLM_CACHE_MODE=qwen-explicit`
-- `--cache-prefix` —— 稳定上下文文件，置于 diff 前；可重复传多个
-- `--cache-diff` —— 显式把 diff 也纳入 cache marker；默认关闭，仅适合同一 diff 多轮 review
+- `--max-issues` —— 单轮最多报告的问题数，默认 `25`；同类问题归并为模式级 issue
+- `--max-output-tokens` —— 模型输出 token 上限，默认 `16000`，支撑 reasoning 模型和穷举式报告
+- `--api-timeout-seconds` —— provider API 调用外层硬超时，默认 `180`；设 `<=0` 关闭
 
 **stdout 输出**：模型返回的 review markdown（Strengths / Critical / Important / Minor / Checklist Coverage / Assessment）。**stderr** 是诊断信息。
 
@@ -139,9 +119,8 @@ uv run --no-project \
 默认调用即 Round 1：
 
 ```bash
-EXTERNAL_LLM_API_FORMAT=chat \
 uv run --no-project \
-  --with "openai>=1.50" --with "anthropic>=0.40" --with python-dotenv \
+  --with "openai>=1.50" --with python-dotenv \
   python ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py \
   main HEAD \
   --review-depth exhaustive \
@@ -150,9 +129,9 @@ uv run --no-project \
   --spec docs/superpowers/specs/foo.md
 ```
 
-Round 1 prompt 会强制 reviewer：
+Round 1 prompt 强制 reviewer：
 
-- 不只报告 top 3，而是先枚举候选风险、归并同类项、再分级
+- 不只报告 top 3，先枚举候选风险、归并同类项、再分级
 - 按 checklist 扫参数/help 副作用、stdin/trap/cleanup、shell 兼容、错误诊断、幂等/回滚、输入边界、并发/缓存、测试覆盖
 - 输出 `Checklist Coverage`，明确哪些维度已检查但未发现问题
 
@@ -175,31 +154,7 @@ Round 2 只检查：
 - 修复本身新增的 diff 是否引入新失败模式
 - 仍然直接阻断合并的 Critical / Important
 
-Round 2 后如果仍有非 Critical 的 Important / Minor，由主代理按证据和项目上下文 triage；**不得默认跑第 3 轮**。只有用户明确要求继续外源 review，才允许第 3 次调用。
-
-## Qwen 显式缓存
-
-默认不使用 prompt cache。只有后台数据确认 `cached_tokens` 能持续超过 `cache_creation_input_tokens`，或你明确知道会在 Qwen / DashScope 5 分钟缓存窗口内连续复用稳定上下文时，才显式启用缓存：
-
-```bash
-EXTERNAL_LLM_API_FORMAT=chat \
-uv run --no-project \
-  --with "openai>=1.50" --with "anthropic>=0.40" --with python-dotenv \
-  python ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py \
-  main HEAD \
-  --spec docs/superpowers/specs/foo.md \
-  --cache-mode qwen-explicit
-```
-
-实现策略：
-
-- 默认 `off`，不创建 cache marker。
-- 只在 `chat` 协议允许显式启用 `qwen-explicit`；`responses` / `anthropic` 路径保持原样。
-- 启用 `qwen-explicit` 后，缓存稳定上下文：系统评审规则、`--spec`、`--cache-prefix` 文件。
-- 即使启用 `qwen-explicit`，也默认不缓存 git diff。只有当同一任务围绕同一份 diff 多轮 review/追问时，才用 `--cache-diff` 或 `EXTERNAL_LLM_CACHE_DIFF=true`。
-- 若响应 usage 暴露缓存统计，stderr 会打印 `cached_tokens` 与 `cache_creation_input_tokens`，便于判断命中率。
-
-依据阿里云 Model Studio Context Cache 文档：OpenAI-compatible 请求可在 message content block 上添加 `cache_control: {"type":"ephemeral"}`；显式缓存有效期 5 分钟，单请求最多 4 个 cache marker，最小 cacheable prompt 为 1024 tokens。
+Round 2 后如果仍有非 Critical 的 Important / Minor，由主代理按证据和项目上下文 triage；**不得默认跑第 3 轮**。只有用户明确要求继续外源 review 才允许第 3 次调用。
 
 ## 综合判断规则（拿到外源输出后必须做的）
 
@@ -215,6 +170,7 @@ uv run --no-project \
    - 一次性脚本的 subprocess 阻塞标 Critical（事件循环只有单 task 时无影响）
    - 误读累积 diff 把已修复的旧代码再标一次（要看 HEAD 实际状态）
    - 读 spec 后把未来 task 的代码（spec 提到但本 diff 没改）当成本 commit 范围问题打分
+   - **只看 diff 没看完整源码**——看到 diff 里某集合"漏了"某项，就误报为 Critical
 
 3. **对 (C) 同族独有项做"是不是同族盲点"反思**：是否涉及该模型族训练偏好（生态版本兼容、库 API 名）？
 
@@ -224,12 +180,12 @@ uv run --no-project \
 
 ## Sandbox 与许可
 
-⚠️ Claude Code 默认 sandbox 可能拦截 `reviewer.py` 的执行，**理由是源码被 POST 到外部 endpoint 属于潜在 data exfiltration**。这是合理保护。绕过方式：
+⚠️ Claude Code 默认 sandbox 可能拦截 `reviewer.py` 的执行——**理由是源码被 POST 到外部 endpoint 属于潜在 data exfiltration**。绕过方式：
 
 **A. 用户在终端直接跑**（最稳）：
 ```bash
-EXTERNAL_LLM_API_FORMAT=anthropic uv run --no-project \
-    --with "openai>=1.50" --with "anthropic>=0.40" --with python-dotenv \
+uv run --no-project \
+    --with "openai>=1.50" --with python-dotenv \
     python ${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py main HEAD
 ```
 把输出粘回主代理。
@@ -250,11 +206,10 @@ EXTERNAL_LLM_API_FORMAT=anthropic uv run --no-project \
 
 ## reviewer.py 实现要点
 
-- 默认 `api` 后端使用 `openai.AsyncOpenAI` / `anthropic.AsyncAnthropic`：`base_url` 切换到任意兼容端点，`api_key` 从环境变量读
-- `claude-code-cli` 后端仅显式 opt-in；用临时 HOME/XDG/Claude config 调 `claude --print --bare`，只拼接必要的 Anthropic endpoint/auth/model 环境变量
+- `api` 后端用 `openai.AsyncOpenAI` POST 到 `<base>/chat/completions`，base/key/model 从 `EXTERNAL_LLM_API_*` 环境变量读
+- `claude-code-cli` 后端在临时 HOME/XDG/Claude config 中调 `claude --print --bare`，只拼接 `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_MODEL`，**不**从 `EXTERNAL_LLM_*` fallback
 - 系统提示固化在脚本里：要求输出 Strengths / Critical / Important / Minor / Assessment
-- 用户提示包含 git diff 文本 + 可选 spec 文本
-- `qwen-explicit` 缓存通过 OpenAI Chat Completions content block 的 `cache_control` marker 表达
+- 用户提示 = git diff + 可选 `--spec` 文本
 - temperature=0.2（评审任务希望稳定）
-- 失败时打印 stderr 并退出非零
-- Chat Completions 返回空 `message.content` 时退出非零，并打印 `finish_reason` / `reasoning_tokens` / `reasoning_content_len`，避免 reasoning 模型把 token 预算耗在推理区后被误判为 review 成功
+- 失败时 stderr 打印诊断并退出非零
+- Chat Completions 返回空 `message.content` 时退出非零，并打印 `finish_reason` / `reasoning_tokens` / `reasoning_content_len`，避免 reasoning 模型把 token 预算耗在推理区被误判为 review 成功
