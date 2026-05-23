@@ -11,36 +11,17 @@
  * Pass criteria: second call's usage.prompt_tokens_details.cached_tokens > 0.
  */
 
-import { readFileSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { loadEnvFile } from "../src/load-env.mjs"
 import { createBailianCacheProxy } from "../src/server.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const envPath = join(here, "..", ".env")
 
-const loadEnv = () => {
-  const raw = readFileSync(envPath, "utf8")
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith("#")) continue
-    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/)
-    if (!match) continue
-    const [, key, valueRaw] = match
-    let value = valueRaw.trim()
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1)
-    }
-    if (process.env[key] === undefined) process.env[key] = value
-  }
-}
-
-loadEnv()
+loadEnvFile(envPath)
 
 const apiKey = process.env.DASHSCOPE_API_KEY
 const upstreamBaseUrl =

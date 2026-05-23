@@ -23,6 +23,29 @@ echo "安装 ${key}（未 pin）..."
 
 **规避**：zsh 不受此 bug 影响，`$var（` 在 zsh 中可正常展开。若有 zsh 环境，将脚本 shebang 改为 `#!/usr/bin/env zsh` 也可规避。但本仓为兼容性保留 bash，统一用 `${var}` 修复。
 
+## bash 单引号 Python heredoc 内的 apostrophe 提前终止字符串
+
+**现象**：`init_opencode.sh` 改 model list 时加了一行注释 `# only models that actually exist on the user's endpoint.`，重跑 init 报：
+
+```
+File "<string>", line 139
+    desired_bailian_cache = {
+                            ^
+SyntaxError: '{' was never closed
+```
+
+**根因**：Python 代码块用 `$PY -c '...'` 单引号包裹整体送给 Python。注释里的 `user's` 含一个 ASCII 单引号 `'`，bash 看到立即结束 `$PY -c` 的字符串，后面的 Python 源码被截断。Python 拿到不完整的脚本，从某个早就结束了的 `{` 开始报"未闭合"的迷误。
+
+**陷阱位置**：`init_opencode.sh` line 422 附近（已修），其他可能踩坑的地方是任何用 `$PY -c '...'` / `bash -c '...'` 内嵌大段字符串的位置。
+
+**规避**：
+1. 内嵌长 Python / shell 时**禁止**写 ASCII 单引号——用全角 `’` 或改写句子（`user's` → `user`）。`don't` `it's` `we'll` 同样踩。
+2. 反引号 `` ` `` 在双引号 `"..."` 字符串里会触发命令替换，同样致命；写中文长文本一并避免。
+3. 中文长文本走 `apply_patch` / `Write` 工具直接写文件；只有必须时才走 `python3 - <<'PY'` heredoc，且 heredoc 标签必须加单引号（`'PY'`）防止变量展开。
+4. 若必须 inline 一段含 `'` 的代码，改用 `$PY <<'PY' ... PY` heredoc 而非 `$PY -c '...'`。
+
+**早期识别**：`bash -n script.sh` 不会报这种错（shell 语法本身合法）；要用 `python3 -c "import ast; ast.parse(open('script.sh').read())"` 也不行（混合脚本）；最好的诊断是 init 脚本跑一次就暴露了，但前提是覆盖到那段 Python 的执行路径。
+
 ## superpowers skill 路径中 # 的正确处理
 
 **现象**：Skill 工具返回的 base directory 路径中 `#v5.1.0` 被 URL-encoded 为 `%23v5.1.0`。直接使用 `%23` 路径调用 Read/Glob/Bash 会报 `No such file or directory`。
