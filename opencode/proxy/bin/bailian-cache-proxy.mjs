@@ -13,11 +13,22 @@ import { createBailianCacheProxy } from "../src/server.mjs"
 // proxy is self-sufficient regardless of how OpenCode itself was started.
 const here = dirname(fileURLToPath(import.meta.url))
 const envPath = join(here, "..", ".env")
-const { loaded, vars } = loadEnvFile(envPath)
-if (loaded) {
+const { loaded, vars, error } = loadEnvFile(envPath)
+if (error) {
   process.stderr.write(
-    `bailian-cache-proxy: loaded .env from ${envPath} (${vars.length} new vars)\n`,
+    `bailian-cache-proxy: .env present at ${envPath} but unreadable (${error.message}); ` +
+      `falling back to inherited env\n`,
   )
+} else if (loaded) {
+  if (vars.length > 0) {
+    process.stderr.write(
+      `bailian-cache-proxy: loaded .env from ${envPath} (${vars.length} new vars)\n`,
+    )
+  } else {
+    process.stderr.write(
+      `bailian-cache-proxy: .env at ${envPath} read OK; all vars already present in environment\n`,
+    )
+  }
 }
 
 const envNumber = (name, fallback) => {

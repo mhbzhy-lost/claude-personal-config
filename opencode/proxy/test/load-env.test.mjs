@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, test } from "node:test"
@@ -70,6 +70,27 @@ describe("loadEnvFile", () => {
       const env = {}
       loadEnvFile(path, env)
       assert.equal(env.KEY, "value")
+    })
+  })
+
+  test("does NOT crash when file exists but is unreadable", async () => {
+    // Regression: previously readFileSync would propagate and abort proxy
+    // startup. Spec says we must degrade gracefully — file unreadable should
+    // behave like file missing (proxy still starts, no vars injected).
+    if (process.platform === "win32") return // POSIX-only chmod semantics
+    await withTmpEnv("FOO=bar\n", async (path) => {
+      try {
+        await chmod(path, 0o000)
+        const env = {}
+        const result = loadEnvFile(path, env)
+        assert.equal(result.loaded, false, "loaded should be false on read error")
+        assert.notEqual(result.error, null, "error should be reported")
+        assert.match(result.error.message, /EACCES|permission/i)
+        assert.equal(env.FOO, undefined, "no vars should leak through on read failure")
+      } finally {
+        // Restore so withTmpEnv cleanup can rm
+        await chmod(path, 0o600)
+      }
     })
   })
 })

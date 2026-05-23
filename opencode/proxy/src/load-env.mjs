@@ -15,9 +15,18 @@ import { existsSync, readFileSync } from "node:fs"
 
 export const loadEnvFile = (envPath, env = process.env) => {
   if (!envPath || !existsSync(envPath)) {
-    return { loaded: false, vars: [] }
+    return { loaded: false, vars: [], error: null }
   }
-  const raw = readFileSync(envPath, "utf8")
+  let raw
+  try {
+    raw = readFileSync(envPath, "utf8")
+  } catch (err) {
+    // Permission denied / IO error must NOT crash the proxy. Surface a
+    // diagnostic so the caller can log it, then degrade to the same posture
+    // as if the file were missing — proxy still starts, fallback paths still
+    // work, just no creds injected from disk.
+    return { loaded: false, vars: [], error: err }
+  }
   const vars = []
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim()
@@ -37,5 +46,5 @@ export const loadEnvFile = (envPath, env = process.env) => {
       vars.push(key)
     }
   }
-  return { loaded: true, vars }
+  return { loaded: true, vars, error: null }
 }
