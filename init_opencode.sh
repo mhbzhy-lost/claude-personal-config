@@ -39,11 +39,11 @@ OPENCODE_JSON="$OPENCODE_CONFIG_DIR/opencode.json"
 #       · 真文件副本与仓内不一致时警告保留（疑似用户本地改动）
 #       · 用户自管文件（不在仓内 opencode/plugins/ 中）原样不动
 sync_opencode_plugins() {
-  local src_path="$SRC/vendor/opencode-cache-proxy/plugins"
+  local src_path="$SRC/opencode/plugins"
   local dst_path="$OPENCODE_CONFIG_DIR/plugins"
 
   if [ ! -d "$src_path" ]; then
-    echo "[skip]  vendor/opencode-cache-proxy/plugins/ 不存在，跳过"
+    echo "[skip]  opencode/plugins/ 不存在，跳过"
     return
   fi
 
@@ -68,7 +68,7 @@ sync_opencode_plugins() {
       ln -s "$src_path" "$dst_path"
       echo "[plugin] $dst_path 从旧路径 ${legacy_src_path} 迁移到 ${src_path}"
     else
-      echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 vendor/opencode-cache-proxy/plugins/），人工核对后再处理"
+      echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 opencode/plugins/），人工核对后再处理"
     fi
     return
   fi
@@ -154,6 +154,41 @@ sync_opencode_plugins() {
         ;;
     esac
   done
+}
+
+sync_opencode_cache_proxy_plugin() {
+  local src_file="$SRC/vendor/opencode-cache-proxy/plugins/bailian-cache-proxy.js"
+  local dst_file="$SRC/opencode/plugins/bailian-cache-proxy.js"
+
+  if [ ! -f "$src_file" ]; then
+    echo "[skip]  vendor/opencode-cache-proxy/plugins/bailian-cache-proxy.js 不存在，跳过"
+    return
+  fi
+
+  mkdir -p "$SRC/opencode/plugins"
+
+  if [ -L "$dst_file" ]; then
+    local cur
+    cur=$(readlink "$dst_file")
+    if [ "$cur" = "$src_file" ]; then
+      echo "[cache-proxy-plugin] $dst_file -> ${src_file}（已就绪）"
+    else
+      rm -f "$dst_file"
+      ln -s "$src_file" "$dst_file"
+      echo "[cache-proxy-plugin] $dst_file -> ${src_file}（已迁移）"
+    fi
+    return
+  fi
+
+  if [ -f "$dst_file" ]; then
+    rm -f "$dst_file"
+    ln -s "$src_file" "$dst_file"
+    echo "[cache-proxy-plugin] $dst_file -> ${src_file}（升级为软链）"
+    return
+  fi
+
+  ln -s "$src_file" "$dst_file"
+  echo "[cache-proxy-plugin] $dst_file -> ${src_file}（首次创建）"
 }
 
 sync_opencode_proxy() {
@@ -289,6 +324,7 @@ fi
 echo "[skills] opencode 读取 ~/.claude/skills/，已由 init_claude.sh 维护，无需额外配置"
 
 # ── Run sync ────────────────────────────────────────────
+sync_opencode_cache_proxy_plugin
 sync_opencode_plugins
 sync_opencode_proxy
 sync_opencode_shared
