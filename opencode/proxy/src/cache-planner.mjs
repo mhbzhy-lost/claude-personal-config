@@ -1,6 +1,15 @@
 const DEFAULT_MIN_CACHE_TOKENS = 1024
 const DEFAULT_MAX_MARKERS = 4
-const DEFAULT_MAX_LOOKBACK_CONTENT_BLOCKS = 20
+// Token-fraction positions for the two intermediate markers between the
+// stable system/developer anchor and the conversation tail. The previous
+// design used a fixed N-block rolling window which collapsed all three tail
+// markers into the last 60 blocks once a conversation exceeded ~60 turns —
+// any new request whose mid-prefix differed from the rolling window lost the
+// dashscope cache for the entire middle of the prompt (~100K-200K tokens
+// observed in production). Logarithmic fractions keep one marker around the
+// halfway point and one near the tail of the conversation, so cache segments
+// land at consistent token boundaries across requests of varying lengths.
+export const DEFAULT_MARKER_FRACTIONS = Object.freeze([0.5, 0.85])
 const CACHEABLE_ROLES = new Set(["system", "developer", "user", "assistant", "tool"])
 const TEXT_LIKE_PART_TYPES = new Set(["text", "input_text"])
 
@@ -63,24 +72,50 @@ const selectMarkerContentIndexes = (blocks, options) => {
   const {
     maxMarkers = DEFAULT_MAX_MARKERS,
     minCacheTokens = DEFAULT_MIN_CACHE_TOKENS,
-    maxLookbackContentBlocks = DEFAULT_MAX_LOOKBACK_CONTENT_BLOCKS,
+    markerFractions = DEFAULT_MARKER_FRACTIONS,
   } = options
 
   const eligible = blocks.filter((block) => block.canMark && block.prefixTokens >= minCacheTokens)
   if (eligible.length === 0 || maxMarkers <= 0) return []
 
-  const firstStable = eligible.find((block) => block.role === "system" || block.role === "developer")
-  const selected = []
-  if (firstStable) selected.push(firstStable.contentIndex)
+  const tailBlock = eligible.at(-1)
+  const totalTokens = tailBlock.prefixTokens
+  const selected = new Set()
 
-  let cursor = eligible.at(-1)
-  while (cursor && selected.length < maxMarkers) {
-    selected.push(cursor.contentIndex)
-    const targetIndex = cursor.contentIndex - maxLookbackContentBlocks
-    cursor = eligible.findLast((block) => block.contentIndex <= targetIndex)
+  // 1. Stable anchor: end of system/developer prefix. Same token position
+  //    every request → dashscope reuses this segment for life of the chat.
+  const firstStable = eligible.find(
+    (block) => block.role === "system" || block.role === "developer",
+  )
+  if (firstStable) selected.add(firstStable.contentIndex)
+
+  // 2. Tail anchor: the very last eligible block, so the next-turn request
+  //    can extend from here.
+  selected.add(tailBlock.contentIndex)
+
+  // 3. Mid-prefix anchors at fixed token fractions between firstStable and
+  //    tail. By picking blocks closest to a target token count (rather than
+  //    fixed N-block intervals from the tail), markers tend to land at the
+  //    same dashscope cache key across consecutive requests with different
+  //    conversation lengths — letting big mid-prefix segments hit instead of
+  //    falling back to the system-only anchor.
+  const stableEnd = firstStable ? firstStable.prefixTokens : 0
+  const conversationTokens = totalTokens - stableEnd
+  if (conversationTokens > 0) {
+    for (const fraction of markerFractions) {
+      if (selected.size >= maxMarkers) break
+      const targetTokens = stableEnd + conversationTokens * fraction
+      // Pick the eligible block whose accumulated prefixTokens is the largest
+      // value <= targetTokens, and that lies *before* the tail (don't double
+      // up on the tail anchor).
+      const block = eligible.findLast(
+        (b) => b.prefixTokens <= targetTokens && b.contentIndex < tailBlock.contentIndex,
+      )
+      if (block) selected.add(block.contentIndex)
+    }
   }
 
-  return uniqueSorted(selected).slice(-maxMarkers)
+  return [...selected].sort((a, b) => a - b).slice(-maxMarkers)
 }
 
 export const countCacheMarkers = (body) => {

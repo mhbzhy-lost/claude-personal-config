@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url"
 
 import { loadEnvFile } from "../src/load-env.mjs"
 import { createBailianCacheProxy } from "../src/server.mjs"
+import { createUsageRecorder } from "../src/usage-recorder.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const envPath = join(here, "..", ".env")
@@ -71,11 +72,17 @@ if (!apiKey) {
 const upstreamUrl = new URL(upstreamBaseUrl)
 const upstreamPathPrefix = upstreamUrl.pathname.replace(/\/$/, "")
 
+// e2e is testing the *production* recording path, so opt into the real
+// usage recorder here (createBailianCacheProxy now defaults to NOOP for unit
+// safety — see test/server.test.mjs).
+const usageRecorder = createUsageRecorder({})
+
 const { server } = createBailianCacheProxy({
   upstreamBaseUrl,
   apiKey,
   cacheOptions: { minCacheTokens: 1024 },
   lifecycle: false,
+  usageRecorder,
 })
 
 const address = await new Promise((resolve) =>
