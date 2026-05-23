@@ -417,14 +417,14 @@ desired_bailian_cache = {
         "baseURL": f"http://127.0.0.1:{bailian_cache_proxy_port}/compatible-mode/v1",
         "apiKey": "{env:DASHSCOPE_API_KEY}",
     },
+    # Aligned with the token-plan endpoint catalog (实测 GET /models 2026-05-23):
+    # only qwen-family text models that actually exist on the user endpoint.
+    # Adding non-existent ids would 400 with Model not exist the moment a
+    # user picks them in the OpenCode UI.
     "models": {
         "qwen3.6-plus": {"name": "Qwen 3.6 Plus"},
-        "qwen3.6-max": {"name": "Qwen 3.6 Max"},
-        "qwen-plus": {"name": "Qwen Plus"},
-        "qwen-max": {"name": "Qwen Max"},
-        "qwen-turbo": {"name": "Qwen Turbo"},
-        "qwen-coder-plus": {"name": "Qwen Coder Plus"},
-        "qwen-coder-max": {"name": "Qwen Coder Max"},
+        "qwen3.6-flash": {"name": "Qwen 3.6 Flash"},
+        "qwen3.7-max": {"name": "Qwen 3.7 Max"},
     },
 }
 if providers.pop("bailian-cache", None) is not None:
