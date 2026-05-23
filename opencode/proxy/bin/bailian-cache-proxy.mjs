@@ -62,7 +62,11 @@ const { server } = createBailianCacheProxy({
   maxBodyBytes: envNumber("BAILIAN_CACHE_PROXY_MAX_BODY_BYTES", 10 * 1024 * 1024),
   cacheOptions: {
     minCacheTokens: envNumber("BAILIAN_CACHE_PROXY_MIN_TOKENS", 1024),
-    maxLookbackContentBlocks: envNumber("BAILIAN_CACHE_PROXY_MAX_LOOKBACK_BLOCKS", 20),
+    // Note: BAILIAN_CACHE_PROXY_MAX_LOOKBACK_BLOCKS is deprecated. The cache
+    // planner no longer uses fixed N-block rolling tail markers; it places
+    // markers at token fractions instead (see DEFAULT_MARKER_FRACTIONS in
+    // src/cache-planner.mjs). The env var is intentionally not forwarded so
+    // the option doesn't get silently ignored downstream.
   },
   usageRecorder,
 })

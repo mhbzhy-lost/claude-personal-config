@@ -73,7 +73,22 @@ const selectMarkerContentIndexes = (blocks, options) => {
     maxMarkers = DEFAULT_MAX_MARKERS,
     minCacheTokens = DEFAULT_MIN_CACHE_TOKENS,
     markerFractions = DEFAULT_MARKER_FRACTIONS,
+    // Loud deprecation: the previous strategy honoured maxLookbackContentBlocks
+    // to place rolling tail markers every N blocks. The current strategy uses
+    // markerFractions instead (see comment near DEFAULT_MARKER_FRACTIONS); we
+    // surface a warning so callers passing the old option know it has no
+    // effect rather than silently inheriting the new fraction-based layout.
+    maxLookbackContentBlocks,
   } = options
+  if (maxLookbackContentBlocks !== undefined) {
+    // Use console.warn rather than throwing so existing deployments don't
+    // break on first request after upgrade.
+    console.warn(
+      "[bailian-cache-proxy] cache-planner: maxLookbackContentBlocks is deprecated " +
+        "and ignored — markers are now placed at token fractions (see DEFAULT_MARKER_FRACTIONS). " +
+        "Pass `markerFractions` to override the [0.5, 0.85] default.",
+    )
+  }
 
   const eligible = blocks.filter((block) => block.canMark && block.prefixTokens >= minCacheTokens)
   if (eligible.length === 0 || maxMarkers <= 0) return []

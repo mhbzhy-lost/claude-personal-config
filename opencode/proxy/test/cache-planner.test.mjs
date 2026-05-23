@@ -230,6 +230,38 @@ describe("planBailianCacheMarkers", () => {
     assert.notDeepEqual(positionsCustom, positionsDefault)
   })
 
+  test("warns loudly when caller passes the deprecated maxLookbackContentBlocks option", () => {
+    const warnings = []
+    const origWarn = console.warn
+    console.warn = (...args) => warnings.push(args.join(" "))
+    try {
+      planBailianCacheMarkers(
+        { model: "qwen3.6-flash", messages: longConversation(40, 30) },
+        { minCacheTokens: 16, maxLookbackContentBlocks: 20 },
+      )
+    } finally {
+      console.warn = origWarn
+    }
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0], /maxLookbackContentBlocks is deprecated/)
+    assert.match(warnings[0], /markerFractions/)
+  })
+
+  test("does NOT warn when maxLookbackContentBlocks is omitted (the normal path)", () => {
+    const warnings = []
+    const origWarn = console.warn
+    console.warn = (...args) => warnings.push(args.join(" "))
+    try {
+      planBailianCacheMarkers(
+        { model: "qwen3.6-flash", messages: longConversation(40, 30) },
+        { minCacheTokens: 16 },
+      )
+    } finally {
+      console.warn = origWarn
+    }
+    assert.equal(warnings.length, 0)
+  })
+
   test("falls back gracefully when conversation is too short for mid markers", () => {
     // Only system prefix + one user turn → 2 markers (firstStable + tail),
     // no mid-prefix markers because conversationTokens is small.
