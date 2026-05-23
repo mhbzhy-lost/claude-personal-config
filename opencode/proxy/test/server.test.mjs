@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { describe, test } from "node:test"
+import { gzipSync } from "node:zlib"
 
 import { createBailianCacheProxy } from "../src/server.mjs"
 
@@ -177,6 +178,55 @@ describe("createBailianCacheProxy", () => {
 
       assert.equal(response.status, 415)
       assert.equal(upstreamCalled, false)
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
+  test("strips transport-level response headers so client doesn't double-decode", async () => {
+    // Regression for bug-bailian-proxy-content-encoding: undici fetch in the
+    // proxy auto-decompresses upstream gzip; if we forward content-encoding
+    // verbatim the client tries to gunzip the already-plain body and aborts.
+    const payload = JSON.stringify({ ok: true, usage: { prompt_tokens: 7 } })
+    const gzipped = gzipSync(Buffer.from(payload))
+    const upstream = createServer(async (request, response) => {
+      await readJson(request)
+      response.writeHead(200, {
+        "content-type": "application/json",
+        "content-encoding": "gzip",
+        "content-length": String(gzipped.length),
+        "connection": "close",
+        "x-request-id": "trace-123",
+      })
+      response.end(gzipped)
+    })
+    const upstreamAddress = await listen(upstream)
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+      lifecycle: false,
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            authorization: "Bearer sk-test",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ model: "qwen3.6-flash", messages: [] }),
+        },
+      )
+
+      assert.equal(response.status, 200)
+      assert.equal(response.headers.get("content-encoding"), null)
+      assert.equal(response.headers.get("content-length"), null)
+      assert.equal(response.headers.get("x-request-id"), "trace-123")
+      const body = await response.json()
+      assert.deepEqual(body, { ok: true, usage: { prompt_tokens: 7 } })
     } finally {
       await close(proxy.server)
       await close(upstream)

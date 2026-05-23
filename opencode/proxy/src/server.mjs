@@ -21,6 +21,16 @@ const HOP_BY_HOP_HEADERS = new Set([
   "upgrade",
 ])
 
+// undici fetch transparently decompresses upstream gzip/br/deflate bodies, so
+// any content-encoding/content-length we copy verbatim would mismatch the
+// already-decoded bytes we pipe back. Strip transport-level headers and let
+// Node http re-frame the response (chunked, no encoding).
+const RESPONSE_STRIP_HEADERS = new Set([
+  ...HOP_BY_HOP_HEADERS,
+  "content-encoding",
+  "content-length",
+])
+
 const readBody = async (request, maxBodyBytes = DEFAULT_MAX_BODY_BYTES) => {
   const chunks = []
   let bytes = 0
@@ -41,9 +51,12 @@ const writeJson = (response, statusCode, body) => {
   response.end(JSON.stringify(body))
 }
 
-const headersToObject = (headers) => {
+const responseHeadersToObject = (headers) => {
   const result = {}
-  for (const [key, value] of headers.entries()) result[key] = value
+  for (const [key, value] of headers.entries()) {
+    if (RESPONSE_STRIP_HEADERS.has(key.toLowerCase())) continue
+    result[key] = value
+  }
   return result
 }
 
@@ -171,7 +184,7 @@ export const createBailianCacheProxy = ({
         body: request.method === "GET" || request.method === "HEAD" ? undefined : bodyBuffer,
       })
 
-      response.writeHead(upstreamResponse.status, headersToObject(upstreamResponse.headers))
+      response.writeHead(upstreamResponse.status, responseHeadersToObject(upstreamResponse.headers))
       if (upstreamResponse.body) {
         await pipeline(Readable.fromWeb(upstreamResponse.body), response)
       } else {
