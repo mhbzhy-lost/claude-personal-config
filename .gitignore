@@ -38,10 +38,6 @@ codex/skills.list.local
 # skill 私有 .env 凭据（如 external-llm-review/.env）
 claude-skills/*/.env
 
-# opencode bailian cache proxy 的 e2e 凭据
-# 含 DASHSCOPE_API_KEY / DASHSCOPE_BASE_URL，勿提交
-opencode/proxy/.env
-
 # 并发 task 用的 git worktree 临时目录（subagent-driven-development 流程产物，
 # 整批合并后会清理；过程产物不入仓避免污染主分支）
 .worktrees/
