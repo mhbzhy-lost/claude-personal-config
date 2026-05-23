@@ -18,14 +18,18 @@ export const resolveThinkMode = (modelName) => {
   if (typeof modelName !== "string" || !modelName) {
     return { upstreamModel: modelName, enableThinking: null, alias: modelName }
   }
-  if (modelName.endsWith(NO_THINK_SUFFIX)) {
+  // Trim incidental whitespace before suffix matching: a stray trailing space
+  // in the JSON payload should not silently demote a -nothink alias into the
+  // default cohort and ship a fake model id upstream.
+  const trimmed = modelName.trim()
+  if (trimmed.endsWith(NO_THINK_SUFFIX)) {
     return {
-      upstreamModel: modelName.slice(0, -NO_THINK_SUFFIX.length),
+      upstreamModel: trimmed.slice(0, -NO_THINK_SUFFIX.length),
       enableThinking: false,
-      alias: modelName,
+      alias: trimmed,
     }
   }
-  return { upstreamModel: modelName, enableThinking: null, alias: modelName }
+  return { upstreamModel: trimmed, enableThinking: null, alias: trimmed }
 }
 
 /**

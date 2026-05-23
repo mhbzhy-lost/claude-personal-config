@@ -640,6 +640,56 @@ describe("createBailianCacheProxy", () => {
     }
   })
 
+  test("non-JSON body bypasses transforms but still forwards (proxy doesn't crash)", async () => {
+    // Edge case raised by external review: when content-type is not JSON,
+    // shouldTransformChatBody is false. We must still forward the request
+    // (let upstream return its own 400/415) without crashing or silently
+    // dropping the request. The alias rewrite obviously cannot fire — there
+    // is no JSON body to parse a model field out of.
+    let receivedContentType
+    let receivedBody
+    const upstream = createServer(async (request, response) => {
+      receivedContentType = request.headers["content-type"]
+      const chunks = []
+      for await (const chunk of request) chunks.push(chunk)
+      receivedBody = Buffer.concat(chunks).toString("utf8")
+      response.writeHead(400, { "content-type": "application/json" })
+      response.end(JSON.stringify({ error: "Bad Request" }))
+    })
+    const upstreamAddress = await listen(upstream)
+    const records = []
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+      lifecycle: false,
+      usageRecorder: {
+        fireAndForget: (entry) => records.push(entry),
+        record: async () => {},
+        filePath: "<test>",
+      },
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: { "content-type": "text/plain" },
+          body: "model: qwen3.6-flash-nothink\nthis is not JSON",
+        },
+      )
+      assert.equal(response.status, 400)
+      assert.equal(receivedContentType, "text/plain")
+      assert.match(receivedBody, /qwen3.6-flash-nothink/, "body forwarded verbatim")
+      assert.equal(records.length, 1, "still records the request")
+      // model is null because we never parsed the body
+      assert.equal(records[0].model, null)
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
   test("plain alias passes upstream untouched (no enable_thinking injected)", async () => {
     let receivedBody
     const upstream = createServer(async (request, response) => {

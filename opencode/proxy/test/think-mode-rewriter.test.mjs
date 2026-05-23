@@ -32,6 +32,21 @@ describe("resolveThinkMode", () => {
     assert.equal(r.upstreamModel, undefined)
     assert.equal(r.enableThinking, null)
   })
+
+  test("trims whitespace before suffix matching", () => {
+    // A trailing space must NOT silently demote -nothink into the default
+    // cohort and ship a fake model id upstream.
+    const r = resolveThinkMode("qwen3.6-flash-nothink ")
+    assert.equal(r.upstreamModel, "qwen3.6-flash")
+    assert.equal(r.enableThinking, false)
+    assert.equal(r.alias, "qwen3.6-flash-nothink")
+  })
+
+  test("trims whitespace from plain alias too", () => {
+    const r = resolveThinkMode("  qwen3.6-flash  ")
+    assert.equal(r.upstreamModel, "qwen3.6-flash")
+    assert.equal(r.enableThinking, null)
+  })
 })
 
 describe("applyThinkModeRewrite", () => {

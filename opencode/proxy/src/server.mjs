@@ -85,7 +85,15 @@ const isJsonContent = (request) => {
   return contentType.toLowerCase().includes("application/json")
 }
 
-const shouldPlanCache = (request) =>
+// True iff the proxy can safely parse the request body and apply our chain of
+// transforms (alias rewrite + cache marker plan + stream_options.include_usage
+// injection). All three transforms require a parsed JSON body, so they share
+// a single gate. Non-POST / non-JSON / non chat-completions requests fall
+// through untransformed and are forwarded verbatim — including any
+// alias-bearing model name they may carry. That is the correct posture: with
+// no JSON body we have no model field to rewrite anyway, and the upstream
+// will return a clean 400 if the alias is invalid for it.
+const shouldTransformChatBody = (request) =>
   request.method === "POST" &&
   isJsonContent(request) &&
   new URL(request.url, "http://127.0.0.1").pathname.endsWith("/chat/completions")
@@ -205,17 +213,17 @@ export const createBailianCacheProxy = ({
       }
 
       let bodyBuffer = await readBody(request, maxBodyBytes)
-      if (shouldPlanCache(request)) {
+      if (shouldTransformChatBody(request)) {
         const body = JSON.parse(bodyBuffer.toString("utf8"))
         // 1. Resolve OpenCode-facing model alias (e.g. qwen3.6-flash-nothink)
         //    to the real upstream model + any enable_thinking override BEFORE
         //    we plan cache markers; the cache planner only cares about the
         //    messages array and is alias-agnostic.
-        const { body: aliased, alias } = applyThinkModeRewrite(body)
+        const { body: rewrittenBody, alias } = applyThinkModeRewrite(body)
         // The alias is what the user picked in OpenCode — keep it on the
         // usage record so cache-stats can split -nothink vs default cohorts.
         parsedRequestModel = alias
-        let planned = planBailianCacheMarkers(aliased, cacheOptions)
+        let planned = planBailianCacheMarkers(rewrittenBody, cacheOptions)
         // 2. Inject stream_options.include_usage so streaming responses still
         //    expose token usage in their trailing SSE frame. Without this,
         //    every OpenCode AI-SDK call (defaults to stream=true) would log
