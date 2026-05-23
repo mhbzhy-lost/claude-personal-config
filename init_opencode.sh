@@ -394,4 +394,28 @@ else:
     print("[mcp] opencode.json 已是最新，无需改动")
 '
 
+# ── CLAUDE_CONFIG_HOME 注册到 ~/.zshrc ──────────────────
+# OpenCode 的 opencode.json 没有 top-level env 字段（仅 mcp.<name>.environment
+# 可设；不覆盖 agent 主进程），shell 环境变量是 skill 中
+# ${CLAUDE_CONFIG_HOME} 引用的唯一一致来源。逻辑与
+# init_claude.sh / init_codex.sh 保持一致：
+#   行内容 (export ...) 已存在 → no-op
+#   CLAUDE_CONFIG_HOME 存在但路径不同 → warn 不覆盖
+#   完全不存在 → 追加
+ZSHRC="$HOME/.zshrc"
+EXPORT_LINE="export CLAUDE_CONFIG_HOME=\"$SRC\""
+
+if [ ! -f "$ZSHRC" ]; then
+  echo "[skip] ~/.zshrc not found, please export CLAUDE_CONFIG_HOME manually"
+elif grep -Fq "CLAUDE_CONFIG_HOME=" "$ZSHRC"; then
+  if grep -Fxq "$EXPORT_LINE" "$ZSHRC"; then
+    echo "[ok] CLAUDE_CONFIG_HOME already set to $SRC in ~/.zshrc"
+  else
+    echo "[warn] CLAUDE_CONFIG_HOME exists in ~/.zshrc but points elsewhere; please verify manually"
+  fi
+else
+  printf '\n# CLAUDE_CONFIG_HOME (auto-registered by init_opencode.sh)\n%s\n' "$EXPORT_LINE" >> "$ZSHRC"
+  echo "[linked] CLAUDE_CONFIG_HOME=$SRC registered in ~/.zshrc"
+fi
+
 echo "[done] init_opencode.sh 完成"

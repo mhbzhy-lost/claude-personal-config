@@ -11,13 +11,13 @@
 # 而非写入 settings.json（Claude Code 不从 settings.json 读取 MCP 配置）。
 #
 # claude-skills/ 暴露给 ~/.claude/skills，承载 Claude Code 原生 user-invocable
-# Skill（如 /git-commit、/knowledge-retrieval）。两种暴露模式：
-#   1. 整目录软链 ~/.claude/skills → claude-skills/（默认；编辑即生效）
-#   2. 真目录 + 按 claude/skills.list 逐 skill rsync --delete（清单白名单
-#      模式，能与用户其他 skill 共存）
-# 策略：~/.claude/skills 不存在 → 走 link_item 软链化；已是指向本仓的软链
-# → 保留不动；已是真目录 → 走 rsync 模式（不主动转回软链）；已是软链但
-# 指向其他位置 → 警告人工处理。
+# Skill（如 /git-commit、/knowledge-retrieval）。与 init_codex.sh 一致的
+# 「白名单 + 逐 skill 软链」模式：
+#   - 单源白名单 `agents/skills.list`（可选 `.local` 覆盖），三家共用
+#   - 候选源解析顺序 claude-skills/<name> → vendor/superpowers/skills/<name>
+#   - ~/.claude/skills 是真目录，里面每个 skill 是软链；白名单外的本仓托管
+#     软链会被清理；用户自管的真目录或外部 target 软链保留不动
+# OpenCode 直接读 ~/.claude/skills/，自动复用本脚本的同步结果，无需独立暴露。
 #
 # 这与 MCP skill-catalog 知识库检索系统（索引 claude-config/skills/，由
 # server 端按 tag 命中后吐 markdown）是两套完全独立的方案：前者走 Claude
@@ -108,100 +108,139 @@ link_item "claude/CLAUDE.md" "CLAUDE.md"
 link_item "guidelines"
 link_item "memory.md"
 
-# claude-skills 特殊处理（按 ~/.claude/skills 当前形态分流）：
-#   - 不存在               → 软链化（link_item，编辑即生效）
-#   - 已是指向 claude-skills/ 的软链 → 保留不动
-#   - 是软链但指向其他位置 → 警告，人工核对
-#   - 是真目录             → 按 claude/skills.list 逐 skill rsync --delete
-#                            （白名单模式，与用户自管 skill 共存）
-sync_claude_skills() {
-  local src_path="$SRC/claude-skills"
-  local dst_path="$DST/skills"
+# claude-skills 暴露：与 init_codex.sh 对齐的「白名单 + 逐 skill 软链」模式。
+# 单源白名单 agents/skills.list[.local]（与 Codex 共用）。候选源：
+# claude-skills/<name> → vendor/superpowers/skills/<name>。
+#
+# 同步矩阵（针对 ~/.claude/skills/<name>）：
+#   不存在                                  → 软链到候选源
+#   软链且 target 正确                      → 保留
+#   软链但 target 错                        → 警告
+#   真目录且 SKILL.md 与候选源一致          → 视为旧 rsync 残留，rm + 软链
+#   真目录但与候选源不一致                  → 警告，保留不动
+# 清理：白名单外的本仓托管软链（target 在 claude-skills/ 或
+# vendor/superpowers/skills/ 下）会被 rm；真目录与 target 在外部的软链
+# 不动，保留用户自管 skill。
+#
+# 顶层目录 ~/.claude/skills 自身：
+#   不存在                                  → mkdir 真目录
+#   软链（旧默认行为：整目录软链 claude-skills/）
+#                                            → 打印迁移指令并 return（破坏性，
+#                                              不自动转换）
+#   真目录                                  → 直接进入逐 skill 同步
+claude_skills_list_file() {
+  local default_list="$SRC/agents/skills.list"
+  local local_list="$SRC/agents/skills.list.local"
 
-  if [ ! -d "$src_path" ]; then
-    echo "[skip] source $src_path does not exist"
-    return
-  fi
-
-  # 不存在 → 直接软链
-  if [ ! -e "$dst_path" ] && [ ! -L "$dst_path" ]; then
-    ln -s "$src_path" "$dst_path"
-    echo "[linked] $dst_path -> $src_path"
-    return
-  fi
-
-  # 已是软链 → 校验目标后保留
-  if [ -L "$dst_path" ]; then
-    local cur
-    cur=$(readlink "$dst_path")
-    if [ "$cur" = "$src_path" ]; then
-      echo "[ok] $dst_path -> $src_path （保留软链，编辑 claude-skills/ 即生效）"
-    else
-      echo "[warn] $dst_path 是软链但指向 ${cur}（非本仓 claude-skills/），人工核对后再处理"
-    fi
-    return
-  fi
-
-  # 是真目录 → 走 rsync 白名单模式
-  echo "[info] $dst_path 是真目录，进入 rsync 白名单模式"
-
-  # 同步清单：用户可在同目录创建 skills.local.list 覆盖。不存在时默认同步
-  # claude-skills/ 下全部 skill（无需维护清单文件）。
-  local list_file
-  list_file=$(resolve_list_file "skills")
-
-  local sync_list=()
-  if [ -n "$list_file" ]; then
-    echo "[skills] 使用清单: $list_file"
-    local line
-    while IFS= read -r line; do
-      sync_list+=("$line")
-    done < <(read_list_file "$list_file")
+  if [ -f "$local_list" ]; then
+    printf '%s\n' "$local_list"
   else
-    echo "[skills] 无 skills.local.list，默认同步 claude-skills/ 下全部 skill"
-    for d in "$src_path"/*/; do
-      [ -d "$d" ] || continue
-      sync_list+=("$(basename "$d")")
-    done
+    printf '%s\n' "$default_list"
   fi
+}
 
-  # 已废弃同步清单：曾经同步过、现已从 sync_list 剔除的 skill。
-  # 一次性清理，仅当目标的 SKILL.md 与源完全一致（确认是本仓同步残留）才删，
-  # 避免误删用户手动放置的同名 skill。
-  local deprecated_list=()
+list_contains() {
+  local needle="$1"
+  shift
 
-  if ! command -v rsync >/dev/null 2>&1; then
-    echo "[warn] rsync 不可用，跳过 skills 同步；请手动同步 $src_path 到 $dst_path"
-    return
-  fi
-
-  local skill_name skill_src skill_dst
-  for skill_name in "${sync_list[@]}"; do
-    skill_src="$src_path/$skill_name"
-    skill_dst="$dst_path/$skill_name"
-    if [ ! -d "$skill_src" ]; then
-      echo "[warn] sync_list 含 $skill_name，但 $skill_src 不存在；请检查清单"
-      continue
-    fi
-    if rsync -a --delete "$skill_src/" "$skill_dst/" >/dev/null; then
-      echo "[synced] $skill_dst <- $skill_src/"
-    else
-      echo "[warn] 同步 $skill_src → $skill_dst 失败"
+  local item
+  for item in "$@"; do
+    if [ "$item" = "$needle" ]; then
+      return 0
     fi
   done
+  return 1
+}
 
-  # 清理已从 sync_list 剔除的 skill 残留
-  for skill_name in "${deprecated_list[@]}"; do
-    skill_dst="$dst_path/$skill_name"
-    skill_src="$src_path/$skill_name"
-    [ -e "$skill_dst" ] || continue
-    if [ -f "$skill_dst/SKILL.md" ] && [ -f "$skill_src/SKILL.md" ] \
-        && cmp -s "$skill_dst/SKILL.md" "$skill_src/SKILL.md"; then
-      rm -rf "$skill_dst"
-      echo "[cleanup] 已移除 ${skill_dst}（已从 sync_list 剔除）"
+sync_claude_skills() {
+  local dst_dir="$DST/skills"
+  local claude_skills_dir="$SRC/claude-skills"
+  local superpowers_dir="$SRC/vendor/superpowers/skills"
+
+  # 旧整目录软链 → 迁移提示（不自动 rm，避免破坏性）
+  if [ -L "$dst_dir" ]; then
+    local cur
+    cur=$(readlink "$dst_dir")
+    if [ "$cur" = "$claude_skills_dir" ]; then
+      echo "[migrate] $dst_dir 当前是整目录软链到本仓 claude-skills/；新方案需要真目录 + 逐 skill 软链。"
+      echo "          请手动：rm $dst_dir && bash $0"
     else
-      echo "[warn] ${skill_dst} 不像本仓同步残留（SKILL.md 缺失或与源不一致），未自动删除"
+      echo "[warn] $dst_dir 是软链但指向 ${cur}（非本仓），人工核对后再处理"
     fi
+    return
+  fi
+
+  mkdir -p "$dst_dir"
+
+  local list_file
+  list_file=$(claude_skills_list_file)
+  if [ ! -f "$list_file" ]; then
+    echo "[warn] 白名单文件 $list_file 不存在，跳过 skill 同步"
+    return
+  fi
+
+  if [ "$list_file" = "$SRC/agents/skills.list.local" ]; then
+    echo "[skills] 使用本机覆盖清单: $list_file"
+  fi
+
+  local skill_name src_skill dst_skill cur
+  local skill_allowlist=()
+  while IFS= read -r skill_name; do
+    skill_allowlist+=("$skill_name")
+
+    if [ -d "$claude_skills_dir/$skill_name" ]; then
+      src_skill="$claude_skills_dir/$skill_name"
+    elif [ -d "$superpowers_dir/$skill_name" ]; then
+      src_skill="$superpowers_dir/$skill_name"
+    else
+      echo "[warn] skill '$skill_name' 在白名单中，但 claude-skills/ 与 vendor/superpowers/skills/ 都没有"
+      continue
+    fi
+
+    dst_skill="$dst_dir/$skill_name"
+
+    # 旧 rsync 残留真目录 → 智能迁移到软链
+    if [ ! -L "$dst_skill" ] && [ -d "$dst_skill" ]; then
+      if [ -f "$dst_skill/SKILL.md" ] && [ -f "$src_skill/SKILL.md" ] \
+          && cmp -s "$dst_skill/SKILL.md" "$src_skill/SKILL.md"; then
+        rm -rf "$dst_skill"
+        ln -s "$src_skill" "$dst_skill"
+        echo "[migrate] $dst_skill 从 rsync 真目录迁移为软链 → $src_skill"
+      else
+        echo "[warn] $dst_skill 已是真目录且与 $src_skill 不一致，未自动迁移；请人工核对"
+      fi
+      continue
+    fi
+
+    if [ -L "$dst_skill" ]; then
+      cur=$(readlink "$dst_skill")
+      if [ "$cur" = "$src_skill" ]; then
+        echo "[ok] $dst_skill -> $src_skill"
+      else
+        echo "[warn] $dst_skill 是软链但指向 ${cur}（预期 $src_skill），人工核对"
+      fi
+    elif [ -e "$dst_skill" ]; then
+      echo "[warn] $dst_skill 存在为非目录文件，人工核对"
+    else
+      ln -s "$src_skill" "$dst_skill"
+      echo "[linked] $dst_skill -> $src_skill"
+    fi
+  done < <(read_list_file "$list_file")
+
+  # 清理：本仓托管软链（target 在 claude-skills/ 或 vendor/superpowers/skills/ 下）
+  # 中不在白名单的，rm。真目录与 target 在外部的软链一律不动。
+  for dst_skill in "$dst_dir"/*; do
+    [ -L "$dst_skill" ] || continue
+    cur=$(readlink "$dst_skill")
+    case "$cur" in
+      "$claude_skills_dir"/*|"$superpowers_dir"/*)
+        skill_name=$(basename "$dst_skill")
+        if ! list_contains "$skill_name" "${skill_allowlist[@]}"; then
+          rm -f "$dst_skill"
+          echo "[cleanup] 已移除白名单外的本仓托管软链: $dst_skill"
+        fi
+        ;;
+    esac
   done
 }
 sync_claude_skills
