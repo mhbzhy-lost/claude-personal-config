@@ -31,6 +31,7 @@ EXTERNAL_REVIEWER = (
 )
 CODEX_HOOKS_JSON = REPO_ROOT / "codex" / "hooks.json"
 INIT_CODEX = REPO_ROOT / "init_codex.sh"
+INIT_OPENCODE = REPO_ROOT / "init_opencode.sh"
 
 
 def run_hook(script: Path, payload: dict) -> str:
@@ -542,6 +543,139 @@ sync_codex_skills
             self.assertTrue((user_skills_dir / "local-only").is_symlink())
             self.assertFalse((user_skills_dir / "default-only").exists())
             self.assertTrue((user_skills_dir / "external-only").is_symlink())
+
+
+    def _run_sync_opencode_plugins(self, *, repo_root: Path, config_dir: Path) -> subprocess.CompletedProcess[str]:
+        # Source init_opencode.sh in library mode (function defs only) and
+        # invoke sync_opencode_plugins against a controlled SRC + config dir.
+        # The sentinel `OPENCODE_INIT_AS_LIBRARY=1` is what makes this safe to
+        # run inside a unit test — it skips the opencode install check, the
+        # opencode.json merge, and the ~/.zshrc append.
+        script = (
+            f"source {shlex.quote(str(INIT_OPENCODE))}\n"
+            f"SRC={shlex.quote(str(repo_root))}\n"
+            f"OPENCODE_CONFIG_DIR={shlex.quote(str(config_dir))}\n"
+            "sync_opencode_plugins\n"
+        )
+        return subprocess.run(
+            ["bash", "-c", script],
+            text=True,
+            capture_output=True,
+            env={**__import__("os").environ, "OPENCODE_INIT_AS_LIBRARY": "1"},
+        )
+
+    def test_sync_opencode_plugins_upgrades_identical_cp_copy_to_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo_plugins = repo / "opencode" / "plugins"
+            repo_plugins.mkdir(parents=True)
+            (repo_plugins / "test-plugin.js").write_text("export default 1\n")
+
+            config_dir = tmp_path / "user-config"
+            (config_dir / "plugins").mkdir(parents=True)
+            # Identical cp copy of repo plugin
+            (config_dir / "plugins" / "test-plugin.js").write_text("export default 1\n")
+
+            proc = self._run_sync_opencode_plugins(repo_root=repo, config_dir=config_dir)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("升级为软链", proc.stdout)
+
+            dst = config_dir / "plugins" / "test-plugin.js"
+            self.assertTrue(dst.is_symlink(), f"expected symlink, got {dst}")
+            self.assertEqual(dst.resolve(), (repo_plugins / "test-plugin.js").resolve())
+
+    def test_sync_opencode_plugins_keeps_diverged_cp_copy_with_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo_plugins = repo / "opencode" / "plugins"
+            repo_plugins.mkdir(parents=True)
+            (repo_plugins / "p.js").write_text("export default 1\n")
+
+            config_dir = tmp_path / "user-config"
+            (config_dir / "plugins").mkdir(parents=True)
+            # Diverged copy — possibly a user local edit; must not be overwritten
+            (config_dir / "plugins" / "p.js").write_text("export default 999\n")
+
+            proc = self._run_sync_opencode_plugins(repo_root=repo, config_dir=config_dir)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("与仓内不一致", proc.stdout)
+
+            dst = config_dir / "plugins" / "p.js"
+            self.assertFalse(dst.is_symlink(), "diverged copy must remain a real file")
+            self.assertEqual(dst.read_text(), "export default 999\n")
+
+    def test_sync_opencode_plugins_creates_symlink_when_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo_plugins = repo / "opencode" / "plugins"
+            repo_plugins.mkdir(parents=True)
+            (repo_plugins / "fresh.js").write_text("export default 'fresh'\n")
+
+            config_dir = tmp_path / "user-config"
+            # plugins dir exists but is otherwise empty — keep it a real dir
+            # so we exercise per-file symlink mode rather than whole-dir.
+            (config_dir / "plugins").mkdir(parents=True)
+            (config_dir / "plugins" / ".keep").write_text("")
+
+            proc = self._run_sync_opencode_plugins(repo_root=repo, config_dir=config_dir)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("首次同步", proc.stdout)
+
+            dst = config_dir / "plugins" / "fresh.js"
+            self.assertTrue(dst.is_symlink())
+
+    def test_sync_opencode_plugins_preserves_user_managed_plugins(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo_plugins = repo / "opencode" / "plugins"
+            repo_plugins.mkdir(parents=True)
+            (repo_plugins / "managed.js").write_text("export default 'managed'\n")
+
+            config_dir = tmp_path / "user-config"
+            (config_dir / "plugins").mkdir(parents=True)
+            # User-managed plugin that does NOT exist in the repo — must be
+            # left alone; per-file symlink mode iterates over repo files only.
+            (config_dir / "plugins" / "user-only.ts").write_text("// my plugin\n")
+
+            proc = self._run_sync_opencode_plugins(repo_root=repo, config_dir=config_dir)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            user_file = config_dir / "plugins" / "user-only.ts"
+            self.assertTrue(user_file.is_file())
+            self.assertFalse(user_file.is_symlink())
+            self.assertEqual(user_file.read_text(), "// my plugin\n")
+            # The repo plugin should be a symlink now
+            self.assertTrue((config_dir / "plugins" / "managed.js").is_symlink())
+
+    def test_sync_opencode_plugins_idempotent_when_already_symlinked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo_plugins = repo / "opencode" / "plugins"
+            repo_plugins.mkdir(parents=True)
+            (repo_plugins / "p.js").write_text("export default 1\n")
+
+            config_dir = tmp_path / "user-config"
+            (config_dir / "plugins").mkdir(parents=True)
+            # Pre-existing correct symlink
+            (config_dir / "plugins" / "p.js").symlink_to(repo_plugins / "p.js")
+            # Add a sibling user file so per-file mode kicks in (plugins dir
+            # is a real dir, not a whole-dir symlink).
+            (config_dir / "plugins" / "user.js").write_text("// user\n")
+
+            proc = self._run_sync_opencode_plugins(repo_root=repo, config_dir=config_dir)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            # Should not log an upgrade or first-sync message for p.js
+            self.assertNotIn("p.js 升级", proc.stdout)
+            self.assertNotIn("p.js → 软链", proc.stdout)
+            # Symlink still in place, target unchanged
+            dst = config_dir / "plugins" / "p.js"
+            self.assertTrue(dst.is_symlink())
+            self.assertEqual(dst.resolve(), (repo_plugins / "p.js").resolve())
 
 
 if __name__ == "__main__":
