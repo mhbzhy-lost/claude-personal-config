@@ -441,6 +441,9 @@ else:
         print("[mcp] block-catalog 已是最新（venv 待初始化）")
 
 # ── playwright-mcp ──
+# 暴露两个 server，agent 自由选用：
+#   - playwright-mcp           （headed，默认；本地调试看得见浏览器）
+#   - playwright-mcp-headless  （--headless；自动化 / 远程 / CI 友好）
 desired_pw = {
     "type": "local",
     "command": ["npx", "-y", "@playwright/mcp"],
@@ -456,6 +459,22 @@ if existing_pw != desired_pw:
     changed = True
 else:
     print("[mcp] playwright-mcp 已是最新")
+
+desired_pw_headless = {
+    "type": "local",
+    "command": ["npx", "-y", "@playwright/mcp", "--headless"],
+    "enabled": True,
+}
+existing_pw_headless = mcp.get("playwright-mcp-headless")
+if existing_pw_headless != desired_pw_headless:
+    if existing_pw_headless is not None:
+        print("[mcp] playwright-mcp-headless 已有配置，更新为最新")
+    else:
+        print("[mcp] playwright-mcp-headless 新增")
+    mcp["playwright-mcp-headless"] = desired_pw_headless
+    changed = True
+else:
+    print("[mcp] playwright-mcp-headless 已是最新")
 
 # ── Plugin ──
 desired_plugins = [f"{src}/vendor/superpowers"]

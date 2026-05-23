@@ -512,6 +512,7 @@ for needle in (
     '[mcp_servers."skill-catalog"]',
     '[mcp_servers."block-catalog"]',
     '[mcp_servers."playwright-mcp"]',
+    '[mcp_servers."playwright-mcp-headless"]',
 ):
     if needle in stripped:
         print(
@@ -547,6 +548,11 @@ enabled = true
 [mcp_servers."playwright-mcp"]
 command = "npx"
 args = ["-y", "@playwright/mcp"]
+enabled = true
+
+[mcp_servers."playwright-mcp-headless"]
+command = "npx"
+args = ["-y", "@playwright/mcp", "--headless"]
 enabled = true
 ''',
 end_marker,

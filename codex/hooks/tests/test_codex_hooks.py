@@ -726,6 +726,39 @@ sync_codex_skills
             self.assertTrue((config_dir / "plugins" / "flat.js").is_symlink())
             self.assertFalse((config_dir / "plugins" / "subplugin").exists())
 
+    def test_init_scripts_register_playwright_mcp_headed_and_headless_pair(self) -> None:
+        # All three host init scripts must register both server names so the
+        # agent can freely pick headed (debug) vs headless (automation).
+        # We assert on the source text rather than running the scripts so the
+        # test stays hermetic and doesn't depend on `claude` CLI being
+        # installed in CI.
+        init_claude = (REPO_ROOT / "init_claude.sh").read_text()
+        self.assertIn("playwright-mcp npx -y @playwright/mcp", init_claude)
+        self.assertIn(
+            "playwright-mcp-headless npx -y @playwright/mcp --headless",
+            init_claude,
+        )
+
+        init_codex = INIT_CODEX.read_text()
+        self.assertIn('[mcp_servers."playwright-mcp"]', init_codex)
+        self.assertIn('[mcp_servers."playwright-mcp-headless"]', init_codex)
+        # Confirm headless arg propagates into the managed block, not lost
+        # in a comment.
+        self.assertRegex(
+            init_codex,
+            r'\[mcp_servers\."playwright-mcp-headless"\][^\[]*'
+            r'args\s*=\s*\["-y",\s*"@playwright/mcp",\s*"--headless"\]',
+        )
+
+        init_opencode = (REPO_ROOT / "init_opencode.sh").read_text()
+        self.assertIn('mcp["playwright-mcp"]', init_opencode)
+        self.assertIn('mcp["playwright-mcp-headless"]', init_opencode)
+        # The headless variant must carry --headless in its command list.
+        self.assertRegex(
+            init_opencode,
+            r'desired_pw_headless\s*=\s*\{[^}]*"--headless"',
+        )
+
     def test_sync_opencode_plugins_idempotent_when_already_symlinked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

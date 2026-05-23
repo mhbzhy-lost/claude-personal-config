@@ -794,7 +794,7 @@ if command -v claude >/dev/null 2>&1; then
     echo "[mcp] block-catalog venv 未就绪，跳过 MCP 注册"
   fi
 
-  # --- playwright-mcp MCP：浏览器自动化 ---
+  # --- playwright-mcp MCP：浏览器自动化（headed 模式，默认） ---
   if claude mcp get playwright-mcp 2>&1 | grep -q "Connected"; then
     echo "[mcp] playwright-mcp 已注册"
   else
@@ -803,6 +803,20 @@ if command -v claude >/dev/null 2>&1; then
       echo "[mcp] playwright-mcp 已注册到 user scope"
     else
       echo "[warn] playwright-mcp 注册失败，请确保 npx 可用"
+    fi
+  fi
+
+  # --- playwright-mcp-headless MCP：浏览器自动化（headless 模式） ---
+  # 双 server 暴露给 agent 自由选用：headed 适合本地调试看得见浏览器，
+  # headless 适合自动化 / 远程 / CI。
+  if claude mcp get playwright-mcp-headless 2>&1 | grep -q "Connected"; then
+    echo "[mcp] playwright-mcp-headless 已注册"
+  else
+    claude mcp remove playwright-mcp-headless -s user 2>/dev/null || true
+    if claude mcp add -s user -- playwright-mcp-headless npx -y @playwright/mcp --headless; then
+      echo "[mcp] playwright-mcp-headless 已注册到 user scope"
+    else
+      echo "[warn] playwright-mcp-headless 注册失败，请确保 npx 可用"
     fi
   fi
 else
