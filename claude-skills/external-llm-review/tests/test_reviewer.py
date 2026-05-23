@@ -289,6 +289,28 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
         self.assertIn("status_code=400", detail)
         self.assertIn("bad request", detail)
 
+    def test_run_review_rejects_legacy_api_format_env(self):
+        # Old .env files that still set EXTERNAL_LLM_API_FORMAT=anthropic|responses
+        # must fail loudly, not silently fall through to chat completions.
+        import asyncio
+        from io import StringIO
+        from unittest.mock import patch
+
+        args = reviewer.build_arg_parser().parse_args(["base", "head"])
+        skill_dir = Path(__file__).resolve().parent.parent
+        with patch.dict(
+            "os.environ",
+            {"EXTERNAL_LLM_API_FORMAT": "anthropic"},
+            clear=False,
+        ), patch("sys.stderr", new_callable=StringIO) as stderr:
+            exit_code = asyncio.run(
+                reviewer.run_review(args=args, skill_dir=skill_dir)
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("EXTERNAL_LLM_API_FORMAT", stderr.getvalue())
+        self.assertIn("no longer supported", stderr.getvalue())
+
     def test_describe_api_exception_decodes_and_redacts_response_body(self):
         class Response:
             status_code = 401

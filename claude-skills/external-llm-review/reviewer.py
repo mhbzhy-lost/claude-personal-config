@@ -14,8 +14,8 @@ ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN) / ANTHROPIC_MOD
 
 Usage:
     python reviewer.py <BASE_SHA> <HEAD_SHA> \
-        [--worktree PATH] [--spec FILE] [--max-diff N]
-        [--review-depth standard|exhaustive] [--review-round 1|2]
+        [--backend api|claude-code-cli] [--worktree PATH] [--spec FILE]
+        [--max-diff N] [--review-depth standard|exhaustive] [--review-round 1|2]
         [--max-issues N] [--max-output-tokens N] [--api-timeout-seconds N]
 
 Sandbox warning: this script POSTs source diffs to an external endpoint. Run only
@@ -650,6 +650,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
+    legacy_format = os.environ.get("EXTERNAL_LLM_API_FORMAT", "").strip()
+    if legacy_format and legacy_format.lower() != "chat":
+        print(
+            f"ERROR: EXTERNAL_LLM_API_FORMAT={legacy_format!r} is no longer supported. "
+            "Only chat-completions and claude-code-cli backends remain. "
+            "If you previously used 'anthropic' format, switch to "
+            "EXTERNAL_LLM_REVIEW_BACKEND=claude-code-cli with ANTHROPIC_BASE_URL "
+            "(see .env.example).",
+            file=sys.stderr,
+        )
+        return 1
+
     try:
         backend = resolve_review_backend(args, env=os.environ)
     except ValueError as exc:
@@ -776,12 +788,13 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
 
     try:
         hard_timeout = args.api_timeout_seconds if args.api_timeout_seconds > 0 else None
-        request_timeout = hard_timeout or 180
         async with asyncio.timeout(hard_timeout):
             async with AsyncOpenAI(api_key=api_key, base_url=base_url) as oclient:
                 chat_kwargs = {}
                 if args.max_output_tokens > 0:
                     chat_kwargs["max_tokens"] = args.max_output_tokens
+                if hard_timeout is not None:
+                    chat_kwargs["timeout"] = hard_timeout
                 resp = await oclient.chat.completions.create(
                     model=model,
                     messages=build_chat_messages(
@@ -789,7 +802,6 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
                         spec_block=spec_block,
                     ),
                     temperature=0.2,
-                    timeout=request_timeout,
                     **chat_kwargs,
                 )
                 content = extract_chat_content(resp)
