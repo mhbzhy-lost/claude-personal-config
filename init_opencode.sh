@@ -7,6 +7,7 @@
 # 职责：
 #   - MCP server：转为 opencode 原生格式写入 opencode.json（幂等）
 #   - Skills：opencode 原生读取 ~/.claude/skills/，已由 init_claude.sh 维护
+#   - OpenAI-compatible cache proxy：调用 vendor/opencode-cache-proxy 自带配置入口
 #
 # 不影响 ~/.claude.json / ~/.claude/，可独立运行。
 #
@@ -21,6 +22,7 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPENCODE_CONFIG_DIR="${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}"
 OPENCODE_JSON="$OPENCODE_CONFIG_DIR/opencode.json"
+BAILIAN_CACHE_PROXY_PORT="${BAILIAN_CACHE_PROXY_PORT:-48761}"
 
 # ===========================================================================
 # === Function definitions (safe to source) =================================
@@ -29,9 +31,9 @@ OPENCODE_JSON="$OPENCODE_CONFIG_DIR/opencode.json"
 # ── Plugin ──────────────────────────────────────────────
 # opencode 不兼容 Claude Code 的 settings.json hooks，改用原生 plugin 机制。
 # 策略：
-#   - 目标目录不存在 → 整目录软链到 opencode/plugins/（新增插件即时生效）
-#   - 目标已是正确软链 → 保留不动
-#   - 目标已是旧版本仓软链 → 自动迁移到 opencode/plugins/
+#   - 目标目录不存在 → 创建真实目录，仓内 plugin 逐文件软链进去
+#   - 目标已是本仓整目录软链 → 迁移为真实目录 + 逐文件软链
+#   - 目标已是旧版本仓软链 → 迁移为真实目录 + 逐文件软链
 #   - 目标已是软链但指向他处 → 警告
 #   - 目标是真目录（混着用户自管 plugin）→ per-file symlink 模式：
 #       · 仓内 plugin 各自建独立软链让仓改动自动同步
@@ -49,28 +51,31 @@ sync_opencode_plugins() {
 
   mkdir -p "$OPENCODE_CONFIG_DIR"
 
-  # 不存在 → 直接整目录软链
+  # 不存在 → 创建真实目录，避免 cache proxy 子仓配置写入时被整目录软链
+  # 重新映射回主仓 opencode/plugins/。
   if [ ! -e "$dst_path" ] && [ ! -L "$dst_path" ]; then
-    ln -s "$src_path" "$dst_path"
-    echo "[plugin] $dst_path -> ${src_path}（整目录软链）"
-    return
+    mkdir -p "$dst_path"
+    echo "[plugin] $dst_path 已创建（per-file symlink 模式）"
   fi
 
-  # 已是软链 → 校验目标后保留
+  # 已是本仓整目录软链 → 迁移为真实目录。cache proxy 插件现在由子仓
+  # 配置入口管理，继续保留整目录软链会把子仓写入反向落到主仓。
   if [ -L "$dst_path" ]; then
     local cur legacy_src_path
     cur=$(readlink "$dst_path")
     legacy_src_path="$SRC/opencode-plugins"
     if [ "$cur" = "$src_path" ]; then
-      echo "[plugin] $dst_path -> ${src_path}（已就绪）"
+      rm -f "$dst_path"
+      mkdir -p "$dst_path"
+      echo "[plugin] $dst_path 从整目录软链迁移为 per-file symlink 模式"
     elif [ "$cur" = "$legacy_src_path" ]; then
       rm -f "$dst_path"
-      ln -s "$src_path" "$dst_path"
-      echo "[plugin] $dst_path 从旧路径 ${legacy_src_path} 迁移到 ${src_path}"
+      mkdir -p "$dst_path"
+      echo "[plugin] $dst_path 从旧路径 ${legacy_src_path} 迁移为 per-file symlink 模式"
     else
       echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 opencode/plugins/），人工核对后再处理"
+      return
     fi
-    return
   fi
 
   # 是真目录 → per-file symlink 模式
@@ -156,70 +161,26 @@ sync_opencode_plugins() {
   done
 }
 
-sync_opencode_cache_proxy_plugin() {
-  local src_file="$SRC/vendor/opencode-cache-proxy/plugins/bailian-cache-proxy.js"
-  local dst_file="$SRC/opencode/plugins/bailian-cache-proxy.js"
+configure_opencode_cache_proxy() {
+  local config_cli="$SRC/vendor/opencode-cache-proxy/proxy/bin/bailian-cache-proxy-configure.mjs"
+  local plugin_dir="${OPENCODE_CACHE_PROXY_PLUGIN_DIR:-$OPENCODE_CONFIG_DIR/plugins}"
 
-  if [ ! -f "$src_file" ]; then
-    echo "[skip]  vendor/opencode-cache-proxy/plugins/bailian-cache-proxy.js 不存在，跳过"
+  if [ ! -f "$config_cli" ]; then
+    echo "[skip]  vendor/opencode-cache-proxy 配置入口不存在，跳过 OpenAI-compatible cache proxy"
+    return
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    echo "[warn]  node 不可用，无法运行 OpenAI-compatible cache proxy 配置入口，跳过"
     return
   fi
 
-  mkdir -p "$SRC/opencode/plugins"
-
-  if [ -L "$dst_file" ]; then
-    local cur
-    cur=$(readlink "$dst_file")
-    if [ "$cur" = "$src_file" ]; then
-      echo "[cache-proxy-plugin] $dst_file -> ${src_file}（已就绪）"
-    else
-      rm -f "$dst_file"
-      ln -s "$src_file" "$dst_file"
-      echo "[cache-proxy-plugin] $dst_file -> ${src_file}（已迁移）"
-    fi
-    return
-  fi
-
-  if [ -f "$dst_file" ]; then
-    rm -f "$dst_file"
-    ln -s "$src_file" "$dst_file"
-    echo "[cache-proxy-plugin] $dst_file -> ${src_file}（升级为软链）"
-    return
-  fi
-
-  ln -s "$src_file" "$dst_file"
-  echo "[cache-proxy-plugin] $dst_file -> ${src_file}（首次创建）"
-}
-
-sync_opencode_proxy() {
-  local src_path="$SRC/vendor/opencode-cache-proxy/proxy"
-  local dst_path="$OPENCODE_CONFIG_DIR/proxy"
-
-  if [ ! -d "$src_path" ]; then
-    echo "[skip]  vendor/opencode-cache-proxy/proxy/ 不存在，跳过"
-    return
-  fi
-
-  mkdir -p "$OPENCODE_CONFIG_DIR"
-
-  if [ ! -e "$dst_path" ] && [ ! -L "$dst_path" ]; then
-    ln -s "$src_path" "$dst_path"
-    echo "[proxy]  $dst_path -> ${src_path}"
-    return
-  fi
-
-  if [ -L "$dst_path" ]; then
-    local cur
-    cur=$(readlink "$dst_path")
-    if [ "$cur" = "$src_path" ]; then
-      echo "[proxy]  $dst_path -> ${src_path}（已就绪）"
-    else
-      echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 vendor/opencode-cache-proxy/proxy/），人工核对后再处理"
-    fi
-    return
-  fi
-
-  echo "[warn]  $dst_path 已存在且不是软链；请手动核对后指向 $src_path"
+  node "$config_cli" opencode \
+    --repo-root "$SRC/vendor/opencode-cache-proxy" \
+    --opencode-config "$OPENCODE_JSON" \
+    --opencode-plugin-mode symlink \
+    --opencode-plugin-dir "$plugin_dir" \
+    --opencode-api-key-env "${OPENCODE_CACHE_PROXY_API_KEY_ENV:-DASHSCOPE_API_KEY}" \
+    --port "$BAILIAN_CACHE_PROXY_PORT"
 }
 
 # ── shared/policies SSOT 软链 ────────────────────────────
@@ -324,9 +285,8 @@ fi
 echo "[skills] opencode 读取 ~/.claude/skills/，已由 init_claude.sh 维护，无需额外配置"
 
 # ── Run sync ────────────────────────────────────────────
-sync_opencode_cache_proxy_plugin
 sync_opencode_plugins
-sync_opencode_proxy
+configure_opencode_cache_proxy
 sync_opencode_shared
 sync_opencode_docs
 
@@ -339,7 +299,6 @@ EMBEDDING_MODEL="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
 OLLAMA_PORT="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
 OLLAMA_HOST_URL="http://127.0.0.1:$OLLAMA_PORT"
 ENABLE_INTENT_ENHANCEMENT="${ENABLE_INTENT_ENHANCEMENT:-true}"
-BAILIAN_CACHE_PROXY_PORT="${BAILIAN_CACHE_PROXY_PORT:-48761}"
 
 BLOCK_CATALOG_DIR="$SRC/mcp/block-catalog"
 BLOCK_CATALOG_VENV="$BLOCK_CATALOG_DIR/.venv"
@@ -369,7 +328,6 @@ export EMBEDDING_MODEL="$EMBEDDING_MODEL"
 export OLLAMA_HOST_URL="$OLLAMA_HOST_URL"
 export ENABLE_INTENT_ENHANCEMENT="$ENABLE_INTENT_ENHANCEMENT"
 export BC_CMD="$BC_CMD"
-export BAILIAN_CACHE_PROXY_PORT="$BAILIAN_CACHE_PROXY_PORT"
 
 $PY -c '
 import json, os, sys
@@ -381,7 +339,6 @@ src = os.environ["SRC"]
 embedding_model = os.environ["EMBEDDING_MODEL"]
 ollama_host = os.environ["OLLAMA_HOST_URL"]
 intent_enhancement = os.environ["ENABLE_INTENT_ENHANCEMENT"]
-bailian_cache_proxy_port = os.environ["BAILIAN_CACHE_PROXY_PORT"]
 
 config = {}
 if os.path.exists(config_path):
@@ -524,48 +481,6 @@ if existing_plugins != desired_plugins:
     changed = True
 else:
     print("[plugin] plugin 已是最新")
-
-# ── Bailian cache proxy provider ──
-# 只新增一个显式的百炼 provider；其他 provider 不会经过本地代理。
-providers = config.setdefault("provider", {})
-desired_bailian_cache = {
-    "npm": "@ai-sdk/openai-compatible",
-    "name": "Bailian custom cached",
-    "options": {
-        "baseURL": f"http://127.0.0.1:{bailian_cache_proxy_port}/compatible-mode/v1",
-        "apiKey": "{env:DASHSCOPE_API_KEY}",
-    },
-    # Aligned with the token-plan endpoint catalog (实测 GET /models 2026-05-23):
-    # only qwen-family text models that actually exist on the user endpoint.
-    # Adding non-existent ids would 400 with Model not exist the moment a
-    # user picks them in the OpenCode UI.
-    #
-    # Each real model is exposed twice — bare alias keeps the model default
-    # (enable_thinking=true, budget=max) and the -nothink variant tells the
-    # proxy to inject enable_thinking=false. The proxy strips the -nothink
-    # suffix before forwarding so the upstream sees only the real model id.
-    "models": {
-        "qwen3.6-plus": {"name": "Qwen 3.6 Plus"},
-        "qwen3.6-plus-nothink": {"name": "Qwen 3.6 Plus (no thinking)"},
-        "qwen3.6-flash": {"name": "Qwen 3.6 Flash"},
-        "qwen3.6-flash-nothink": {"name": "Qwen 3.6 Flash (no thinking)"},
-        "qwen3.7-max": {"name": "Qwen 3.7 Max"},
-        "qwen3.7-max-nothink": {"name": "Qwen 3.7 Max (no thinking)"},
-    },
-}
-if providers.pop("bailian-cache", None) is not None:
-    print("[provider] 已移除旧名 bailian-cache，改用 bailian-custom-cached")
-    changed = True
-existing_bailian_cache = providers.get("bailian-custom-cached")
-if existing_bailian_cache != desired_bailian_cache:
-    if existing_bailian_cache is not None:
-        print("[provider] bailian-custom-cached 已有配置，更新为本地缓存代理")
-    else:
-        print("[provider] bailian-custom-cached 新增（仅该 provider 走本地缓存代理）")
-    providers["bailian-custom-cached"] = desired_bailian_cache
-    changed = True
-else:
-    print("[provider] bailian-custom-cached 已是最新")
 
 # ── LSP ──
 # 内置 LSP 仅支持 boolean (true/false) 或 object (disable/custom)。

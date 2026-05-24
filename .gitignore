@@ -31,6 +31,12 @@ mcp/skill-catalog/.embeddings-cache/
 # Claude Code provider 凭据（claude/settings/.env 含 ANTHROPIC_AUTH_TOKEN_*，不入 git）
 claude/settings/.env
 
+# OpenCode cache proxy 本机凭据（含 DASHSCOPE_API_KEY / upstream URL），勿提交
+opencode/proxy/.env
+
+# Qwen Code 本机备份文件
+.qwen/*.orig
+
 # 用户自定义清单：覆盖 lists/*.list 默认值，仅本机生效
 lists/*.local.list
 codex/skills.list.local

@@ -2,6 +2,7 @@
   "tool_names": {
     "claude": "mcp__skill-catalog__resolve",
     "codex": "mcp__skill-catalog__resolve",
+    "qwen": "mcp__skill-catalog__resolve",
     "opencode": "skill-catalog_resolve"
   },
   "escape_hatch_marker": "skip-skill-resolve-preflight",

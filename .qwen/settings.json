@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(do *)",
+      "Bash(wc *)",
+      "Bash(echo *)",
+      "Bash(done)",
+      "Bash(ls *)"
+    ]
+  },
+  "$version": 4
+}

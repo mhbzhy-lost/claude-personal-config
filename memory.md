@@ -298,3 +298,24 @@ renderer 校验，这会让生成物与 canonical output 不一致，下一次 `
 
 **判断原则**：凡是 generated artifact 被 canonical check 管控，空白问题默认先查
 generator，不要把手工编辑生成物当成修复。
+
+## tmux wheel binding 覆盖破坏 TUI 应用滚动
+
+**现象**：通过 tmux session 封装 opencode/codex（或任何使用 alternate screen buffer
+的 TUI 应用），滚轮无法滚动查看应用内历史。
+
+**根因**：`configure_tmux_session` 用 session-level `bind-key` 自定义了
+`WheelUpPane`/`WheelDownPane`，强制进入 `copy-mode`。即使加了 `alternate_screen`
+判断（错误用法：tmux 的正确变量名是 `alternate_on` 而非 `alternate_screen`），
+也会覆盖 tmux 3.6a 内置的默认绑定——而内置绑定本身已经正确处理了三种场景：
+`#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}` 为真时透传给应用，
+否则才进入 `copy-mode -e`。
+
+**修法**：移除 session-level 的 `WheelUpPane`/`WheelDownPane` 自定义 `bind-key`，
+只保留 `mouse on` / `history-limit` / `mode-keys vi`，让 tmux 内置默认绑定生效。
+
+**已修**：`bin/remote-opencode`、`bin/remote-codex` 的 `configure_tmux_session`
+函数。部署后需要 `tmux kill-server` 杀旧 session 再重连才能生效。
+
+**通用规则**：不要在 `mouse on` 的 session 里覆盖 `WheelUpPane`/`WheelDownPane`，
+tmux 3.5+ 内置的 wheel binding 已经是最优解。
