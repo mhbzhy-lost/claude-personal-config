@@ -353,3 +353,18 @@ curl: (7) Failed to connect to 127.0.0.1 port 7897 after 0 ms: Couldn't connect 
 
 **解法**：本地 smoke 用 `curl --noproxy '*' ...` 绕过代理。若服务在沙箱外启动，
 curl 本身也要在沙箱外执行，否则还会受 Codex 沙箱本地端口隔离影响。
+
+## opencode task tool 的 subagent_type 只有 explore 和 general
+
+**现象**：派发 subagent 时报 `Unknown agent type: general-purpose is not a valid
+agent type`。
+
+**根因**：opencode task tool 的 `subagent_type` 参数只接受两个值：
+
+- `explore`：专用于代码探索、文件搜索、关键字检索
+- `general`：通用多步骤任务
+
+**易错点**：容易混淆 `general-purpose`（Claude Code 的 agent type）与 opencode
+的 `general`。两者不是同一个枚举。派发 opencode 任务时只用 `general` 或 `explore`。
+
+**规避**：每次调 task tool 前，`subagent_type` 直接写 `general`，不要尝试其他名字。
