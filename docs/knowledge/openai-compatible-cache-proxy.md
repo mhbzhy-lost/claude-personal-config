@@ -96,3 +96,4 @@ git -C vendor/opencode-cache-proxy diff --check
 - `vendor/opencode-cache-proxy/proxy/src/client-config.mjs`
 - `vendor/opencode-cache-proxy/proxy/src/server.mjs`
 - `docs/bugs/bug-opencode-cache-proxy-plugin-boundary.md`
+- `docs/bugs/bug-opencode-ak-missing.md`
