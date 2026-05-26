@@ -787,6 +787,129 @@ sync_codex_skills
             self.assertTrue(dst.is_symlink())
             self.assertEqual(dst.resolve(), (repo_plugins / "p.js").resolve())
 
+    def test_init_opencode_required_submodules_updates_missing_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo.mkdir()
+            (repo / ".gitmodules").write_text(
+                "\n".join(
+                    [
+                        '[submodule "vendor/superpowers"]',
+                        "\tpath = vendor/superpowers",
+                        "\turl = git@example.test:superpowers.git",
+                        '[submodule "vendor/opencode-cache-proxy"]',
+                        "\tpath = vendor/opencode-cache-proxy",
+                        "\turl = git@example.test:opencode-cache-proxy.git",
+                        "",
+                    ]
+                )
+            )
+            git_log = tmp_path / "git.log"
+            fake_git = tmp_path / "git"
+            fake_git.write_text(
+                "\n".join(
+                    [
+                        "#!/usr/bin/env bash",
+                        "set -euo pipefail",
+                        f'echo "$*" >> {shlex.quote(str(git_log))}',
+                        'if [ "$1" = "config" ]; then',
+                        '  echo "submodule.vendor/superpowers.path vendor/superpowers"',
+                        '  echo "submodule.vendor/opencode-cache-proxy.path vendor/opencode-cache-proxy"',
+                        "  exit 0",
+                        "fi",
+                        'if [ "$1" = "-C" ] && [ "$3" = "submodule" ]; then',
+                        '  repo="$2"',
+                        '  requested=""',
+                        '  for arg in "$@"; do requested="$arg"; done',
+                        '  case "$requested" in',
+                        '    vendor/opencode-cache-proxy)',
+                        '      mkdir -p "$repo/vendor/opencode-cache-proxy/proxy/bin"',
+                        '      touch "$repo/vendor/opencode-cache-proxy/proxy/bin/bailian-cache-proxy-configure.mjs"',
+                        "      ;;",
+                        '    vendor/superpowers)',
+                        '      mkdir -p "$repo/vendor/superpowers/skills"',
+                        "      ;;",
+                        "  esac",
+                        "  exit 0",
+                        "fi",
+                        "exit 2",
+                        "",
+                    ]
+                )
+            )
+            fake_git.chmod(0o755)
+
+            script = (
+                f"source {shlex.quote(str(INIT_OPENCODE))}\n"
+                f"SRC={shlex.quote(str(repo))}\n"
+                f"GIT_CMD={shlex.quote(str(fake_git))}\n"
+                "ensure_opencode_required_submodules\n"
+            )
+            proc = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                env={**__import__("os").environ, "OPENCODE_INIT_AS_LIBRARY": "1"},
+            )
+
+            self.assertEqual(proc.returncode, 0, f"stderr={proc.stderr}\nstdout={proc.stdout}")
+            self.assertIn("vendor/opencode-cache-proxy", proc.stdout)
+            self.assertIn("vendor/superpowers", proc.stdout)
+            log = git_log.read_text()
+            self.assertIn("submodule update --init --recursive -- vendor/opencode-cache-proxy", log)
+            self.assertIn("submodule update --init --recursive -- vendor/superpowers", log)
+
+    def test_init_opencode_checks_submodules_before_installing_opencode(self) -> None:
+        init_opencode = INIT_OPENCODE.read_text()
+        main_flow = init_opencode.split("# === Main flow", 1)[1]
+        self.assertLess(
+            main_flow.index("ensure_opencode_required_submodules"),
+            main_flow.index("ensure_opencode_installed"),
+        )
+
+    def test_init_opencode_uses_local_binary_outside_path_before_installing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            local_bin = tmp_path / "local-opencode" / "opencode"
+            local_bin.parent.mkdir(parents=True)
+            local_bin.write_text("#!/usr/bin/env bash\necho opencode-local\n")
+            local_bin.chmod(0o755)
+
+            fake_path = tmp_path / "fake-path"
+            fake_path.mkdir()
+            curl_log = tmp_path / "curl.log"
+            fake_curl = fake_path / "curl"
+            fake_curl.write_text(
+                "#!/usr/bin/env bash\n"
+                f'echo called >> {shlex.quote(str(curl_log))}\n'
+                "exit 88\n"
+            )
+            fake_curl.chmod(0o755)
+
+            script = (
+                f"source {shlex.quote(str(INIT_OPENCODE))}\n"
+                f"OPENCODE_BIN={shlex.quote(str(local_bin))}\n"
+                "ensure_opencode_installed\n"
+                'printf "resolved=%s\\n" "$(command -v opencode)"\n'
+                "opencode --version\n"
+            )
+            proc = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+                env={
+                    **__import__("os").environ,
+                    "OPENCODE_INIT_AS_LIBRARY": "1",
+                    "PATH": f"{fake_path}:/usr/bin:/bin",
+                },
+            )
+
+            self.assertEqual(proc.returncode, 0, f"stderr={proc.stderr}\nstdout={proc.stdout}")
+            self.assertIn(f"resolved={local_bin}", proc.stdout)
+            self.assertIn("opencode-local", proc.stdout)
+            self.assertFalse(curl_log.exists(), "curl installer must not run when OPENCODE_BIN is executable")
+
 
 if __name__ == "__main__":
     unittest.main()

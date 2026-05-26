@@ -28,6 +28,121 @@ BAILIAN_CACHE_PROXY_PORT="${BAILIAN_CACHE_PROXY_PORT:-48761}"
 # === Function definitions (safe to source) =================================
 # ===========================================================================
 
+# ── Submodules ──────────────────────────────────────────
+opencode_submodule_declared() {
+  local submodule_path="$1"
+  local git_cmd="${GIT_CMD:-git}"
+
+  [ -f "$SRC/.gitmodules" ] || return 1
+
+  local config_key configured_path
+  while read -r config_key configured_path; do
+    [ "${configured_path:-}" = "$submodule_path" ] && return 0
+  done < <("$git_cmd" config --file "$SRC/.gitmodules" --get-regexp '^submodule\..*\.path$' 2>/dev/null || true)
+
+  return 1
+}
+
+ensure_opencode_submodule_ready() {
+  local submodule_path="$1"
+  local required_path="$2"
+  local git_cmd="${GIT_CMD:-git}"
+
+  if [ -e "$required_path" ]; then
+    echo "[submodule] ${submodule_path} 已就绪"
+    return 0
+  fi
+
+  if ! command -v "$git_cmd" >/dev/null 2>&1; then
+    echo "[error] git 不可用，无法初始化 ${submodule_path}"
+    return 1
+  fi
+
+  if ! opencode_submodule_declared "$submodule_path"; then
+    echo "[error] .gitmodules 未声明 ${submodule_path}，无法自动初始化"
+    return 1
+  fi
+
+  echo "[submodule] ${submodule_path} 未初始化或内容不完整，执行 git submodule update"
+  if ! "$git_cmd" -C "$SRC" submodule update --init --recursive -- "$submodule_path"; then
+    echo "[error] ${submodule_path} 初始化失败，请检查网络或 git 凭据"
+    return 1
+  fi
+
+  if [ ! -e "$required_path" ]; then
+    echo "[error] ${submodule_path} 初始化后仍缺少 ${required_path}"
+    return 1
+  fi
+
+  echo "[submodule] ${submodule_path} 已拉取"
+}
+
+ensure_opencode_required_submodules() {
+  ensure_opencode_submodule_ready \
+    "vendor/opencode-cache-proxy" \
+    "$SRC/vendor/opencode-cache-proxy/proxy/bin/bailian-cache-proxy-configure.mjs"
+  ensure_opencode_submodule_ready \
+    "vendor/superpowers" \
+    "$SRC/vendor/superpowers/skills"
+}
+
+# ── OpenCode binary ─────────────────────────────────────
+find_opencode_binary() {
+  if command -v opencode >/dev/null 2>&1; then
+    command -v opencode
+    return 0
+  fi
+
+  local candidate
+  for candidate in \
+    "${OPENCODE_BIN:-}" \
+    "$HOME/.opencode/bin/opencode" \
+    "$HOME/.local/bin/opencode" \
+    "/opt/homebrew/bin/opencode" \
+    "/usr/local/bin/opencode"; do
+    [ -n "$candidate" ] || continue
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+activate_opencode_binary() {
+  local opencode_bin="$1"
+  local opencode_dir
+  opencode_dir="$(dirname "$opencode_bin")"
+
+  case ":$PATH:" in
+    *":$opencode_dir:"*) ;;
+    *) export PATH="$opencode_dir:$PATH" ;;
+  esac
+}
+
+ensure_opencode_installed() {
+  local opencode_bin
+
+  if opencode_bin="$(find_opencode_binary)"; then
+    activate_opencode_binary "$opencode_bin"
+    echo "[ok] OpenCode 已安装 ($(opencode --version 2>/dev/null || echo 'version unknown'))"
+    return 0
+  fi
+
+  echo "[install] OpenCode 未安装，使用官方脚本安装..."
+  curl -fsSL https://opencode.ai/install | bash
+
+  if opencode_bin="$(find_opencode_binary)"; then
+    activate_opencode_binary "$opencode_bin"
+    echo "[install] OpenCode 安装完成"
+    return 0
+  fi
+
+  echo "[error] OpenCode 安装失败，请手动安装后重试：https://opencode.ai"
+  return 1
+}
+
 # ── Plugin ──────────────────────────────────────────────
 # opencode 不兼容 Claude Code 的 settings.json hooks，改用原生 plugin 机制。
 # 策略：
@@ -266,18 +381,11 @@ sync_opencode_docs() {
 # === Main flow =============================================================
 # ===========================================================================
 
+# ── Submodules ──────────────────────────────────────────
+ensure_opencode_required_submodules
+
 # ── 确保 OpenCode 已安装 ────────────────────────────────
-if ! command -v opencode >/dev/null 2>&1; then
-  echo "[install] OpenCode 未安装，使用官方脚本安装..."
-  curl -fsSL https://opencode.ai/install | bash
-  if ! command -v opencode >/dev/null 2>&1; then
-    echo "[error] OpenCode 安装失败，请手动安装后重试：https://opencode.ai"
-    exit 1
-  fi
-  echo "[install] OpenCode 安装完成"
-else
-  echo "[ok] OpenCode 已安装 ($(opencode --version 2>/dev/null || echo 'version unknown'))"
-fi
+ensure_opencode_installed
 
 # ── Skills ──────────────────────────────────────────────
 # opencode 原生搜索路径含 ~/.claude/skills/<name>/SKILL.md，

@@ -319,3 +319,37 @@ generator，不要把手工编辑生成物当成修复。
 
 **通用规则**：不要在 `mouse on` 的 session 里覆盖 `WheelUpPane`/`WheelDownPane`，
 tmux 3.5+ 内置的 wheel binding 已经是最优解。
+
+## Codex 沙箱内本地端口监听 / 访问被拒
+
+**现象**：在 Codex 沙箱内启动 Uvicorn 等本地 HTTP 服务时报：
+
+```text
+[Errno 1] error while attempting to bind on address ('0.0.0.0', 18080): operation not permitted
+```
+
+改成 `127.0.0.1` 仍然可能报同类错误。即使服务在沙箱外启动成功，沙箱内
+`curl --noproxy '*' http://127.0.0.1:<port>/...` 也可能连接失败。
+
+**根因**：当前 Codex 沙箱限制进程监听本地 socket，并隔离沙箱内进程访问沙箱外
+启动的本地端口。这是本地验证环境限制，不代表应用启动脚本或 HTTP 服务不可用。
+
+**解法**：需要真实端口 smoke 时，用 `require_escalated` 在沙箱外启动服务，并且
+也在沙箱外执行 `curl` 验证。不要因为本地沙箱报错把容器生产默认 host 从
+`0.0.0.0` 改成 `127.0.0.1`，否则容器外部可能无法访问。
+
+## 本地 curl 被代理到 127.0.0.1:7897
+
+**现象**：请求本地服务时：
+
+```text
+curl: (7) Failed to connect to 127.0.0.1 port 7897 after 0 ms: Couldn't connect to server
+```
+
+明明命令目标是 `127.0.0.1:<service-port>`，错误却显示连接代理端口 `7897`。
+
+**根因**：shell 环境里存在 HTTP 代理变量，但 localhost 没有被 `NO_PROXY` 正确
+排除，`curl` 先连接本机代理；代理未运行或沙箱内不可达，于是请求没有到达服务。
+
+**解法**：本地 smoke 用 `curl --noproxy '*' ...` 绕过代理。若服务在沙箱外启动，
+curl 本身也要在沙箱外执行，否则还会受 Codex 沙箱本地端口隔离影响。
