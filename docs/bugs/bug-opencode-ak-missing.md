@@ -49,13 +49,20 @@ OpenCode 和 proxy 的密钥变量名处在旧/新配置混用状态：本地 `.
 - 所有通过 `openai-compatible-cached` provider 访问本地 proxy 的 OpenCode 会话。
 - GUI 或非交互 shell 启动 OpenCode 时更容易触发，因为不会读取用户 shell 中临时 export 的 `DASHSCOPE_API_KEY`。
 - Qwen Code 或其他客户端如果依赖同一个 `proxy/.env`，且没有单独设置 `OPENAI_COMPATIBLE_API_KEY`，也可能触发同类 401。
-- `init_opencode.sh` 当前仍用 `OPENCODE_CACHE_PROXY_API_KEY_ENV:-DASHSCOPE_API_KEY` 生成 OpenCode provider，会继续制造旧变量名配置。
+- 修复前 `init_opencode.sh` 仍用 `OPENCODE_CACHE_PROXY_API_KEY_ENV:-DASHSCOPE_API_KEY` 生成 OpenCode provider，会继续制造旧变量名配置。
 
 ## 修复方案草案
 
 推荐分两层处理：
 
-1. 立即恢复本机可用性：在 `vendor/opencode-cache-proxy/proxy/.env` 中补充 `OPENAI_COMPATIBLE_API_KEY` 和 `OPENAI_COMPATIBLE_UPSTREAM_BASE_URL`，值分别与现有 `DASHSCOPE_API_KEY` / `DASHSCOPE_BASE_URL` 对齐，然后重启 OpenCode/proxy。
-2. 修仓库根因：把 `init_opencode.sh` 的默认 provider env 从 `DASHSCOPE_API_KEY` 改为 `OPENAI_COMPATIBLE_API_KEY`，并考虑在初始化逻辑里提示或迁移旧 `.env` 变量名，避免下次重跑 init 后再次写回旧变量名。
+1. 立即恢复本机可用性：在 `vendor/opencode-cache-proxy/proxy/.env` 中把 `DASHSCOPE_API_KEY` / `DASHSCOPE_BASE_URL` 直接重命名为 `OPENAI_COMPATIBLE_API_KEY` / `OPENAI_COMPATIBLE_UPSTREAM_BASE_URL`，保留原值，然后重启 OpenCode/proxy。
+2. 修仓库根因：把 `init_opencode.sh` 的默认 provider env 从 `DASHSCOPE_API_KEY` 改为 `OPENAI_COMPATIBLE_API_KEY`，避免下次重跑 init 后再次写回旧变量名。
 
 第一步只改本地忽略文件，不进 Git；第二步是仓库代码变更，需要补充覆盖初始化配置生成路径的测试或等效验证。
+
+## 修复后验证
+
+- `opencode run --format json 'Reply with exactly OK.'` 不再返回 401；usage 记录出现 `status=200`。
+- `bash scripts/test-init-opencode-cache-proxy.sh` 通过，覆盖 OpenCode provider env 名生成路径。
+- `bash -n init_opencode.sh` 通过。
+- `git diff --check` 通过。

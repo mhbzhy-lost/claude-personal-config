@@ -294,7 +294,7 @@ configure_opencode_cache_proxy() {
     --opencode-config "$OPENCODE_JSON" \
     --opencode-plugin-mode symlink \
     --opencode-plugin-dir "$plugin_dir" \
-    --opencode-api-key-env "${OPENCODE_CACHE_PROXY_API_KEY_ENV:-DASHSCOPE_API_KEY}" \
+    --opencode-api-key-env "${OPENCODE_CACHE_PROXY_API_KEY_ENV:-OPENAI_COMPATIBLE_API_KEY}" \
     --port "$BAILIAN_CACHE_PROXY_PORT"
 }
 

@@ -33,7 +33,7 @@ with config_path.open(encoding="utf-8") as f:
 
 provider = config["provider"]["openai-compatible-cached"]
 assert provider["options"]["baseURL"] == "http://127.0.0.1:48761/compatible-mode/v1"
-assert provider["options"]["apiKey"] == "{env:DASHSCOPE_API_KEY}"
+assert provider["options"]["apiKey"] == "{env:OPENAI_COMPATIBLE_API_KEY}"
 assert "qwen3.6-plus" in provider["models"]
 assert "qwen3.7-max" in provider["models"]
 assert "bailian-custom-cached" not in config["provider"]
