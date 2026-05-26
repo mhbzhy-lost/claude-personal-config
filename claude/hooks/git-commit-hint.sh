@@ -13,7 +13,6 @@ if ! RESPONSE="$(HINT_CONTENT_PATH="${HINT_CONTENT_PATH}" HINT_HOST="claude" pyt
 import json
 import os
 import re
-import shlex
 import sys
 from pathlib import Path
 
@@ -47,27 +46,16 @@ def tool_env_requests_skip(tool_input):
 
 
 def command_env_prefix_requests_skip(cmd):
-    try:
-        tokens = shlex.split(cmd, posix=True)
-    except ValueError:
-        return False
-
-    if not tokens:
-        return False
-    if tokens[0] == "env":
-        tokens = tokens[1:]
-
-    skip_requested = False
-    idx = 0
-    while idx < len(tokens):
-        name, separator, value = tokens[idx].partition("=")
-        if not separator or not name.isidentifier():
-            break
-        if name == SKIP_ENV_NAME and is_truthy(value):
-            skip_requested = True
-        idx += 1
-
-    return skip_requested and idx + 1 < len(tokens) and tokens[idx:idx + 2] == ["git", "commit"]
+    # Match GIT_COMMIT_HINT_SKIP=<truthy> immediately before `git commit`
+    # anywhere in the command string (handles &&, ||, ;, heredocs, $() etc.)
+    pattern = r'(?:^|[;&|]\s*|&&\s*|\|\|\s*)' \
+              r'(?:env\s+)?' \
+              r'(?:\w+=\S*\s+)*' \
+              rf'{SKIP_ENV_NAME}=(\S+)' \
+              r'(?:\s+\w+=\S*)*' \
+              r'\s+git\s+commit'
+    m = re.search(pattern, cmd)
+    return bool(m) and is_truthy(m.group(1))
 
 raw = sys.stdin.read()
 try:
