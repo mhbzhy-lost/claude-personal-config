@@ -94,11 +94,26 @@ git -C vendor/opencode-cache-proxy diff --check
 - 主仓 `opencode/plugins/bailian-cache-proxy.js` 不存在；
 - 第二遍配置快照无差异。
 
+## 未来工作（当前未实施）
+
+子仓 `docs/TODO.md` 沉淀了 3 项远期待办，**每项都带明确触发条件，不得提前实施**：
+
+- **上游 profile 抽象**（DashScope / Anthropic / OpenAI 差异表 + 骨架代码）
+  → 触发：真正接入第二个 upstream 时落地；当前硬编码 5min TTL 与 max markers=4
+- **Keepalive 防 TTL 过期**（按 prefix hash 索引 + PID 反查表，env 开关默认 OFF）
+  → 触发：cache-stats 显示 TTL_EXPIRED 占比 > 5%
+- **cache-stats 按策略分段输出**（fraction vs turn-stable）
+  → 触发：策略切换后需要对比真实收益
+
+维护知识文档时如看到相关设计讨论，应指向子仓 `docs/TODO.md` 而非在本仓复制。
+子仓的 TODO 是单一来源，避免双份维护漂移。
+
 ## 相关资料
 
 - `vendor/opencode-cache-proxy/README.md`
 - `vendor/opencode-cache-proxy/proxy/README.md`
 - `vendor/opencode-cache-proxy/proxy/src/client-config.mjs`
 - `vendor/opencode-cache-proxy/proxy/src/server.mjs`
+- `vendor/opencode-cache-proxy/docs/TODO.md` — 子仓远期待办（上游 profile、keepalive、stats 分段）
 - `docs/bugs/bug-opencode-cache-proxy-plugin-boundary.md`
 - `docs/bugs/bug-opencode-ak-missing.md`
