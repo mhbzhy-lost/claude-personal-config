@@ -12,14 +12,10 @@
     "opencode": "完成上述步骤后，请设置 bash 工具环境变量 `GIT_COMMIT_HINT_SKIP=1` 以放行；若当前工具没有结构化 env 字段，可使用命令前缀 `GIT_COMMIT_HINT_SKIP=1 git commit ...`。"
   },
   "template": [
-    "{hook_name} 准备执行 git commit，提交前必须完成以下检查：",
-    "1) 读取 git-commit skill 获取 commit message 规范，再生成 message。",
-    "2) 【强制】必须先调用 Skill 工具加载 external-llm-review skill（name: external-llm-review），读取完整指令后严格执行，不得跳过、不得仅凭印象执行。未加载 skill 直接跑 review 视为流程违规。",
-    "3) 知识文档检查：查看 staged diff，并按 `{knowledge_readme}` 判断是否需要更新当前项目的 `docs/knowledge/`。",
-    "   - 如明确本项目不需维护知识文档：直接走 escape，并在 commit message 说明原因。",
-    "   - 如需更新：先更新对应知识文档，再提交。",
-    "   - 如已更新：commit message 建议包含 `Knowledge: updated <path>`。",
-    "   - 如无需更新：commit message 建议包含 `Knowledge: not needed - <具体原因>`。",
+    "{hook_name} 提交前必须完成：",
+    "1) 加载 git-commit skill，按规范生成 commit message。",
+    "2) 加载 external-llm-review skill 并执行异源复审（不得跳过或凭印象执行）。",
+    "3) 知识文档：按 `{knowledge_readme}` 判断是否需更新 `docs/knowledge/`。需要则先更新再提交；不需要则 commit message 注明原因。",
     "{escape_instruction}"
   ]
 }
