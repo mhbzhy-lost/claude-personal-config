@@ -300,6 +300,15 @@ desired_sub_start_hooks = []
 # 在无意图信号的情况下退化成全量检索。
 desired_pretooluse_hooks = [
     {
+        "matcher": "Edit|Write",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/claude/hooks/coding-guard.sh",
+            }
+        ],
+    },
+    {
         "matcher": "mcp__skill-catalog__resolve",
         "hooks": [
             {
@@ -314,6 +323,18 @@ desired_pretooluse_hooks = [
             {
                 "type": "command",
                 "command": f"{src_root}/claude/hooks/git-commit-hint.sh",
+            }
+        ],
+    },
+]
+
+# Stop hook：终态验证提醒
+desired_stop_hooks = [
+    {
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/claude/hooks/stop-verification.sh",
             }
         ],
     },
@@ -367,6 +388,28 @@ for desired in desired_pretooluse_hooks:
         pretool_use[found_idx] = desired
         changed = True
         print(f"[settings] 更新 hooks.PreToolUse[matcher={matcher!r}]")
+
+# 合并 hooks.Stop：无 matcher，按 command 路径 upsert
+stop_hooks = hooks.setdefault("Stop", [])
+for desired in desired_stop_hooks:
+    cmd = desired["hooks"][0]["command"]
+    found_idx = None
+    for i, entry in enumerate(stop_hooks):
+        if isinstance(entry, dict):
+            for h in entry.get("hooks", []):
+                if isinstance(h, dict) and h.get("command") == cmd:
+                    found_idx = i
+                    break
+        if found_idx is not None:
+            break
+    if found_idx is None:
+        stop_hooks.append(desired)
+        changed = True
+        print(f"[settings] 新增 hooks.Stop[command=...stop-verification.sh]")
+    elif stop_hooks[found_idx] != desired:
+        stop_hooks[found_idx] = desired
+        changed = True
+        print(f"[settings] 更新 hooks.Stop[command=...stop-verification.sh]")
 
 # 一次性清理：移除已废弃的 SubagentStart hooks
 #   skill-marker        → capability-taxonomy-inject.sh （旧多 agent 编排架构遗留）

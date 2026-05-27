@@ -36,6 +36,8 @@ CODEX_HOOKS_DIR="$SRC/codex/hooks"
 CODEX_SKILL_PREFLIGHT_HOOK_REL="codex/hooks/skill-resolve-preflight.sh"
 CODEX_GIT_COMMIT_HOOK_REL="codex/hooks/git-commit-hint.sh"
 CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK_REL="codex/hooks/external-llm-review-permission.sh"
+CODEX_CODING_GUARD_HOOK_REL="codex/hooks/coding-guard.sh"
+CODEX_STOP_VERIFICATION_HOOK_REL="codex/hooks/stop-verification.sh"
 HOOKS_OUTPUT="$CODEX_HOME/hooks.json"
 CONFIG_PATH="$CODEX_HOME/config.toml"
 BEGIN_MARKER="# >>> claude-config codex init >>>"
@@ -200,7 +202,9 @@ render_hooks_json() {
   for required_hook in \
     "$SRC/$CODEX_SKILL_PREFLIGHT_HOOK_REL" \
     "$SRC/$CODEX_GIT_COMMIT_HOOK_REL" \
-    "$SRC/$CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK_REL"; do
+    "$SRC/$CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK_REL" \
+    "$SRC/$CODEX_CODING_GUARD_HOOK_REL" \
+    "$SRC/$CODEX_STOP_VERIFICATION_HOOK_REL"; do
     if [ ! -f "$required_hook" ]; then
       echo "[warn] Codex hook script not found at $required_hook; skipping hooks rendering"
       return
