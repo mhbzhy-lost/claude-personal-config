@@ -40,7 +40,7 @@ export const StopVerificationPlugin = async (ctx) => {
             parts: [
               {
                 type: "text",
-                text: "⚠️ [stop-verification] 停止前确认：(1) 已运行验证命令并确认输出？(2) 有未提交变更？",
+                text: "⚠️ 停止前确认：(1) 已运行验证命令并确认输出？(2) 有未提交变更？",
               },
             ],
           },
