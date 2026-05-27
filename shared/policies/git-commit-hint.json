@@ -14,8 +14,8 @@
   "template": [
     "{hook_name} 提交前必须完成：",
     "1) 加载 git-commit skill，按规范生成 commit message。",
-    "2) 加载 external-llm-review skill 并执行异源复审（不得跳过或凭印象执行）。",
-    "3) 知识文档：按 `{knowledge_readme}` 判断是否需更新 `docs/knowledge/`。需要则先更新再提交；不需要则 commit message 注明原因。",
+    "2) 知识文档：按 `{knowledge_readme}` 判断是否需更新 `docs/knowledge/`。需要则先更新再提交；不需要则 commit message 注明原因。",
+    "（异源复审已由 push hook 自动执行，commit 阶段无需手动触发。）",
     "{escape_instruction}"
   ]
 }

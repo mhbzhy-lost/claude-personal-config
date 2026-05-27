@@ -326,6 +326,16 @@ desired_pretooluse_hooks = [
             }
         ],
     },
+    {
+        "matcher": "Bash",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/claude/hooks/external-review-gate.sh",
+                "timeout": 600,
+            }
+        ],
+    },
 ]
 
 # Stop hook：终态验证提醒
@@ -409,23 +419,30 @@ for desired in desired_sub_start_hooks:
         changed = True
         print(f"[settings] 更新 hooks.SubagentStart[matcher={matcher}]")
 
-# 合并 hooks.PreToolUse：按 matcher upsert
+# 合并 hooks.PreToolUse：按 (matcher, command) 联合键 upsert
+# 同一 matcher 可有多个 hook（如 Bash: git-commit-hint + external-review-gate）
 pretool_use = hooks.setdefault("PreToolUse", [])
 for desired in desired_pretooluse_hooks:
     matcher = desired["matcher"]
+    desired_cmd = desired["hooks"][0]["command"]
     found_idx = None
     for i, entry in enumerate(pretool_use):
-        if isinstance(entry, dict) and entry.get("matcher") == matcher:
-            found_idx = i
+        if not isinstance(entry, dict) or entry.get("matcher") != matcher:
+            continue
+        for h in entry.get("hooks", []):
+            if isinstance(h, dict) and h.get("command") == desired_cmd:
+                found_idx = i
+                break
+        if found_idx is not None:
             break
     if found_idx is None:
         pretool_use.append(desired)
         changed = True
-        print(f"[settings] 新增 hooks.PreToolUse[matcher={matcher!r}]")
+        print(f"[settings] 新增 hooks.PreToolUse[matcher={matcher!r} cmd=...{desired_cmd.split('/')[-1]}]")
     elif pretool_use[found_idx] != desired:
         pretool_use[found_idx] = desired
         changed = True
-        print(f"[settings] 更新 hooks.PreToolUse[matcher={matcher!r}]")
+        print(f"[settings] 更新 hooks.PreToolUse[matcher={matcher!r} cmd=...{desired_cmd.split('/')[-1]}]")
 
 # 合并 hooks.Stop：无 matcher，按 command 路径 upsert
 stop_hooks = hooks.setdefault("Stop", [])

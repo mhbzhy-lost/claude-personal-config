@@ -21,11 +21,6 @@ coding 必须 TDD（RED→GREEN→REFACTOR）。
 
 skill 可全英文；技术文档/计划/review/bug-analysis 默认中文。
 
-## 异源复审
-
-bugfix 后强制跑 external-llm-review skill；feature 仅高风险时触发。
-豁免：diff<10行单函数 / 纯文档配置 / 未配凭据 / 合规禁止出域。
-
 ## 并发
 
 可隔离的独立子任务按 DAG 并发（worktree 隔离）。

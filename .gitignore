@@ -44,6 +44,9 @@ codex/skills.list.local
 # skill 私有 .env 凭据（如 external-llm-review/.env）
 claude-skills/*/.env
 
+# 异源 review marker 文件（push hook 状态机产物，跨端共享但不入仓）
+.review-markers/
+
 # 并发 task 用的 git worktree 临时目录（subagent-driven-development 流程产物，
 # 整批合并后会清理；过程产物不入仓避免污染主分支）
 .worktrees/
