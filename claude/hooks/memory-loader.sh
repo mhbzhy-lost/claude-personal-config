@@ -48,12 +48,18 @@ signal_files = {
 }
 
 for fname, tags in signal_files.items():
-    if (cwd_path / fname).exists():
-        signals.update(tags)
+    try:
+        if (cwd_path / fname).exists():
+            signals.update(tags)
+    except OSError:
+        pass
 
 # 检测 .xcodeproj
-if list(cwd_path.glob("*.xcodeproj")):
-    signals.update({"ios", "xcode", "swift"})
+try:
+    if list(cwd_path.glob("*.xcodeproj")):
+        signals.update({"ios", "xcode", "swift"})
+except OSError:
+    pass
 
 # 通用关键词（始终注入的章节）
 ALWAYS_INCLUDE = {

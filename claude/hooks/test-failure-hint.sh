@@ -47,7 +47,10 @@ if not is_test_cmd:
     sys.exit(0)
 
 # 检查输出中是否有失败信号
-response = payload.get("tool_response", "") or ""
+response = payload.get("tool_response", "")
+if isinstance(response, dict):
+    response = (response.get("stdout", "") or "") + (response.get("stderr", "") or "")
+response = str(response) if response else ""
 FAIL_SIGNALS = [
     r"\bFAILED\b",
     r"\bFAIL\b",
@@ -69,8 +72,8 @@ if has_failure:
     try:
         with open(last_test_file, "w") as f:
             f.write("1")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[test-failure-hint] write failed: {e}", file=sys.stderr)
     msg = (
         "⚠️ 测试失败。先走 systematic-debugging 流程做根因分析，"
         "不要直接改实现代码。"
@@ -81,7 +84,7 @@ else:
     try:
         if os.path.exists(last_test_file):
             os.remove(last_test_file)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[test-failure-hint] cleanup failed: {e}", file=sys.stderr)
     print("")
 ' <<< "$(cat)"

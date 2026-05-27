@@ -12,7 +12,7 @@ warnings=""
 if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   uncommitted="$(git status --porcelain 2>/dev/null)"
   if [ -n "$uncommitted" ]; then
-    file_count="$(echo "$uncommitted" | wc -l | tr -d ' ')"
+    file_count="$(printf '%s\n' "$uncommitted" | wc -l | tr -d ' ')"
     warnings="${warnings}• 有 ${file_count} 个未提交变更\n"
   fi
 fi

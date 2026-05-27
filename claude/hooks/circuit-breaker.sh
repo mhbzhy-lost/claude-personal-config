@@ -39,8 +39,8 @@ count += 1
 try:
     with open(counter_file, "w") as f:
         f.write(str(count))
-except Exception:
-    pass
+except Exception as e:
+    print(f"[circuit-breaker] write failed: {e}", file=sys.stderr)
 
 if count >= 3:
     msg = (
