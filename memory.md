@@ -354,6 +354,7 @@ curl: (7) Failed to connect to 127.0.0.1 port 7897 after 0 ms: Couldn't connect 
 **解法**：本地 smoke 用 `curl --noproxy '*' ...` 绕过代理。若服务在沙箱外启动，
 curl 本身也要在沙箱外执行，否则还会受 Codex 沙箱本地端口隔离影响。
 
+
 ## opencode task tool 的 subagent_type 只有 explore 和 general
 
 **现象**：派发 subagent 时报 `Unknown agent type: general-purpose is not a valid

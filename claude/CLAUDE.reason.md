@@ -8,7 +8,11 @@
 
 > **原因**：踩过的坑不应该再踩第二遍；遇到报错时优先比对历史记录可以省去重新
 > 摸索的成本。命中时直接走旧解法是最大 ROI 路径；未命中时回写形成正反馈循环。
-> 设成"违规回退"而非"建议"是因为软建议会被 rationalize 跳过。
+>
+> SessionStart hook 自动注入 memory 替代了原来的"动手前强制 cat"规则，降低了
+> agent 忘记检查的概率。保留 fallback cat 路径是因为 OpenCode 等不支持
+> SessionStart 的环境仍需手动读取。"遇到可沉淀经验时写入"是回写正反馈循环
+> 的要求——memory 只读不写会逐渐陈旧。
 
 ---
 
@@ -26,8 +30,9 @@
 ## TDD
 
 > **原因**：复用 superpowers skill 完整规范避免重写 RED-GREEN-REFACTOR 细节。
-> 3 条豁免按"成本 < 测试编写"的实际边界放宽——单行改动、已有覆盖、纯文档配置
-> 不产生未验证的逻辑变更。user instructions > skill 是优先级原则。
+> 2 条豁免按"成本 < 测试编写"的实际边界放宽——单行改动、已有覆盖不产生
+> 未验证的逻辑变更。非代码文件（.md/.json 等）不在 coding-guard 白名单中，
+> 天然不触发 TDD 提醒，无需额外豁免。user instructions > skill 是优先级原则。
 
 分层测试策略（三层定义、最小覆盖契约、e2e 准入）的详细 reason 原存于旧版
 CLAUDE.reason.md §9，现随内容移入 test-driven-development skill 的职责范围；

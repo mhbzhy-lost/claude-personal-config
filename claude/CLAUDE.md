@@ -2,7 +2,9 @@
 
 ## 记忆
 
-动手前 `cat ~/.claude/memory.md` 并报告匹配条目。遇错先查 memory。跳过=违规回退。
+memory 内容在支持 SessionStart 的环境已自动注入。
+遇错先查已注入的 memory 条目（无自动注入时 `cat ~/.claude/memory.md`）。
+遇到可沉淀的经验（踩坑、规避方案、外部系统地址）时写入 ~/.claude/memory.md。
 
 ## Bug
 
@@ -12,7 +14,7 @@ bug 禁止直接修。必须先写 `docs/bugs/bug-<摘要>.md`（根因分析 6 
 ## TDD
 
 coding 必须 TDD（RED→GREEN→REFACTOR）。
-豁免：单行改动 / 已有测试覆盖 / 纯文档配置。豁免优先于 skill 判定。
+豁免：单行改动 / 已有测试覆盖。豁免优先于 skill 判定。
 分层测试策略与 e2e 准入见 test-driven-development skill。
 
 ## 输出语言

@@ -340,6 +340,44 @@ desired_stop_hooks = [
     },
 ]
 
+# PostToolUseFailure hook：熔断计数
+desired_post_failure_hooks = [
+    {
+        "matcher": "Bash",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/claude/hooks/circuit-breaker.sh",
+            }
+        ],
+    },
+]
+
+# PostToolUse hook：测试失败提醒
+desired_post_tooluse_hooks = [
+    {
+        "matcher": "Bash",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/claude/hooks/test-failure-hint.sh",
+            }
+        ],
+    },
+]
+
+# SessionStart hook：memory 自动注入
+desired_session_start_hooks = [
+    {
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/claude/hooks/memory-loader.sh",
+            }
+        ],
+    },
+]
+
 # 读现有 settings（不存在则从空对象起手）
 if settings_path.exists():
     try:
@@ -410,6 +448,64 @@ for desired in desired_stop_hooks:
         stop_hooks[found_idx] = desired
         changed = True
         print(f"[settings] 更新 hooks.Stop[command=...stop-verification.sh]")
+
+# 合并 hooks.PostToolUseFailure：按 matcher upsert
+post_failure = hooks.setdefault("PostToolUseFailure", [])
+for desired in desired_post_failure_hooks:
+    matcher = desired["matcher"]
+    found_idx = None
+    for i, entry in enumerate(post_failure):
+        if isinstance(entry, dict) and entry.get("matcher") == matcher:
+            found_idx = i
+            break
+    if found_idx is None:
+        post_failure.append(desired)
+        changed = True
+        print(f"[settings] 新增 hooks.PostToolUseFailure[matcher={matcher!r}]")
+    elif post_failure[found_idx] != desired:
+        post_failure[found_idx] = desired
+        changed = True
+        print(f"[settings] 更新 hooks.PostToolUseFailure[matcher={matcher!r}]")
+
+# 合并 hooks.PostToolUse：按 matcher upsert
+post_tooluse = hooks.setdefault("PostToolUse", [])
+for desired in desired_post_tooluse_hooks:
+    matcher = desired["matcher"]
+    found_idx = None
+    for i, entry in enumerate(post_tooluse):
+        if isinstance(entry, dict) and entry.get("matcher") == matcher:
+            found_idx = i
+            break
+    if found_idx is None:
+        post_tooluse.append(desired)
+        changed = True
+        print(f"[settings] 新增 hooks.PostToolUse[matcher={matcher!r}]")
+    elif post_tooluse[found_idx] != desired:
+        post_tooluse[found_idx] = desired
+        changed = True
+        print(f"[settings] 更新 hooks.PostToolUse[matcher={matcher!r}]")
+
+# 合并 hooks.SessionStart：无 matcher，按 command 路径 upsert
+session_start = hooks.setdefault("SessionStart", [])
+for desired in desired_session_start_hooks:
+    cmd = desired["hooks"][0]["command"]
+    found_idx = None
+    for i, entry in enumerate(session_start):
+        if isinstance(entry, dict):
+            for h in entry.get("hooks", []):
+                if isinstance(h, dict) and h.get("command") == cmd:
+                    found_idx = i
+                    break
+        if found_idx is not None:
+            break
+    if found_idx is None:
+        session_start.append(desired)
+        changed = True
+        print(f"[settings] 新增 hooks.SessionStart[command=...memory-loader.sh]")
+    elif session_start[found_idx] != desired:
+        session_start[found_idx] = desired
+        changed = True
+        print(f"[settings] 更新 hooks.SessionStart[command=...memory-loader.sh]")
 
 # 一次性清理：移除已废弃的 SubagentStart hooks
 #   skill-marker        → capability-taxonomy-inject.sh （旧多 agent 编排架构遗留）
