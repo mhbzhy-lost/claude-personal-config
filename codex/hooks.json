@@ -32,6 +32,17 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"__CLAUDE_CONFIG_HOME__/codex/hooks/stop-verification.sh\"",
+            "statusMessage": "Checking verification before completion"
+          }
+        ]
+      }
+    ],
     "PermissionRequest": [
       {
         "matcher": "Bash",
