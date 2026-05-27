@@ -1,19 +1,29 @@
 /**
  * stop-verification plugin for OpenCode
  *
- * 终态验证提醒。OpenCode 没有独立的 Stop 事件，
- * 使用 session.end.before 或 tool.execute.after 均无法精确模拟。
+ * 终态验证提醒。监听 session.idle 事件（turn 结束后触发），
+ * 通过 toast 通知用户检查验证状态。
  *
- * 替代方案：挂载到 tool.execute.before 匹配 "done" / "complete" 类工具。
- * 但 OpenCode 实际上没有显式的 "stop" 工具调用——模型直接停止生成。
+ * 与 Claude Code / Codex 的 Stop hook 差异：
+ * - Stop hook 在 turn 结束前注入，模型可自我修正
+ * - session.idle 在 turn 结束后触发，只能做后置通知
  *
- * 因此本 plugin 作为占位，仅在 OpenCode 未来支持 session.end / stop
- * 事件时启用。当前不做任何拦截。
- *
- * 对齐说明：Claude Code 端通过 Stop hook 实现；Codex 端同样缺乏此事件。
- * 终态验证目前依赖 CLAUDE.md 中的文字约束 + verification-before-completion skill。
+ * 不使用 client.session.prompt 避免 idle → prompt → response → idle 死循环。
  */
 
-export const StopVerificationPlugin = async () => {
-  return {}
+export const StopVerificationPlugin = async (ctx) => {
+  return {
+    event: async ({ event }) => {
+      if (event.type !== "session.idle") return
+
+      if (ctx.client?.tui?.showToast) {
+        await ctx.client.tui.showToast({
+          body: {
+            message: "⚠️ Turn 结束：是否已验证？是否有未提交变更？",
+            variant: "warning",
+          },
+        })
+      }
+    },
+  }
 }
