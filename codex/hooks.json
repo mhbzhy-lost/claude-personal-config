@@ -2,6 +2,16 @@
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"__CLAUDE_CONFIG_HOME__/codex/hooks/coding-guard.sh\"",
+            "statusMessage": "Checking TDD and bugfix workflow"
+          }
+        ]
+      },
+      {
         "matcher": "mcp__skill-catalog__resolve",
         "hooks": [
           {
