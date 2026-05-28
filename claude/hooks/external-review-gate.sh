@@ -212,8 +212,10 @@ if action == "allow":
 
 if action == "deny_fix_first":
     deny(
-        "⚠️ 异源 Review Round 1 发现 Critical/Important 问题尚未修复。\n"
-        "请先修复后 commit，再次 push 时将自动执行 Round 2 验证。\n"
+        "🚫 禁止 push。异源 Review Round 1 发现 Critical/Important 问题尚未修复。\n"
+        "你必须先修复这些问题并 commit，再次 push 时将自动执行 Round 2 验证。\n"
+        "不要尝试绕过本 hook。如确有紧急理由需跳过 review，使用：\n"
+        "  EXTERNAL_REVIEW_SKIP=1 git push ...\n"
         f"Marker: {marker_path}"
     )
 
@@ -298,7 +300,11 @@ if assessment == "Ready to merge":
     allow()
 else:
     digest_path = f"{CLAUDE_CONFIG_HOME}/shared/policies/external-review-digest.md"
-    header = f"⚠️ 异源 Review Round {review_round} 完成，发现需要修复的问题。\n"
-    header += f"请按 `{digest_path}` 中的综合判断 4 步消化以下结果，修复后再次 push。\n\n"
+    escape_hint = "如确有紧急理由需跳过 review，使用：EXTERNAL_REVIEW_SKIP=1 git push ..."
+    header = (
+        f"🚫 禁止 push。异源 Review Round {review_round} 发现需要修复的问题。\n"
+        f"你必须按 `{digest_path}` 中的综合判断 4 步消化以下结果，修复后再次 push。\n"
+        f"不要尝试绕过本 hook。{escape_hint}\n\n"
+    )
     deny(header + review_output)
 ' <<< "$(cat)"
