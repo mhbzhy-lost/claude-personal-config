@@ -297,7 +297,8 @@ if assessment == "Ready to merge":
     log("review passed, allow push")
     allow()
 else:
+    digest_path = f"{CLAUDE_CONFIG_HOME}/shared/policies/external-review-digest.md"
     header = f"⚠️ 异源 Review Round {review_round} 完成，发现需要修复的问题。\n"
-    header += "请按综合判断 4 步消化以下 review 结果，修复后再次 push。\n\n"
+    header += f"请按 `{digest_path}` 中的综合判断 4 步消化以下结果，修复后再次 push。\n\n"
     deny(header + review_output)
 ' <<< "$(cat)"
