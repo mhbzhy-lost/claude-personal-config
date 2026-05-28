@@ -150,6 +150,62 @@ hooks = {
                 {
                     "type": "command",
                     "command": f"{src}/qwen/hooks/git-commit-hint.sh",
+                },
+                {
+                    "type": "command",
+                    "command": f"{src}/shared/hooks/external-review-gate.sh",
+                },
+            ],
+        },
+        {
+            # Qwen Code 编辑工具名：edit（对应 Claude Edit）、write_file（对应 Claude Write）
+            "matcher": "edit|write_file",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"{src}/qwen/hooks/coding-guard.sh",
+                }
+            ],
+        },
+    ],
+    "PostToolUse": [
+        {
+            "matcher": "run_shell_command",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"{src}/qwen/hooks/test-failure-hint.sh",
+                }
+            ],
+        },
+    ],
+    "PostToolUseFailure": [
+        {
+            "matcher": "run_shell_command",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"{src}/qwen/hooks/circuit-breaker.sh",
+                }
+            ],
+        },
+    ],
+    "Stop": [
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"{src}/claude/hooks/stop-verification.sh",
+                }
+            ],
+        },
+    ],
+    "SessionStart": [
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"{src}/claude/hooks/memory-loader.sh",
                 }
             ],
         },
@@ -197,7 +253,7 @@ for hook_key, desired_hook_value in hooks.items():
         hooks_changed = True
 
 if hooks_changed:
-    print("[hooks] 本仓 hooks 已同步（PreToolUse ×2 + SubagentStart ×3；其它 hook 保留）")
+    print("[hooks] 本仓 hooks 已同步（PreToolUse ×3 + PostToolUse + PostToolUseFailure + Stop + SessionStart + SubagentStart ×3；其它 hook 保留）")
 else:
     print("[hooks] 本仓 hooks 已是最新")
 

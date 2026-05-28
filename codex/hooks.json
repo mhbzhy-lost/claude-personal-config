@@ -26,6 +26,17 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash \"__CLAUDE_CONFIG_HOME__/shared/hooks/external-review-gate.sh\"",
+            "timeout": 600,
+            "statusMessage": "Running external review gate..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
             "command": "bash \"__CLAUDE_CONFIG_HOME__/codex/hooks/git-commit-hint.sh\"",
             "statusMessage": "Checking git commit workflow"
           }

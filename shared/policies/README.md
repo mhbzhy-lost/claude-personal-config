@@ -19,6 +19,33 @@ harness 能力差异（例如某 host 没有对应 hook 类型）时尊重差异
 | `coding-expert-rules-inject.sh` | Claude / Qwen（SubagentStart） | Codex / OpenCode 没有 SubagentStart 这种"sub-agent 启动时注入 context"的 hook 类型；Qwen Code 复用 claude 端脚本 |
 | `external-llm-review-permission.{py,sh}` | Codex only | Codex 自己的 PermissionRequest hook 用于自动授权 review 子进程命令；其他 host 没有这种"命令准入"机制 |
 
+## 各端工具名映射
+
+共享 hook 脚本（如 `shared/hooks/external-review-gate.sh`）需要兼容不同 host 的工具名：
+
+| 概念 | Claude Code | Codex | OpenCode | Qwen Code |
+|---|---|---|---|---|
+| Shell 执行 | `Bash` | `Bash` | `bash` | `run_shell_command` |
+| 文件编辑 | `Edit` | `Edit` | `edit` | `edit` |
+| 文件写入 | `Write` | `Write` | `write` | `write_file` |
+| 文件读取 | `Read` | `Read` | `read` | `read_file` |
+| MCP 工具 | `mcp__<srv>__<tool>` | `mcp__<srv>__<tool>` | `<srv>_<tool>` | `mcp__<srv>__<tool>` |
+
+Qwen Code 参数嵌套：`tool_input.parameters.command`（Claude 是 `tool_input.command`）。共享脚本统一用 `params = tool_input.get("parameters") or tool_input` 兼容。
+
+## Qwen Code 事件支持状态（待验证）
+
+| 事件 | 已注册 hook | 状态 |
+|---|---|---|
+| PreToolUse | git-commit-hint, external-review-gate, coding-guard | ✅ 确认支持 |
+| SubagentStart | coding-expert-rules-inject ×3 | ✅ 确认支持 |
+| PostToolUse | test-failure-hint | ⚠️ 试探性注册，待验证 |
+| PostToolUseFailure | circuit-breaker | ⚠️ 试探性注册，待验证 |
+| Stop | stop-verification | ⚠️ 试探性注册，待验证 |
+| SessionStart | memory-loader | ⚠️ 试探性注册，待验证 |
+
+验证方法：`bash init_qwen.sh` 部署后，在 Qwen Code 中操作一轮，观察各 hook 是否触发。或启用 `qwen/hooks/event-probe.sh` 记录所有事件到 `/tmp/.qwen-event-probe.log`。
+
 ## 引用约定
 
 ### Shell 端 (Claude / Codex / Qwen Code)
