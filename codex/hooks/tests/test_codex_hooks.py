@@ -14,7 +14,7 @@ CODEX_SKILL_PREFLIGHT_HOOK = REPO_ROOT / "codex" / "hooks" / "skill-resolve-pref
 CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK = (
     REPO_ROOT / "codex" / "hooks" / "external-llm-review-permission.sh"
 )
-CODEX_STOP_VERIFICATION_HOOK = REPO_ROOT / "codex" / "hooks" / "stop-verification.sh"
+CODEX_CODING_GUARD_HOOK = REPO_ROOT / "codex" / "hooks" / "coding-guard.sh"
 SHARED_EXTERNAL_REVIEW_GATE = (
     REPO_ROOT / "shared" / "hooks" / "external-review-gate.sh"
 )
@@ -71,6 +71,19 @@ def run_hook_raw(script: Path, payload: str) -> subprocess.CompletedProcess[str]
     )
 
 
+def run_hook_bytes(
+    script: Path,
+    payload: bytes,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ["bash", str(script)],
+        input=payload,
+        capture_output=True,
+        env={**os.environ, **(env or {})},
+    )
+
+
 def bash_payload(command: str, description: str = "", env: dict | None = None) -> dict:
     payload = {
         "tool_name": "Bash",
@@ -93,6 +106,16 @@ def permission_request_payload(command: str, tool_name: str = "Bash") -> dict:
         "cwd": str(REPO_ROOT),
         "tool_input": {
             "command": command,
+        },
+    }
+
+
+def apply_patch_payload(patch: str, tool_name: str = "functions.apply_patch") -> dict:
+    return {
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool_name,
+        "tool_input": {
+            "patch": patch,
         },
     }
 
@@ -183,8 +206,14 @@ class CodexHooksTest(unittest.TestCase):
         reason = hook_output["permissionDecisionReason"]
         self.assertIn("提交前必须完成", reason)
         self.assertIn("加载 git-commit skill", reason)
+        self.assertIn("verification-before-completion skill", reason)
         self.assertIn("知识文档：按", reason)
-        self.assertIn("异源复审已由 push hook 自动执行", reason)
+        self.assertIn("全局指南", reason)
+        self.assertIn("新增/更新目标仓 `docs/knowledge/`", reason)
+        self.assertIn("先创建或更新并接入项目入口", reason)
+        self.assertNotIn("需要则先更新再提交", reason)
+        self.assertNotIn("异源复审", reason)
+        self.assertNotIn("external review", reason.lower())
         self.assertNotIn("对本次 staged diff", reason)
         self.assertNotIn("non-blocking", reason)
         self.assertNotIn("豁免条件", reason)
@@ -232,6 +261,9 @@ class CodexHooksTest(unittest.TestCase):
 
         self.assertIn("提交前必须完成", reason)
         self.assertIn("知识文档：按", reason)
+        self.assertIn("全局指南", reason)
+        self.assertIn("新增/更新目标仓 `docs/knowledge/`", reason)
+        self.assertIn("verification-before-completion skill", reason)
 
     def test_claude_git_commit_hook_uses_env_escape(self) -> None:
         output = run_hook(CLAUDE_GIT_COMMIT_HOOK, bash_payload("git commit -m test"))
@@ -240,6 +272,7 @@ class CodexHooksTest(unittest.TestCase):
 
         self.assertIn("提交前必须完成", reason)
         self.assertIn("加载 git-commit skill", reason)
+        self.assertIn("verification-before-completion skill", reason)
         self.assertIn("知识文档：按", reason)
         self.assertIn("GIT_COMMIT_HINT_SKIP=1", reason)
         self.assertNotIn("命令文本中包含", reason)
@@ -260,8 +293,14 @@ class CodexHooksTest(unittest.TestCase):
 
         self.assertIn("提交前必须完成", rendered)
         self.assertIn("加载 git-commit skill", rendered)
+        self.assertIn("verification-before-completion skill", rendered)
         self.assertIn("知识文档：按", rendered)
-        self.assertIn("异源复审已由 push hook 自动执行", rendered)
+        self.assertIn("全局指南", rendered)
+        self.assertIn("新增/更新目标仓 `docs/knowledge/`", rendered)
+        self.assertIn("先创建或更新并接入项目入口", rendered)
+        self.assertNotIn("需要则先更新再提交", rendered)
+        self.assertNotIn("异源复审", rendered)
+        self.assertNotIn("external review", rendered.lower())
         self.assertNotIn("对本次 staged diff", rendered)
         self.assertNotIn("non-blocking", rendered)
         self.assertNotIn("豁免条件", rendered)
@@ -278,7 +317,8 @@ class CodexHooksTest(unittest.TestCase):
             self.assertIn("shared/policies/git-commit-hint.json", adapter_text)
             self.assertNotIn("skip-git-commit-hint", adapter_text)
             self.assertNotIn("提交前必须完成", adapter_text)
-            self.assertNotIn("异源复审已由 push hook 自动执行", adapter_text)
+            self.assertNotIn("verification-before-completion skill", adapter_text)
+            self.assertNotIn("异源复审", adapter_text)
 
     def test_opencode_git_commit_plugin_uses_env_escape(self) -> None:
         script = f"""
@@ -315,6 +355,94 @@ if (!denied) process.exit(1);
         )
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_codex_coding_guard_warns_for_apply_patch_code_file(self) -> None:
+        patch = """*** Begin Patch
+*** Update File: init_codex.sh
+@@
+-old
++new
+*** End Patch
+"""
+        output = run_hook(
+            CODEX_CODING_GUARD_HOOK,
+            apply_patch_payload(patch, tool_name="functions.apply_patch"),
+        )
+
+        self.assertIn("编辑非测试代码文件前确认", output)
+        self.assertIn("TDD", output)
+        self.assertIn("docs/bugs/bug-*.md", output)
+
+    def test_codex_coding_guard_accepts_plain_apply_patch_tool_name(self) -> None:
+        patch = """*** Begin Patch
+*** Delete File: scripts/cleanup.sh
+*** End Patch
+"""
+        output = run_hook(
+            CODEX_CODING_GUARD_HOOK,
+            apply_patch_payload(patch, tool_name="apply_patch"),
+        )
+
+        self.assertIn("编辑非测试代码文件前确认", output)
+
+    def test_codex_coding_guard_accepts_freeform_apply_patch_input(self) -> None:
+        patch = """*** Begin Patch
+*** Update File: codex/hooks/coding-guard.sh
+@@
+-old
++new
+*** End Patch
+"""
+        output = run_hook(
+            CODEX_CODING_GUARD_HOOK,
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "functions.apply_patch",
+                "tool_input": patch,
+            },
+        )
+
+        self.assertIn("编辑非测试代码文件前确认", output)
+
+    def test_codex_coding_guard_ignores_apply_patch_test_files(self) -> None:
+        patch = """*** Begin Patch
+*** Update File: codex/hooks/tests/test_codex_hooks.py
+@@
+-old
++new
+*** End Patch
+"""
+        output = run_hook(
+            CODEX_CODING_GUARD_HOOK,
+            apply_patch_payload(patch, tool_name="functions.apply_patch"),
+        )
+
+        self.assertEqual(output, "")
+
+    def test_codex_coding_guard_ignores_relative_test_dir_helpers(self) -> None:
+        patch = """*** Begin Patch
+*** Update File: tests/helpers/helper.py
+@@
+-old
++new
+*** End Patch
+"""
+        output = run_hook(
+            CODEX_CODING_GUARD_HOOK,
+            apply_patch_payload(patch, tool_name="functions.apply_patch"),
+        )
+
+        self.assertEqual(output, "")
+
+    def test_codex_coding_guard_ignores_malformed_stdin_bytes(self) -> None:
+        proc = run_hook_bytes(
+            CODEX_CODING_GUARD_HOOK,
+            b"\xff",
+            env={"PYTHONIOENCODING": "utf-8:strict"},
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8", errors="replace"))
+        self.assertEqual(proc.stdout, b"")
 
     def test_codex_permission_hook_allows_external_review_script(self) -> None:
         command = (
@@ -671,17 +799,6 @@ if (!denied) process.exit(1);
                 "marker must be removed after max review budget allows push",
             )
 
-    def test_codex_stop_hook_is_silent_for_valid_stop_event(self) -> None:
-        output = run_hook(
-            CODEX_STOP_VERIFICATION_HOOK,
-            {
-                "hook_event_name": "Stop",
-                "last_assistant_message": "验证已完成。",
-            },
-        )
-
-        self.assertEqual(output, "")
-
     def test_codex_hook_layout_is_separate_from_claude_hooks(self) -> None:
         self.assertTrue(CODEX_GIT_COMMIT_HOOK.is_file())
         self.assertTrue(CODEX_SKILL_PREFLIGHT_HOOK.is_file())
@@ -690,10 +807,14 @@ if (!denied) process.exit(1);
         self.assertTrue(OPENCODE_GIT_COMMIT_PLUGIN.is_file())
 
         hooks_json = CODEX_HOOKS_JSON.read_text()
+        self.assertIn('"matcher": "Edit|Write|apply_patch|functions.apply_patch"', hooks_json)
         self.assertIn("__CLAUDE_CONFIG_HOME__/codex/hooks/git-commit-hint.sh", hooks_json)
+        self.assertIn("__CLAUDE_CONFIG_HOME__/codex/hooks/coding-guard.sh", hooks_json)
         self.assertIn("__CLAUDE_CONFIG_HOME__/codex/hooks/skill-resolve-preflight.sh", hooks_json)
         self.assertIn("__CLAUDE_CONFIG_HOME__/codex/hooks/external-llm-review-permission.sh", hooks_json)
         self.assertIn('"PermissionRequest"', hooks_json)
+        self.assertNotIn('"Stop"', hooks_json)
+        self.assertNotIn("codex/hooks/stop-verification.sh", hooks_json)
         self.assertNotIn("__CLAUDE_CONFIG_HOME__/hooks/", hooks_json)
 
         init_codex = INIT_CODEX.read_text()

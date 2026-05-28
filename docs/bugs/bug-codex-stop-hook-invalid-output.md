@@ -65,3 +65,6 @@ Stop hook requested continuation without a prompt; ignoring the block
 - Stop hook 不再承担频繁提示职责；“验证完成、未提交变更已处理”这类确认迁移到
   `shared/hooks/external-review-gate.sh`，只在 `git push` 前触发。
 - 新增回归测试覆盖合法 Stop 事件 stdout 为空。
+- 后续确认 Codex 侧 Stop hook 已无业务价值，已从 `codex/hooks.json` 与
+  `init_codex.sh` required hook 列表移除，并删除
+  `codex/hooks/stop-verification.sh`。

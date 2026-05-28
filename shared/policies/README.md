@@ -8,7 +8,7 @@ harness 能力差异（例如某 host 没有对应 hook 类型）时尊重差异
 
 | 文件 | 各端 wrapper | 何以共用 |
 |---|---|---|
-| `git-commit-hint.json` | `claude/hooks/git-commit-hint.sh`、`codex/hooks/git-commit-hint.sh`、`qwen/hooks/git-commit-hint.sh`、`opencode/plugins/git-commit-hint.js` | 各端都通过 PreToolUse / `tool.execute.before` 拦截 `git commit`，业务流程（commit-message skill + 知识文档检查）相同；异源 review 由 push hook 承担 |
+| `git-commit-hint.json` | `claude/hooks/git-commit-hint.sh`、`codex/hooks/git-commit-hint.sh`、`qwen/hooks/git-commit-hint.sh`、`opencode/plugins/git-commit-hint.js` | 各端都通过 PreToolUse / `tool.execute.before` 拦截 `git commit`，业务流程（verification-before-completion skill + commit-message skill + 按全局指南判断目标仓知识文档）相同；异源 review 由 push hook 单独控制，不在 commit 提示中暴露 |
 | `skill-resolve-preflight.json` | `claude/hooks/skill-resolve-preflight.sh`、`codex/hooks/skill-resolve-preflight.sh`、`qwen/hooks/skill-resolve-preflight.sh`、`opencode/plugins/skill-resolve-preflight.js` | 各端都需要在 `skill-catalog.resolve` 调用前强制 agent 先做意图识别。tool 名按 host 区分（OpenCode `skill-catalog_resolve` 单下划线 vs claude/codex/qwen 的 `mcp__*` 双下划线）；deny reason 文案完全共用 |
 
 ## 故意**不**进 SSOT 的本仓 hook

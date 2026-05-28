@@ -1,25 +1,11 @@
 #!/usr/bin/env bash
-# PreToolUse hook (matcher: Edit|Write): TDD + Bugfix 合并提醒。
+# PreToolUse hook (matcher: Edit|Write|apply_patch|functions.apply_patch): TDD + Bugfix 合并提醒。
 # 仅对白名单内的代码文件后缀触发；测试文件静默放行。
 # 对齐 Claude Code 端 claude/hooks/coding-guard.sh。
 set -uo pipefail
 
 python3 -c '
-import json, sys, os
-
-raw = sys.stdin.read()
-try:
-    payload = json.loads(raw)
-except Exception:
-    print("")
-    sys.exit(0)
-
-tool_input = payload.get("tool_input") or {}
-file_path = tool_input.get("file_path", "") or ""
-
-if not file_path:
-    print("")
-    sys.exit(0)
+import json, sys, os, re
 
 CODE_EXTENSIONS = {
     ".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".sh", ".rb",
@@ -29,19 +15,86 @@ CODE_EXTENSIONS = {
     ".ets",
 }
 
-_, ext = os.path.splitext(file_path)
-if ext.lower() not in CODE_EXTENSIONS:
-    print("")
+PATCH_PATH_PREFIXES = (
+    "*** Add File: ",
+    "*** Update File: ",
+    "*** Delete File: ",
+    "*** Move to: ",
+)
+
+
+def is_test_path(file_path):
+    basename = os.path.basename(file_path)
+    dir_path = file_path.replace("\\", "/").lower()
+    relative_dir_path = dir_path.lstrip("./")
+    if re.search(r"(test|spec|_test|\.test\.|\.spec\.)", basename, re.IGNORECASE):
+        return True
+    return (
+        relative_dir_path.startswith("tests/")
+        or relative_dir_path.startswith("test/")
+        or relative_dir_path.startswith("__tests__/")
+        or "/tests/" in dir_path
+        or "/test/" in dir_path
+        or "/__tests__/" in dir_path
+    )
+
+
+def is_guarded_code_path(file_path):
+    if not isinstance(file_path, str) or not file_path:
+        return False
+    _, ext = os.path.splitext(file_path)
+    return ext.lower() in CODE_EXTENSIONS and not is_test_path(file_path)
+
+
+def patch_paths(patch_text):
+    if not isinstance(patch_text, str):
+        return []
+    paths = []
+    for line in patch_text.splitlines():
+        for prefix in PATCH_PATH_PREFIXES:
+            if line.startswith(prefix):
+                file_path = line[len(prefix):].strip()
+                if file_path:
+                    paths.append(file_path)
+                break
+    return paths
+
+
+def collect_candidate_paths(tool_input):
+    paths = []
+    patches = []
+
+    if isinstance(tool_input, str):
+        patches.append(tool_input)
+    elif isinstance(tool_input, dict):
+        sources = [tool_input]
+        params = tool_input.get("parameters")
+        if isinstance(params, dict):
+            sources.append(params)
+
+        for source in sources:
+            for key in ("file_path", "path", "filePath"):
+                value = source.get(key)
+                if isinstance(value, str) and value:
+                    paths.append(value)
+            for key in ("patch", "input", "content"):
+                value = source.get(key)
+                if isinstance(value, str):
+                    patches.append(value)
+
+    for patch in patches:
+        paths.extend(patch_paths(patch))
+
+    return paths
+
+try:
+    raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    payload = json.loads(raw)
+except Exception:
     sys.exit(0)
 
-import re
-basename = os.path.basename(file_path)
-dir_path = file_path.lower()
-if re.search(r"(test|spec|_test|\.test\.|\.spec\.)", basename, re.IGNORECASE):
-    print("")
-    sys.exit(0)
-if "/tests/" in dir_path or "/test/" in dir_path or "/__tests__/" in dir_path:
-    print("")
+tool_input = payload.get("tool_input") or {}
+if not any(is_guarded_code_path(path) for path in collect_candidate_paths(tool_input)):
     sys.exit(0)
 
 msg = (

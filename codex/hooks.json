@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|apply_patch|functions.apply_patch",
         "hooks": [
           {
             "type": "command",
@@ -39,17 +39,6 @@
             "type": "command",
             "command": "bash \"__CLAUDE_CONFIG_HOME__/codex/hooks/git-commit-hint.sh\"",
             "statusMessage": "Checking git commit workflow"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"__CLAUDE_CONFIG_HOME__/codex/hooks/stop-verification.sh\"",
-            "statusMessage": "Checking verification before completion"
           }
         ]
       }
