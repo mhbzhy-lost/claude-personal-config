@@ -79,12 +79,18 @@ try:
 except Exception:
     silent()
 
-if payload.get("tool_name") not in ("Bash", "run_shell_command"):
+if payload.get("tool_name") not in ("Bash", "run_shell_command", "exec_command", "functions.exec_command"):
     silent()
 
 tool_input = payload.get("tool_input") or {}
 params = tool_input.get("parameters") or tool_input
-cmd = params.get("command", "") or tool_input.get("command", "") or ""
+cmd = (
+    params.get("command", "")
+    or params.get("cmd", "")
+    or tool_input.get("command", "")
+    or tool_input.get("cmd", "")
+    or ""
+)
 
 # Only match git push (not git push-related subcommands)
 # Also matches: git -C /path push, git --no-pager push, etc.

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import shlex
 import subprocess
 import tempfile
@@ -12,6 +13,9 @@ CODEX_GIT_COMMIT_HOOK = REPO_ROOT / "codex" / "hooks" / "git-commit-hint.sh"
 CODEX_SKILL_PREFLIGHT_HOOK = REPO_ROOT / "codex" / "hooks" / "skill-resolve-preflight.sh"
 CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK = (
     REPO_ROOT / "codex" / "hooks" / "external-llm-review-permission.sh"
+)
+SHARED_EXTERNAL_REVIEW_GATE = (
+    REPO_ROOT / "shared" / "hooks" / "external-review-gate.sh"
 )
 CLAUDE_GIT_COMMIT_HOOK = REPO_ROOT / "claude" / "hooks" / "git-commit-hint.sh"
 OPENCODE_GIT_COMMIT_PLUGIN = REPO_ROOT / "opencode" / "plugins" / "git-commit-hint.js"
@@ -41,6 +45,18 @@ def run_hook(script: Path, payload: dict) -> str:
         text=True,
         capture_output=True,
         check=True,
+    )
+    return proc.stdout
+
+
+def run_hook_with_env(script: Path, payload: dict, env: dict[str, str]) -> str:
+    proc = subprocess.run(
+        ["bash", str(script)],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        check=True,
+        env={**os.environ, **env},
     )
     return proc.stdout
 
@@ -371,6 +387,35 @@ if (!denied) process.exit(1);
         )
 
         self.assertEqual(output, "")
+
+    def test_external_review_gate_accepts_codex_exec_tool_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config_home = Path(tmp) / "config"
+            (config_home / "claude-skills" / "external-llm-review").mkdir(
+                parents=True
+            )
+
+            for tool_name, command_key in (
+                ("Bash", "command"),
+                ("run_shell_command", "command"),
+                ("exec_command", "cmd"),
+                ("functions.exec_command", "cmd"),
+            ):
+                output = run_hook_with_env(
+                    SHARED_EXTERNAL_REVIEW_GATE,
+                    {
+                        "tool_name": tool_name,
+                        "tool_input": {command_key: "git push"},
+                    },
+                    {"CLAUDE_CONFIG_HOME": str(config_home)},
+                )
+                data = json.loads(output)
+
+                self.assertEqual(
+                    data["hookSpecificOutput"]["permissionDecision"],
+                    "allow",
+                    tool_name,
+                )
 
     def test_codex_hook_layout_is_separate_from_claude_hooks(self) -> None:
         self.assertTrue(CODEX_GIT_COMMIT_HOOK.is_file())
