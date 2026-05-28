@@ -12,7 +12,7 @@ export REVIEWER_PY="${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/revi
 export REVIEWER_ENV="${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/.env"
 
 python3 -c '
-import hashlib, json, os, re, subprocess, sys, time
+import calendar, hashlib, json, os, re, subprocess, sys, time
 from pathlib import Path
 
 MARKER_DIR = Path(os.environ["MARKER_DIR"])
@@ -88,7 +88,10 @@ cmd = params.get("command", "") or tool_input.get("command", "") or ""
 
 # Only match git push (not git push-related subcommands)
 # Also matches: git -C /path push, git --no-pager push, etc.
-if not re.search(r"(^|[^\w-])git\s+(?:(-\S+\s+\S+|\S+)\s+)*push(\s|$)", cmd):
+# Exclude quoted strings (echo "git push") and comments (# git push)
+_cmd_stripped = re.sub(r"([\x22\x27]).*?\1", "", cmd)  # strip quoted strings
+_cmd_stripped = re.sub(r"#.*$", "", _cmd_stripped, flags=re.MULTILINE)
+if not re.search(r"(^|[;&|]\s*)(\S+=\S+\s+)*git\s+(?:-\S+\s+\S+\s+)*push(\s|$)", _cmd_stripped):
     silent()
 
 # --- Escape hatch ---
@@ -140,7 +143,10 @@ else:
         try:
             _main_ahead = subprocess.check_output(
                 ["git", "rev-list", "origin/main..HEAD", "--count"],
-                text=True, stderr=subprocess.DEVNULL).strip()
+                text=True, stderr=subprocess.PIPE).strip()
+        except subprocess.CalledProcessError as e:
+            log(f"rev-list main failed: {e.stderr.strip() if e.stderr else e}")
+            _main_ahead = "999"
         except Exception:
             _main_ahead = "999"
         if _main_ahead == "0":
@@ -155,7 +161,10 @@ else:
                 try:
                     _sub_ahead = subprocess.check_output(
                         ["git", "-C", _sub_abs, "rev-list", "@{u}..HEAD", "--count"],
-                        text=True, stderr=subprocess.DEVNULL).strip()
+                        text=True, stderr=subprocess.PIPE).strip()
+                except subprocess.CalledProcessError as e:
+                    log(f"submodule {_sp} rev-list failed: {e.stderr.strip() if e.stderr else e}")
+                    continue
                 except Exception:
                     continue
                 if _sub_ahead != "0":
@@ -215,7 +224,11 @@ if diff_numstat:
             if parts[0] == "-":
                 has_binary = True
             else:
-                total_lines += int(parts[0]) + int(parts[1])
+                try:
+                    total_lines += int(parts[0]) + int(parts[1])
+                except ValueError:
+                    has_binary = True
+                    continue
                 ext = os.path.splitext(parts[2])[1].lower()
                 if ext not in NON_CODE_EXTS:
                     all_non_code = False
@@ -260,7 +273,7 @@ if marker_path.is_file():
         # Check TTL
         ts = marker.get("timestamp", "")
         if ts:
-            age_hours = (time.time() - time.mktime(time.strptime(ts, "%Y-%m-%dT%H:%M:%SZ"))) / 3600
+            age_hours = (time.time() - calendar.timegm(time.strptime(ts, "%Y-%m-%dT%H:%M:%SZ"))) / 3600
             if age_hours > MARKER_TTL_HOURS:
                 marker = None
                 log("marker expired")
@@ -326,12 +339,15 @@ if action == "deny_fix_first":
         _unstaged = ""
 
     if _staged or _unstaged:
+        _changes = ""
+        if _staged:
+            _changes += "  staged: " + _staged.split("\n")[-1] + "\n"
+        if _unstaged:
+            _changes += "  unstaged: " + _unstaged.split("\n")[-1] + "\n"
         deny(
             "🚫 禁止 push。异源 Review 发现的问题疑似已修复但尚未 commit。\n"
             "请先 commit 修复内容，再次 push 时将自动执行 Round 2 验证。\n"
-            f"检测到未提交的变更：\n"
-            f"{'  staged: ' + _staged.split(chr(10))[-1] if _staged else ''}\n"
-            f"{'  unstaged: ' + _unstaged.split(chr(10))[-1] if _unstaged else ''}\n"
+            f"检测到未提交的变更：\n{_changes}"
             f"如确有紧急理由需跳过 review，使用：EXTERNAL_REVIEW_SKIP=1 git push ...\n"
             f"Marker: {marker_path}"
         )

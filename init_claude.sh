@@ -331,7 +331,7 @@ desired_pretooluse_hooks = [
         "hooks": [
             {
                 "type": "command",
-                "command": f"{src_root}/claude/hooks/external-review-gate.sh",
+                "command": f"{src_root}/shared/hooks/external-review-gate.sh",
                 "timeout": 600,
             }
         ],
@@ -440,7 +440,16 @@ for desired in desired_pretooluse_hooks:
         changed = True
         print(f"[settings] 新增 hooks.PreToolUse[matcher={matcher!r} cmd=...{desired_cmd.split('/')[-1]}]")
     elif pretool_use[found_idx] != desired:
-        pretool_use[found_idx] = desired
+        existing_entry = pretool_use[found_idx]
+        existing_hooks = existing_entry.get("hooks", [])
+        if len(existing_hooks) <= 1:
+            pretool_use[found_idx] = desired
+        else:
+            # Entry has multiple hooks — only update the matching one
+            for hi, h in enumerate(existing_hooks):
+                if isinstance(h, dict) and h.get("command") == desired_cmd:
+                    existing_hooks[hi] = desired["hooks"][0]
+                    break
         changed = True
         print(f"[settings] 更新 hooks.PreToolUse[matcher={matcher!r} cmd=...{desired_cmd.split('/')[-1]}]")
 
