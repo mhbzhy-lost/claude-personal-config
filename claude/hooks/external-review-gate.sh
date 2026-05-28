@@ -299,12 +299,21 @@ if assessment == "Ready to merge":
     log("review passed, allow push")
     allow()
 else:
-    digest_path = f"{CLAUDE_CONFIG_HOME}/shared/policies/external-review-digest.md"
     escape_hint = "如确有紧急理由需跳过 review，使用：EXTERNAL_REVIEW_SKIP=1 git push ..."
+    digest = (
+        "## 综合判断 4 步（必须执行）\n"
+        "1. 逐条比对：列出 (A)双方都抓到 (B)只外源抓到 (C)只同族抓到\n"
+        "2. 对(B)做 threat-model 校验：外源常见误报——本机 CLI 输入当不可信、"
+        "单 task 阻塞标 Critical、误读累积 diff、只看 diff 没看完整源码\n"
+        "3. 对(C)做同族盲点反思：是否涉及训练偏好（生态版本兼容、库 API 名）\n"
+        "4. 综合产出 fix dispatch：双方认可 + 任一方有真实 evidence 的项打包修复\n"
+        "严重度由证据决定，不由谁说了算。\n\n"
+    )
     header = (
         f"🚫 禁止 push。异源 Review Round {review_round} 发现需要修复的问题。\n"
-        f"你必须按 `{digest_path}` 中的综合判断 4 步消化以下结果，修复后再次 push。\n"
         f"不要尝试绕过本 hook。{escape_hint}\n\n"
+        f"{digest}"
+        "---\n\n"
     )
     deny(header + review_output)
 ' <<< "$(cat)"
