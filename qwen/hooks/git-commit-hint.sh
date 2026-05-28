@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Qwen Code PreToolUse hook: 检测 Bash 工具是否在执行 git commit。
-# 是则**阻断**执行，要求 agent 先调用 git-commit + external-llm-review skill。
+# 是则**阻断**执行，要求 agent 先调用 git-commit skill 并处理知识文档判断。
 # 逃生舱：设置 GIT_COMMIT_HINT_SKIP=1 的结构化 Bash env；无 env 字段的工具
 # 可用命令前缀环境变量赋值。
 

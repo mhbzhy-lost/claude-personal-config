@@ -28,7 +28,6 @@ skill 可全英文；技术文档/计划/review/bug-analysis 默认中文。
 
 - worktree 目录优先级：`.worktrees/` > `worktrees/` > 默认新建 `.worktrees/`
 - submodule 内先切 superproject root 再建 worktree；sandbox 拒绝时整批降级串行
-- 实现型 subagent 默认走 `opencode-deepseek-worker` skill；reviewer 不走 worker
 - 合并后必须跑验证；自动合并失败或语义冲突 → 停止并请求用户决策
 
 ## 决策报告

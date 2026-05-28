@@ -112,11 +112,6 @@ if _skip_m and _skip_m.group(1).strip().lower() in SKIP_VALUES:
     log("escape hatch: allow (command prefix)")
     allow()
 
-# --- Check .env exists (reviewer.py needs credentials) ---
-if not Path(REVIEWER_ENV).is_file():
-    log("no .env configured, degraded allow")
-    allow()
-
 # --- Infer effective git dir (submodule-aware) ---
 # Hook CWD = project root, not Bash tool CWD. If main repo has 0 commits
 # ahead but a submodule has pending pushes, use that submodule.
@@ -204,6 +199,42 @@ try:
         silent()  # nothing to push, let git handle it
 except Exception:
     silent()
+
+def _working_tree_summary():
+    try:
+        staged = subprocess.check_output(
+            _git_prefix + ["diff", "--cached", "--shortstat"],
+            text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+        unstaged = subprocess.check_output(
+            _git_prefix + ["diff", "--shortstat"],
+            text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+    except (subprocess.CalledProcessError, OSError, FileNotFoundError) as exc:
+        log(f"working tree summary failed: {exc}")
+        return ""
+
+    lines = []
+    if staged:
+        lines.append("  staged: " + staged)
+    if unstaged:
+        lines.append("  unstaged: " + unstaged)
+    return "\n".join(lines)
+
+
+dirty_summary = _working_tree_summary()
+if dirty_summary:
+    deny(
+        "🚫 禁止 push。检测到工作区仍有未提交变更。\n"
+        "请先确认已运行验证命令并确认输出，再提交或明确处理这些本地变更，"
+        "避免把未验证/未提交内容漏在本机。\n"
+        f"检测到：\n{dirty_summary}"
+    )
+
+# --- Check .env exists (reviewer.py needs credentials) ---
+if not Path(REVIEWER_ENV).is_file():
+    log("no .env configured, degraded allow")
+    allow()
 
 # --- Get diff stats for exemption ---
 try:
@@ -302,13 +333,38 @@ def _marker_should_deny(m):
     return None  # sentinel: means "re-run"
 
 
+def _marker_round(m):
+    try:
+        return int(m.get("round", 0))
+    except Exception:
+        return 0
+
+
+def _delete_marker_after_budget():
+    try:
+        marker_path.unlink()
+        log(f"review budget exhausted; removed marker {marker_path}")
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        log(f"failed to remove review marker after budget exhausted: {exc}")
+
+
 def determine_action():
     """Returns (action, round) where action is allow/deny/run and round is 1 or 2."""
     if marker is None:
         return ("run", 1)
 
+    marker_round = _marker_round(marker)
+    should_deny = _marker_should_deny(marker)
+
+    # Review budget is capped at two rounds. After round 2 has reported issues,
+    # the next push attempt is allowed and the marker is cleared so future pushes
+    # start a fresh review cycle.
+    if marker_round >= 2 and should_deny is True:
+        return ("allow_after_max_rounds", 0)
+
     if marker.get("diff_hash") == diff_hash:
-        should_deny = _marker_should_deny(marker)
         if should_deny is True:
             return ("deny_fix_first", 0)
         if should_deny is False:
@@ -329,6 +385,10 @@ action, review_round = determine_action()
 
 if action == "allow":
     log("marker valid, allow push")
+    allow()
+
+if action == "allow_after_max_rounds":
+    _delete_marker_after_budget()
     allow()
 
 if action == "deny_fix_first":
@@ -352,18 +412,13 @@ if action == "deny_fix_first":
             _changes += "  unstaged: " + _unstaged.split("\n")[-1] + "\n"
         deny(
             "🚫 禁止 push。异源 Review 发现的问题疑似已修复但尚未 commit。\n"
-            "请先 commit 修复内容，再次 push 时将自动执行 Round 2 验证。\n"
+            "请先 commit 修复内容后再次 push。\n"
             f"检测到未提交的变更：\n{_changes}"
-            f"如确有紧急理由需跳过 review，使用：EXTERNAL_REVIEW_SKIP=1 git push ...\n"
-            f"Marker: {marker_path}"
         )
     else:
         deny(
-            "🚫 禁止 push。异源 Review Round 1 发现 Critical/Important 问题尚未修复。\n"
-            "你必须先修复这些问题并 commit，再次 push 时将自动执行 Round 2 验证。\n"
-            "不要尝试绕过本 hook。如确有紧急理由需跳过 review，使用：\n"
-            "  EXTERNAL_REVIEW_SKIP=1 git push ...\n"
-            f"Marker: {marker_path}"
+            "🚫 禁止 push。异源 Review 发现的问题尚未修复。\n"
+            "请先修复这些问题并 commit 后再次 push。"
         )
 
 # action == "run"
@@ -436,7 +491,6 @@ if not should_deny:
     log("review passed (no Critical/Important), allow push")
     allow()
 else:
-    escape_hint = "如确有紧急理由需跳过 review，使用：EXTERNAL_REVIEW_SKIP=1 git push ..."
     digest = (
         "## 综合判断 4 步（必须执行）\n"
         "1. 逐条比对：列出 (A)双方都抓到 (B)只外源抓到 (C)只同族抓到\n"
@@ -447,8 +501,7 @@ else:
         "严重度由证据决定，不由谁说了算。\n\n"
     )
     header = (
-        f"🚫 禁止 push。异源 Review Round {review_round} 发现需要修复的问题。\n"
-        f"不要尝试绕过本 hook。{escape_hint}\n\n"
+        "🚫 禁止 push。异源 Review 发现需要修复的问题。\n\n"
         f"{digest}"
         "---\n\n"
     )

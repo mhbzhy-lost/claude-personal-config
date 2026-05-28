@@ -26,6 +26,9 @@
 # marketplace `superpowers-dev`。版本由 git submodule 锁定，不再单独 pin SHA。
 superpowers:superpowers-dev
 
+# Codex 官方 Claude Code 插件：提供 /codex:* 命令与 codex:codex-rescue subagent。
+codex:openai-codex
+
 # 以下不 pin，跟随 marketplace HEAD（首装拿到啥就是啥，不自动升级）
 plugin-dev:claude-plugins-official       # Plugin 脚手架（plugin.json/skills/agents）
 skill-creator:claude-plugins-official    # Skill 创建/优化/触发率评测

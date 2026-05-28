@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Stop hook: 终态验证提醒。
-# turn 结束时触发，提醒是否已跑验证、是否有未提交变更。
-# 对齐 Claude Code 端 claude/hooks/stop-verification.sh。
-echo "⚠️ 停止前确认：(1) 已运行验证命令并确认输出？(2) 有未提交变更？"
+# Stop hook: Codex turn 结束时触发。
+#
+# Codex 会解析 Stop hook 的 stdout。普通文本会被视为无效 hook 输出并在
+# turn 收尾时报 hook 失败；验证/未提交变更提醒放到 push gate，避免每轮
+# Stop 都打断对话收尾。
+set -uo pipefail
+
+cat >/dev/null || true
+exit 0

@@ -11,23 +11,22 @@ This directory contains Codex shared agent runtime resources derived from
   `__CLAUDE_CONFIG_HOME__`. It currently registers PreToolUse checks for skill
   lookup / git commit workflow and a PermissionRequest allowlist for
   `external-llm-review` reviewer.py Bash calls.
-- `skills.list`
-  Whitelist of `claude-skills/` entries that are safe to expose directly as
-  native Codex skills under `$HOME/.agents/skills`.
-  If `skills.list.local` exists, `init_codex.sh` uses it instead of the tracked
-  `skills.list`; this file is intentionally ignored for per-machine overrides.
 - `superpowers-bootstrap.md`
   Handwritten Codex-side bootstrap prompt for using Superpowers workflows
   without relying on plugin `SessionStart` injection.
 
 ## Shared links created by `init_codex.sh`
 
-- `~/.codex/agents.md`
+- `~/.codex/AGENTS.md`
   Links directly to `claude/CLAUDE.md` after that file was made host-neutral
   enough for shared use.
 - `~/.codex/memory.md`
   Links to the repo-root `memory.md` so the shared global instructions can
   reference a real Codex-side memory file.
+- `$HOME/.agents/skills/<name>`
+  Symlinks selected native skills from `claude-skills/` or
+  `vendor/superpowers/skills/`. The allowlist is `agents/skills.list`; if
+  `agents/skills.list.local` exists, `init_codex.sh` uses that local override.
 
 ## Deliberate non-goals
 

@@ -1001,6 +1001,13 @@ if command -v claude >/dev/null 2>&1; then
     claude plugins marketplace add claude-plugins-official github anthropics/claude-plugins-official 2>/dev/null || true
   fi
 
+  # 确保 OpenAI Codex marketplace 已注册（供 codex 插件使用）
+  if [ ! -f "$DST/plugins/known_marketplaces.json" ] \
+      || ! grep -q '"openai-codex"' "$DST/plugins/known_marketplaces.json" 2>/dev/null; then
+    echo "[plugins] 注册 marketplace openai-codex ..."
+    claude plugins marketplace add openai/codex-plugin-cc 2>/dev/null || true
+  fi
+
   # 确保 vendored superpowers marketplace 已注册
   if [ -d "$SRC/vendor/superpowers/.claude-plugin" ] || [ -f "$SRC/vendor/superpowers/.claude-plugin/marketplace.json" ]; then
     if [ ! -f "$DST/plugins/known_marketplaces.json" ] \

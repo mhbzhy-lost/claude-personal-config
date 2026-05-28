@@ -369,3 +369,31 @@ agent type`。
 的 `general`。两者不是同一个枚举。派发 opencode 任务时只用 `general` 或 `explore`。
 
 **规避**：每次调 task tool 前，`subagent_type` 直接写 `general`，不要尝试其他名字。
+
+## Claude Code 安装 OpenAI Codex 插件
+
+OpenAI 官方 Codex Claude Code 插件的 marketplace 源是 `openai/codex-plugin-cc`，
+注册后 marketplace 名称是 `openai-codex`，插件安装名是 `codex@openai-codex`。
+手动安装命令：
+
+```sh
+claude plugins marketplace add openai/codex-plugin-cc
+claude plugins install codex@openai-codex
+```
+
+在本仓 `init_claude.sh` 中，marketplace 注册由脚本显式处理；实际插件安装由
+`claude/plugins.list` 的 `codex:openai-codex` 条目驱动，统一走后续
+`claude plugins install "$key"` 清单循环。
+
+安装后 `claude plugins details codex@openai-codex` 应显示 `Agents (1) codex-rescue`。
+
+## Codex hooks.json 验证链路差异
+
+Codex App 会话会在会话内加载 `~/.codex/hooks.json`，但修改该文件后当前会话不一定
+热加载新增 hook。排查 push hook 时，`git commit` 探针仍被旧 PreToolUse 拦截，
+而新增 `external-review-gate` 在同一会话的 `git push` 中没有生成 marker。
+
+不要用 `codex exec` 直接等价验证 App 会话 hook：Codex CLI 0.134.0 的
+`codex exec --json` 事件显示 shell 为 `command_execution`，实测即使临时加
+`matcher: ".*"` 的 `~/.codex/hooks.json` 探针，也没有收到 payload。验证 App hook
+需要新开 App/Codex 会话，或在当前会话中用无副作用探针确认已加载的 hook 集合。

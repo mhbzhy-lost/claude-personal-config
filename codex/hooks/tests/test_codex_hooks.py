@@ -14,6 +14,7 @@ CODEX_SKILL_PREFLIGHT_HOOK = REPO_ROOT / "codex" / "hooks" / "skill-resolve-pref
 CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK = (
     REPO_ROOT / "codex" / "hooks" / "external-llm-review-permission.sh"
 )
+CODEX_STOP_VERIFICATION_HOOK = REPO_ROOT / "codex" / "hooks" / "stop-verification.sh"
 SHARED_EXTERNAL_REVIEW_GATE = (
     REPO_ROOT / "shared" / "hooks" / "external-review-gate.sh"
 )
@@ -96,7 +97,83 @@ def permission_request_payload(command: str, tool_name: str = "Bash") -> dict:
     }
 
 
+def assert_no_review_strategy_leaks(testcase: unittest.TestCase, reason: str) -> None:
+    for leaked in ("Round", "round", "EXTERNAL_REVIEW_SKIP", "Marker"):
+        testcase.assertNotIn(leaked, reason)
+
+
 class CodexHooksTest(unittest.TestCase):
+    def _setup_repo_with_pending_push(self, tmp_path: Path) -> tuple[Path, Path]:
+        remote = tmp_path / "remote.git"
+        repo = tmp_path / "repo"
+
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "init", "-b", "main", str(repo)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.email", "test@example.com"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.name", "Test User"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        (repo / "tracked.py").write_text("print('initial')\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "tracked.py"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "initial"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "remote", "add", "origin", str(remote)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "push", "-u", "origin", "main"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        (repo / "tracked.py").write_text(
+            "print('initial')\n"
+            + "".join(f"print('next {idx}')\n" for idx in range(12))
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "tracked.py"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "next"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return repo, remote
+
     def test_codex_git_commit_hook_denies_without_command_marker(self) -> None:
         output = run_hook(CODEX_GIT_COMMIT_HOOK, bash_payload("git commit -m test"))
         data = json.loads(output)
@@ -104,17 +181,15 @@ class CodexHooksTest(unittest.TestCase):
 
         self.assertEqual(hook_output["permissionDecision"], "deny")
         reason = hook_output["permissionDecisionReason"]
-        self.assertIn("知识文档检查", reason)
-        self.assertIn("external-llm-review skill", reason)
-        self.assertIn("Skill 工具加载", reason)
+        self.assertIn("提交前必须完成", reason)
+        self.assertIn("加载 git-commit skill", reason)
+        self.assertIn("知识文档：按", reason)
+        self.assertIn("异源复审已由 push hook 自动执行", reason)
         self.assertNotIn("对本次 staged diff", reason)
         self.assertNotIn("non-blocking", reason)
         self.assertNotIn("豁免条件", reason)
-        self.assertIn("明确本项目不需维护知识文档", reason)
-        self.assertIn("Knowledge: not needed - <具体原因>", reason)
         self.assertIn(str(KNOWLEDGE_README), reason)
         self.assertNotIn("$CLAUDE_CONFIG_HOME/docs/knowledge/README.md", reason)
-        self.assertNotIn("按 `docs/knowledge/README.md`", reason)
         self.assertIn("GIT_COMMIT_HINT_SKIP=1", reason)
         self.assertNotIn("description 字段", reason)
         self.assertNotIn("skip-git-commit-hint", reason)
@@ -155,15 +230,17 @@ class CodexHooksTest(unittest.TestCase):
         data = json.loads(output)
         reason = data["hookSpecificOutput"]["permissionDecisionReason"]
 
-        self.assertIn("知识文档检查", reason)
+        self.assertIn("提交前必须完成", reason)
+        self.assertIn("知识文档：按", reason)
 
     def test_claude_git_commit_hook_uses_env_escape(self) -> None:
         output = run_hook(CLAUDE_GIT_COMMIT_HOOK, bash_payload("git commit -m test"))
         data = json.loads(output)
         reason = data["hookSpecificOutput"]["permissionDecisionReason"]
 
-        self.assertIn("知识文档检查", reason)
-        self.assertIn("Knowledge: updated <path>", reason)
+        self.assertIn("提交前必须完成", reason)
+        self.assertIn("加载 git-commit skill", reason)
+        self.assertIn("知识文档：按", reason)
         self.assertIn("GIT_COMMIT_HINT_SKIP=1", reason)
         self.assertNotIn("命令文本中包含", reason)
 
@@ -181,17 +258,15 @@ class CodexHooksTest(unittest.TestCase):
             knowledge_readme=str(KNOWLEDGE_README),
         )
 
-        self.assertIn("知识文档检查", rendered)
-        self.assertIn("external-llm-review skill", rendered)
-        self.assertIn("Skill 工具加载", rendered)
+        self.assertIn("提交前必须完成", rendered)
+        self.assertIn("加载 git-commit skill", rendered)
+        self.assertIn("知识文档：按", rendered)
+        self.assertIn("异源复审已由 push hook 自动执行", rendered)
         self.assertNotIn("对本次 staged diff", rendered)
         self.assertNotIn("non-blocking", rendered)
         self.assertNotIn("豁免条件", rendered)
-        self.assertIn("明确本项目不需维护知识文档", rendered)
-        self.assertIn("Knowledge: updated <path>", rendered)
         self.assertIn(str(KNOWLEDGE_README), rendered)
         self.assertNotIn("$CLAUDE_CONFIG_HOME/docs/knowledge/README.md", rendered)
-        self.assertNotIn("按 `docs/knowledge/README.md`", rendered)
         self.assertNotIn("skip-git-commit-hint", rendered)
 
         for adapter in (
@@ -202,8 +277,8 @@ class CodexHooksTest(unittest.TestCase):
             adapter_text = adapter.read_text()
             self.assertIn("shared/policies/git-commit-hint.json", adapter_text)
             self.assertNotIn("skip-git-commit-hint", adapter_text)
-            self.assertNotIn("知识文档检查", adapter_text)
-            self.assertNotIn("Knowledge: updated <path>", adapter_text)
+            self.assertNotIn("提交前必须完成", adapter_text)
+            self.assertNotIn("异源复审已由 push hook 自动执行", adapter_text)
 
     def test_opencode_git_commit_plugin_uses_env_escape(self) -> None:
         script = f"""
@@ -228,7 +303,7 @@ try {{
     {{args: {{command: "git commit -m 'skip-git-commit-hint'"}}}},
   );
 }} catch (err) {{
-  denied = String(err.message).includes("知识文档检查");
+  denied = String(err.message).includes("提交前必须完成");
 }}
 
 if (!denied) process.exit(1);
@@ -390,7 +465,9 @@ if (!denied) process.exit(1);
 
     def test_external_review_gate_accepts_codex_exec_tool_names(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config_home = Path(tmp) / "config"
+            tmp_path = Path(tmp)
+            repo, _remote = self._setup_repo_with_pending_push(tmp_path)
+            config_home = tmp_path / "config"
             (config_home / "claude-skills" / "external-llm-review").mkdir(
                 parents=True
             )
@@ -405,7 +482,9 @@ if (!denied) process.exit(1);
                     SHARED_EXTERNAL_REVIEW_GATE,
                     {
                         "tool_name": tool_name,
-                        "tool_input": {command_key: "git push"},
+                        "tool_input": {
+                            command_key: f"git -C {shlex.quote(str(repo))} push",
+                        },
                     },
                     {"CLAUDE_CONFIG_HOME": str(config_home)},
                 )
@@ -416,6 +495,192 @@ if (!denied) process.exit(1);
                     "allow",
                     tool_name,
                 )
+
+    def test_external_review_gate_blocks_tracked_dirty_tree_before_push(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo, _remote = self._setup_repo_with_pending_push(tmp_path)
+            config_home = tmp_path / "config"
+            (config_home / "claude-skills" / "external-llm-review").mkdir(
+                parents=True
+            )
+
+            (repo / "tracked.py").write_text(
+                "print('initial')\n"
+                + "".join(f"print('next {idx}')\n" for idx in range(12))
+                + "print('local work')\n"
+            )
+
+            output = run_hook_with_env(
+                SHARED_EXTERNAL_REVIEW_GATE,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": f"git -C {shlex.quote(str(repo))} push"},
+                },
+                {"CLAUDE_CONFIG_HOME": str(config_home)},
+            )
+            data = json.loads(output)
+            reason = data["hookSpecificOutput"]["permissionDecisionReason"]
+
+            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
+            self.assertIn("未提交变更", reason)
+            self.assertIn("已运行验证命令", reason)
+            assert_no_review_strategy_leaks(self, reason)
+
+    def test_external_review_gate_allows_untracked_only_before_push_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo, _remote = self._setup_repo_with_pending_push(tmp_path)
+            config_home = tmp_path / "config"
+            (config_home / "claude-skills" / "external-llm-review").mkdir(
+                parents=True
+            )
+
+            (repo / "local-note.txt").write_text("local scratch\n")
+
+            output = run_hook_with_env(
+                SHARED_EXTERNAL_REVIEW_GATE,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": f"git -C {shlex.quote(str(repo))} push"},
+                },
+                {"CLAUDE_CONFIG_HOME": str(config_home)},
+            )
+            data = json.loads(output)
+
+            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "allow")
+
+    def test_external_review_gate_denial_hides_review_strategy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo, _remote = self._setup_repo_with_pending_push(tmp_path)
+            config_home = tmp_path / "config"
+            review_dir = config_home / "claude-skills" / "external-llm-review"
+            review_dir.mkdir(parents=True)
+            (review_dir / ".env").write_text("OPENAI_API_KEY=test\n")
+            (review_dir / "reviewer.py").write_text("raise SystemExit(1)\n")
+
+            fake_bin = tmp_path / "bin"
+            fake_bin.mkdir()
+            fake_uv = fake_bin / "uv"
+            fake_uv.write_text(
+                "#!/usr/bin/env bash\n"
+                "cat <<'EOF'\n"
+                "### Important\n"
+                "- still blocked\n"
+                "EOF\n"
+            )
+            fake_uv.chmod(0o755)
+
+            output = run_hook_with_env(
+                SHARED_EXTERNAL_REVIEW_GATE,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": f"git -C {shlex.quote(str(repo))} push"},
+                },
+                {
+                    "CLAUDE_CONFIG_HOME": str(config_home),
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                },
+            )
+            data = json.loads(output)
+            reason = data["hookSpecificOutput"]["permissionDecisionReason"]
+
+            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
+            self.assertIn("异源 Review 发现需要修复的问题", reason)
+            self.assertIn("### Important", reason)
+            assert_no_review_strategy_leaks(self, reason)
+
+            output = run_hook_with_env(
+                SHARED_EXTERNAL_REVIEW_GATE,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": f"git -C {shlex.quote(str(repo))} push"},
+                },
+                {
+                    "CLAUDE_CONFIG_HOME": str(config_home),
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                },
+            )
+            data = json.loads(output)
+            reason = data["hookSpecificOutput"]["permissionDecisionReason"]
+
+            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
+            self.assertIn("异源 Review 发现的问题尚未修复", reason)
+            assert_no_review_strategy_leaks(self, reason)
+
+    def test_external_review_gate_allows_after_round_two_budget_is_used(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo, _remote = self._setup_repo_with_pending_push(tmp_path)
+            config_home = tmp_path / "config"
+            review_dir = config_home / "claude-skills" / "external-llm-review"
+            review_dir.mkdir(parents=True)
+            (review_dir / ".env").write_text("OPENAI_API_KEY=test\n")
+            (review_dir / "reviewer.py").write_text("raise SystemExit(1)\n")
+
+            marker_dir = repo / ".git" / "review-markers"
+            marker_dir.mkdir(parents=True)
+            (marker_dir / "remote.json").write_text(
+                json.dumps(
+                    {
+                        "round": 2,
+                        "diff_hash": "previous-diff",
+                        "has_critical": False,
+                        "has_important": True,
+                        "has_minor": False,
+                        "base_ref": "origin/main",
+                        "head_sha": "old",
+                        "timestamp": "2026-05-28T00:00:00Z",
+                    }
+                )
+                + "\n"
+            )
+
+            fake_bin = tmp_path / "bin"
+            fake_bin.mkdir()
+            uv_log = tmp_path / "uv-called"
+            fake_uv = fake_bin / "uv"
+            fake_uv.write_text(
+                "#!/usr/bin/env bash\n"
+                f"printf called > {shlex.quote(str(uv_log))}\n"
+                "cat <<'EOF'\n"
+                "### Important\n"
+                "- still blocked\n"
+                "EOF\n"
+            )
+            fake_uv.chmod(0o755)
+
+            output = run_hook_with_env(
+                SHARED_EXTERNAL_REVIEW_GATE,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": f"git -C {shlex.quote(str(repo))} push"},
+                },
+                {
+                    "CLAUDE_CONFIG_HOME": str(config_home),
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                },
+            )
+            data = json.loads(output)
+
+            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "allow")
+            self.assertFalse(uv_log.exists(), "reviewer must not run after round 2")
+            self.assertFalse(
+                (marker_dir / "remote.json").exists(),
+                "marker must be removed after max review budget allows push",
+            )
+
+    def test_codex_stop_hook_is_silent_for_valid_stop_event(self) -> None:
+        output = run_hook(
+            CODEX_STOP_VERIFICATION_HOOK,
+            {
+                "hook_event_name": "Stop",
+                "last_assistant_message": "验证已完成。",
+            },
+        )
+
+        self.assertEqual(output, "")
 
     def test_codex_hook_layout_is_separate_from_claude_hooks(self) -> None:
         self.assertTrue(CODEX_GIT_COMMIT_HOOK.is_file())
@@ -552,16 +817,16 @@ await before(
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             repo = tmp_path / "repo"
-            codex_dir = repo / "codex"
+            agents_dir = repo / "agents"
             claude_skills_dir = repo / "claude-skills"
             user_skills_dir = tmp_path / "home" / ".agents" / "skills"
 
-            codex_dir.mkdir(parents=True)
+            agents_dir.mkdir(parents=True)
             claude_skills_dir.mkdir(parents=True)
             (claude_skills_dir / "default-only").mkdir()
             (claude_skills_dir / "local-only").mkdir()
-            (codex_dir / "skills.list").write_text("default-only\n")
-            (codex_dir / "skills.list.local").write_text("local-only\n")
+            (agents_dir / "skills.list").write_text("default-only\n")
+            (agents_dir / "skills.list.local").write_text("local-only\n")
             user_skills_dir.mkdir(parents=True)
             (user_skills_dir / "default-only").symlink_to(
                 claude_skills_dir / "default-only"
@@ -590,6 +855,14 @@ sync_codex_skills
             self.assertTrue((user_skills_dir / "local-only").is_symlink())
             self.assertFalse((user_skills_dir / "default-only").exists())
             self.assertTrue((user_skills_dir / "external-only").is_symlink())
+
+    def test_init_codex_uses_uppercase_agents_md_as_global_rules_entry(self) -> None:
+        init_codex = INIT_CODEX.read_text()
+
+        self.assertRegex(init_codex, r'(?m)^CODEX_AGENTS_PATH="\$CODEX_HOME/AGENTS\.md"$')
+        self.assertNotRegex(init_codex, r'(?m)^CODEX_AGENTS_PATH="\$CODEX_HOME/agents\.md"$')
+        self.assertNotIn("LEGACY_CODEX_AGENTS_PATH", init_codex)
+        self.assertNotIn("cleanup_legacy_codex_agents", init_codex)
 
 
     def _run_sync_opencode_plugins(self, *, repo_root: Path, config_dir: Path) -> subprocess.CompletedProcess[str]:
@@ -805,6 +1078,17 @@ sync_codex_skills
             init_opencode,
             r'desired_pw_headless\s*=\s*\{[^}]*"--headless"',
         )
+
+    def test_init_claude_configures_codex_plugin_marketplace_and_install_list(self) -> None:
+        # Keep this hermetic: source-level assertions catch config drift without
+        # mutating the user's real ~/.claude plugin registry during tests.
+        init_claude = (REPO_ROOT / "init_claude.sh").read_text()
+        plugins_list = (REPO_ROOT / "claude" / "plugins.list").read_text()
+
+        self.assertIn("openai/codex-plugin-cc", init_claude)
+        self.assertIn("openai-codex", init_claude)
+        self.assertIn('claude plugins install "$key"', init_claude)
+        self.assertIn("codex:openai-codex", plugins_list)
 
     def test_sync_opencode_plugins_idempotent_when_already_symlinked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

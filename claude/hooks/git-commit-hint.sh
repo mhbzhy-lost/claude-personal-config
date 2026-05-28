@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PreToolUse hook: 检测 Bash 工具是否在执行 git commit。
-# 是则**阻断**执行，要求 agent 先调用 git-commit + external-llm-review skill。
+# 是则**阻断**执行，要求 agent 先调用 git-commit skill 并处理知识文档判断。
 # 逃生舱：设置 GIT_COMMIT_HINT_SKIP=1 的结构化 Bash env；无 env 字段的工具
 # 可用命令前缀环境变量赋值。
 
@@ -48,12 +48,13 @@ def tool_env_requests_skip(tool_input):
 def command_env_prefix_requests_skip(cmd):
     # Match GIT_COMMIT_HINT_SKIP=<truthy> immediately before `git commit`
     # anywhere in the command string (handles &&, ||, ;, heredocs, $() etc.)
-    pattern = r'(?:^|[;&|]\s*|&&\s*|\|\|\s*)' \
-              r'(?:env\s+)?' \
-              r'(?:\w+=\S*\s+)*' \
-              rf'{SKIP_ENV_NAME}=(\S+)' \
-              r'(?:\s+\w+=\S*)*' \
-              r'\s+git\s+commit'
+    skip_env_pattern = re.escape(SKIP_ENV_NAME)
+    pattern = r"(?:^|[;&|]\s*|&&\s*|\|\|\s*)" \
+              r"(?:env\s+)?" \
+              r"(?:\w+=\S*\s+)*" \
+              rf"{skip_env_pattern}=(\S+)" \
+              r"(?:\s+\w+=\S*)*" \
+              r"\s+git\s+commit"
     m = re.search(pattern, cmd)
     return bool(m) and is_truthy(m.group(1))
 

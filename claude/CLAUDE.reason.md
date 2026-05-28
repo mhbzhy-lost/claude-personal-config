@@ -75,8 +75,9 @@ sandbox 降级）已移入 subagent-driven-development / writing-plans skill 的
 - **`.gitignore` 校验**：worktree 目录未忽略会污染 working tree。
 - **submodule guard**：子模块内 worktree add 会建到子模块独立 .git 里。
 - **sandbox 降级**：权限受限时不应硬卡，降级到串行至少能跑完。
-- **worker 策略**：CLAUDE.md 只保留调度入口和 fallback 原则，避免复述 worker
-  skill 的职责细节。
+- **worker 策略**：实现型 subagent 默认交给 Codex 插件，是为了复用 Claude Code
+  内的 `/codex:rescue`、后台 job、status/result/resume 等闭环；OpenCode DeepSeek
+  worker 保留为显式 fallback，避免默认路径在多套 worker 间摇摆。
 
 </details>
 

@@ -9,7 +9,9 @@ set -uo pipefail
 
 LOG_DIR="$HOME/.claude/logs"
 LOG_FILE="$LOG_DIR/skill-resolve-preflight.log"
-mkdir -p "$LOG_DIR" 2>/dev/null || true
+if ! mkdir -p "$LOG_DIR" 2>/dev/null || ! : >>"$LOG_FILE" 2>/dev/null; then
+  LOG_FILE="/dev/null"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 POLICY_PATH="${SCRIPT_DIR}/../../shared/policies/skill-resolve-preflight.json"
@@ -17,7 +19,8 @@ POLICY_PATH="${SCRIPT_DIR}/../../shared/policies/skill-resolve-preflight.json"
 STDIN="$(cat)"
 
 log() {
-  printf '%s | %s | %s\n' "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE" 2>/dev/null || true
+  { printf '%s | %s | %s\n' "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; } \
+    2>/dev/null >>"$LOG_FILE" || true
 }
 
 log "fired"

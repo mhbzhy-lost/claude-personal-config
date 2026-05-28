@@ -4,7 +4,7 @@
 # 将 claude-config 中可直接复用到 Codex 的共享 agent runtime 资源接到
 # Codex 约定位置。脚本本身通过 shell 执行，但生成的是可被 Codex CLI、
 # Codex app、IDE extension 共同消费的配置层：
-#   - `claude/CLAUDE.md`          -> `~/.codex/agents.md`
+#   - `claude/CLAUDE.md`          -> `~/.codex/AGENTS.md`
 #   - `memory.md`                 -> `~/.codex/memory.md`
 #   - `agents/skills.list`        -> `~/.agents/skills/<name>`（Codex 原生 skill 白名单；
 #                                      与 init_claude.sh 共用同一份单源清单；
@@ -20,7 +20,7 @@
 #   - 保守：若目标已是真实文件/目录，报警但不覆盖
 #   - 单源：claude-config/ 为事实源，Codex 侧仅做共享 runtime 挂载
 #   - 渐进迁移：`skills/` 继续通过 skill-catalog MCP 暴露，不强行扁平化为
-#     Codex 原生 skills；仅将 `codex/skills.list` 白名单暴露出来
+#     Codex 原生 skills；仅将 `agents/skills.list` 白名单暴露出来
 #   - 不写入 app-only 配置：外观、通知、browser use、桌面权限等均不在此脚本管理
 
 set -euo pipefail
@@ -28,7 +28,7 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 USER_SKILLS_DIR="$HOME/.agents/skills"
-CODEX_AGENTS_PATH="$CODEX_HOME/agents.md"
+CODEX_AGENTS_PATH="$CODEX_HOME/AGENTS.md"
 LEGACY_GLOBAL_AGENTS_PATH="$HOME/AGENTS.md"
 CODEX_MEMORY_PATH="$CODEX_HOME/memory.md"
 HOOKS_TEMPLATE="$SRC/codex/hooks.json"
@@ -154,7 +154,7 @@ sync_codex_skills() {
     return
   fi
 
-  if [ "$list_file" = "$SRC/codex/skills.list.local" ]; then
+  if [ "$list_file" = "$SRC/agents/skills.list.local" ]; then
     echo "[skills] using local override list: $list_file"
   fi
 

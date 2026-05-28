@@ -86,3 +86,6 @@ exec_command: stdout=''
 - 命令字段同时兼容 `command` 与 `cmd`，覆盖 `functions.exec_command` payload。
 - 已新增回归测试覆盖 `Bash`、`run_shell_command`、`exec_command`、
   `functions.exec_command` 四类工具名。
+- push gate 现在在检测到待 push commit 且 tracked 工作区仍有未提交变更时阻断，
+  提示先运行验证并提交/处理本地变更；untracked-only 本地草稿不阻断，Stop hook 因
+  过于频繁改为静默。
