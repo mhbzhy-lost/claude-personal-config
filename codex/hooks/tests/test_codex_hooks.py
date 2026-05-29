@@ -62,6 +62,24 @@ def run_hook_with_env(script: Path, payload: dict, env: dict[str, str]) -> str:
     return proc.stdout
 
 
+def run_hook_with_env_cwd(
+    script: Path,
+    payload: dict,
+    env: dict[str, str],
+    cwd: Path,
+) -> str:
+    proc = subprocess.run(
+        ["bash", str(script)],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        check=True,
+        env={**os.environ, **env},
+        cwd=cwd,
+    )
+    return proc.stdout
+
+
 def run_hook_raw(script: Path, payload: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(script)],
@@ -678,6 +696,62 @@ if (!denied) process.exit(1);
 
             self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "allow")
 
+    def test_external_review_gate_uses_tool_workdir_for_bare_git_push(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            root_repo, _root_remote = self._setup_repo_with_pending_push(tmp_path / "root")
+            child_repo, _child_remote = self._setup_repo_with_pending_push(tmp_path / "child")
+            child_repo_dest = root_repo / "vendor" / "child"
+            child_repo_dest.parent.mkdir()
+            child_repo.rename(child_repo_dest)
+
+            config_home = tmp_path / "config"
+            review_dir = config_home / "claude-skills" / "external-llm-review"
+            review_dir.mkdir(parents=True)
+            (review_dir / ".env").write_text("OPENAI_API_KEY=test\n")
+            (review_dir / "reviewer.py").write_text("raise SystemExit(1)\n")
+
+            fake_bin = tmp_path / "bin"
+            fake_bin.mkdir()
+            fake_uv = fake_bin / "uv"
+            fake_uv.write_text(
+                "#!/usr/bin/env bash\n"
+                "cat <<'EOF'\n"
+                "### Important\n"
+                "- workdir target blocked\n"
+                "EOF\n"
+            )
+            fake_uv.chmod(0o755)
+
+            output = run_hook_with_env_cwd(
+                SHARED_EXTERNAL_REVIEW_GATE,
+                {
+                    "tool_name": "functions.exec_command",
+                    "tool_input": {
+                        "parameters": {
+                            "cmd": "git push origin main",
+                            "workdir": str(child_repo_dest),
+                        }
+                    },
+                },
+                {
+                    "CLAUDE_CONFIG_HOME": str(config_home),
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                },
+                cwd=root_repo,
+            )
+            data = json.loads(output)
+
+            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
+            self.assertTrue(
+                (child_repo_dest / ".git" / "review-markers" / "remote.json").is_file(),
+                "bare git push with tool workdir must write marker in target repo",
+            )
+            self.assertFalse(
+                (root_repo / ".git" / "review-markers" / "remote.json").exists(),
+                "bare git push with tool workdir must not consume root repo marker",
+            )
+
     def test_external_review_gate_denial_hides_review_strategy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -759,7 +833,7 @@ if (!denied) process.exit(1);
                         "has_minor": False,
                         "base_ref": "origin/main",
                         "head_sha": "old",
-                        "timestamp": "2026-05-28T00:00:00Z",
+                        "timestamp": "2099-01-01T00:00:00Z",
                     }
                 )
                 + "\n"

@@ -126,6 +126,14 @@ except Exception:
 # Parse command for explicit cd prefix: "cd /path && git push"
 _cd_match = re.search(r"cd\s+([^\s;&|]+)\s*[;&|]", cmd)
 _gitC_match = re.search(r"git\s+-C\s+([^\s]+)\s+push", cmd)
+_tool_workdir = ""
+for _container in (params, tool_input):
+    if not isinstance(_container, dict):
+        continue
+    _candidate = _container.get("workdir") or _container.get("cwd") or ""
+    if isinstance(_candidate, str) and _candidate.strip():
+        _tool_workdir = _candidate.strip()
+        break
 
 if _cd_match and os.path.isdir(os.path.abspath(_cd_match.group(1))):
     _effective = os.path.abspath(_cd_match.group(1))
@@ -137,6 +145,11 @@ elif _gitC_match and os.path.isdir(os.path.abspath(_gitC_match.group(1))):
     _git_prefix = ["git", "-C", _effective]
     os.chdir(_effective)
     log(f"effective dir from -C: {_effective}")
+elif _tool_workdir and os.path.isdir(os.path.abspath(_tool_workdir)):
+    _effective = os.path.abspath(_tool_workdir)
+    _git_prefix = ["git", "-C", _effective]
+    os.chdir(_effective)
+    log(f"effective dir from tool workdir: {_effective}")
 else:
     # Check if main repo has 0 commits but a submodule has pending pushes
     _gitmodules = Path(_hook_git_top) / ".gitmodules"
