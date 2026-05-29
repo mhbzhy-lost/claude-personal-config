@@ -32,15 +32,24 @@ with config_path.open(encoding="utf-8") as f:
     config = json.load(f)
 
 provider = config["provider"]["openai-compatible-cached"]
-assert provider["options"]["baseURL"] == "http://127.0.0.1:48761/compatible-mode/v1"
-assert provider["options"]["apiKey"] == "{env:OPENAI_COMPATIBLE_API_KEY}"
+provider_options = provider.get("options") or {}
+provider_headers = provider_options.get("headers") or {}
+assert provider_options.get("baseURL") == "http://127.0.0.1:48761/compatible-mode/v1"
+assert "apiKey" not in provider_options
+assert provider_headers.get("x-cache-proxy-upstream-base-url") == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+assert provider_headers.get("x-cache-proxy-marker-strategy") == "turn-stable"
 assert "qwen3.6-plus" in provider["models"]
 assert "qwen3.7-max" in provider["models"]
 
 anthropic_provider = config["provider"]["anthropic-cached"]
+anthropic_options = anthropic_provider.get("options") or {}
+anthropic_headers = anthropic_options.get("headers") or {}
 assert anthropic_provider["npm"] == "@ai-sdk/anthropic"
-assert anthropic_provider["options"]["baseURL"] == "http://127.0.0.1:48761/apps/anthropic/v1"
-assert "apiKey" not in anthropic_provider["options"]
+assert anthropic_options.get("baseURL") == "http://127.0.0.1:48761/apps/anthropic/v1"
+assert "apiKey" not in anthropic_options
+assert anthropic_headers.get("x-cache-proxy-upstream-base-url") == "https://api.anthropic.com"
+assert anthropic_headers.get("x-cache-proxy-cache-strategy") == "cache"
+assert anthropic_headers.get("x-cache-proxy-metadata-user-id")
 assert "claude-opus-4-6" in anthropic_provider["models"]
 
 assert "bailian-custom-cached" not in config["provider"]
@@ -56,6 +65,11 @@ assert os.readlink(proxy_link) == str(root / "vendor/opencode-cache-proxy/proxy"
 
 print("init_opencode cache proxy integration test passed")
 PY
+
+if grep -E -q -- '^[^#]*--opencode-(api-key-env|anthropic-api-key-env|anthropic-models)([[:space:]]|$)' "$ROOT/init_opencode.sh"; then
+  echo "init_opencode.sh must not pass provider-specific config flags" >&2
+  exit 1
+fi
 
 LEGACY_ROOT="$TMP_DIR/legacy-repo"
 LEGACY_CONFIG_DIR="$TMP_DIR/legacy-opencode-config"
