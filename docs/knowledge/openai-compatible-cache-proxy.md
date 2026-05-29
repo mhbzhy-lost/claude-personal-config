@@ -6,7 +6,7 @@ applies_to:
   - init_opencode.sh
   - init_qwen.sh
   - vendor/opencode-cache-proxy/
-last_verified: 2026-05-29
+last_verified: 2026-05-30
 source: OpenCode provider-driven proxy config migration
 ---
 
@@ -39,10 +39,14 @@ OpenCode 托管 provider id 包括：
 
 - `openai-compatible-cached`：走 `@ai-sdk/openai-compatible`，用于 Qwen/OpenAI
   compatible chat-completions。
-- `anthropic-cached`：走 `@ai-sdk/anthropic`，用于 Anthropic Messages API 形态的
-  Opus/Claude provider，base URL 指向本地 proxy 的 `/apps/anthropic/v1`。
+- `anthropic-idealab-cached`：走 `@ai-sdk/anthropic`，用于 Idealab 提供的
+  Anthropic Messages API 形态 Opus provider，base URL 指向本地 proxy 的
+  `/apps/anthropic/v1`，上游 URL 与 Claude-compatible upstream user-agent 固定写在
+  provider header 中。
 
-旧 id `bailian-cache` / `bailian-custom-cached` 视为 legacy，配置入口会清理迁移。
+旧 id `bailian-cache` / `bailian-custom-cached` / `anthropic-cached` 视为 legacy，
+配置入口会清理迁移；旧 `anthropic-cached` 的稳定 `metadata.user_id` 会迁移到
+`anthropic-idealab-cached`。
 
 OpenCode cached providers 默认都不写 `options.apiKey`。OpenCode custom provider
 的凭据由子仓交互式 bootstrap 写入：
@@ -56,9 +60,10 @@ node vendor/opencode-cache-proxy/proxy/bin/opencode-cache-proxy-auth.mjs
 可能不识别 custom provider，不能把它当成可靠的 headless 录入路径。
 
 key 存在 `~/.local/share/opencode/auth.json`。上游 URL、marker strategy、
-Anthropic cache strategy 和 `metadata.user_id` 由子仓配置器写入 provider
+Anthropic cache strategy、上游 user-agent 和 `metadata.user_id` 由子仓配置器写入 provider
 `options.headers` 的 `x-cache-proxy-*` 控制头；proxy 消费这些头后必须剥离，不能
-转发给真实上游。
+转发给真实上游。Anthropic upstream 不走 `.env` 或 init 脚本参数；需要支持另一个
+Anthropic-compatible 平台时新增独立 provider，而不是给一个 provider 再挂多套配置。
 其中 `x-cache-proxy-upstream-base-url` 只允许 loopback 客户端生效；如果 proxy
 被绑定到非本机接口，远端客户端不能通过该 header 改写上游 URL。
 
@@ -126,9 +131,14 @@ git -C vendor/opencode-cache-proxy diff --check
 - `~/.config/opencode/plugins/bailian-cache-proxy.js` 指向子仓 plugin；
 - 主仓 `opencode/plugins/bailian-cache-proxy.js` 不存在；
 - `~/.config/opencode/opencode.json` 里有 `openai-compatible-cached` 与
-  `anthropic-cached`，且默认都没有 `options.apiKey`；
+  `anthropic-idealab-cached`，且默认都没有 `options.apiKey`；
 - 两个 cached provider 都带 `options.headers["x-cache-proxy-upstream-base-url"]`；
-- `opencode models anthropic-cached` 能列出 `anthropic-cached/claude-opus-4-6`；
+- `anthropic-idealab-cached.options.headers["x-cache-proxy-upstream-base-url"]`
+  固定为 `https://idealab.alibaba-inc.com/api/anthropic`；
+- `anthropic-idealab-cached.options.headers["x-cache-proxy-upstream-user-agent"]`
+  固定为 `claude-cli/2.1.156 (external, sdk-cli)`；
+- `opencode models anthropic-idealab-cached` 能列出
+  `anthropic-idealab-cached/claude-opus-4-6`；
 - 第二遍配置快照无差异。
 
 ## 未来工作（当前未实施）
