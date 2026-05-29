@@ -299,6 +299,7 @@ configure_opencode_cache_proxy() {
   )
 
   node "${configure_args[@]}"
+  printf '[auth] Cached provider key 可通过子仓交互命令录入: node "%s/vendor/opencode-cache-proxy/proxy/bin/opencode-cache-proxy-auth.mjs"\n' "$SRC"
 }
 
 # ── shared/policies SSOT 软链 ────────────────────────────
