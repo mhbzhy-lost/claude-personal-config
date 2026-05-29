@@ -41,7 +41,10 @@ def parse_section(review_text: str, header_keyword: str) -> bool:
     if not m:
         return False
     body = m.group(1).strip()
-    if not body or _NEGATIVE.match(body):
+    first_line = next((line.strip() for line in body.splitlines() if line.strip()), "")
+    normalized_first = re.sub(r"^[-*+]\s*", "", first_line).strip()
+    normalized_first = normalized_first.strip("*_` \t")
+    if not body or _NEGATIVE.match(normalized_first):
         return False
     return True
 

@@ -811,6 +811,50 @@ if (!denied) process.exit(1);
             self.assertIn("异源 Review 发现的问题尚未修复", reason)
             assert_no_review_strategy_leaks(self, reason)
 
+    def test_external_review_gate_treats_markdown_none_as_no_blocking_issues(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo, _remote = self._setup_repo_with_pending_push(tmp_path)
+            config_home = tmp_path / "config"
+            review_dir = config_home / "claude-skills" / "external-llm-review"
+            review_dir.mkdir(parents=True)
+            (review_dir / ".env").write_text("OPENAI_API_KEY=test\n")
+            (review_dir / "reviewer.py").write_text("raise SystemExit(1)\n")
+
+            fake_bin = tmp_path / "bin"
+            fake_bin.mkdir()
+            fake_uv = fake_bin / "uv"
+            fake_uv.write_text(
+                "#!/usr/bin/env bash\n"
+                "cat <<'EOF'\n"
+                "#### Critical (Must Fix)\n"
+                "*无*\n\n"
+                "#### Important (Should Fix)\n"
+                "*无*\n\n"
+                "#### Minor (Nice to Have)\n"
+                "- non-blocking polish\n\n"
+                "### Assessment\n"
+                "Ready to merge? Yes\n"
+                "EOF\n"
+                "exit 0\n"
+            )
+            fake_uv.chmod(0o755)
+
+            output = run_hook_with_env(
+                SHARED_EXTERNAL_REVIEW_GATE,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": f"git -C {shlex.quote(str(repo))} push"},
+                },
+                {
+                    "CLAUDE_CONFIG_HOME": str(config_home),
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                },
+            )
+            data = json.loads(output)
+
+            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "allow")
+
     def test_external_review_gate_allows_after_round_two_budget_is_used(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
