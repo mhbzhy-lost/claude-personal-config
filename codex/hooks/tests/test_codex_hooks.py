@@ -634,13 +634,7 @@ if (!denied) process.exit(1);
                     },
                     {"CLAUDE_CONFIG_HOME": str(config_home)},
                 )
-                data = json.loads(output)
-
-                self.assertEqual(
-                    data["hookSpecificOutput"]["permissionDecision"],
-                    "allow",
-                    tool_name,
-                )
+                self.assertEqual(output, "", tool_name)
 
     def test_external_review_gate_blocks_tracked_dirty_tree_before_push(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -692,9 +686,7 @@ if (!denied) process.exit(1);
                 },
                 {"CLAUDE_CONFIG_HOME": str(config_home)},
             )
-            data = json.loads(output)
-
-            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "allow")
+            self.assertEqual(output, "")
 
     def test_external_review_gate_uses_tool_workdir_for_bare_git_push(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -840,20 +832,27 @@ if (!denied) process.exit(1);
             )
             fake_uv.chmod(0o755)
 
-            output = run_hook_with_env(
-                SHARED_EXTERNAL_REVIEW_GATE,
-                {
-                    "tool_name": "Bash",
-                    "tool_input": {"command": f"git -C {shlex.quote(str(repo))} push"},
-                },
-                {
+            proc = subprocess.run(
+                ["bash", str(SHARED_EXTERNAL_REVIEW_GATE)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {
+                            "command": f"git -C {shlex.quote(str(repo))} push",
+                        },
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                check=True,
+                env={
+                    **os.environ,
                     "CLAUDE_CONFIG_HOME": str(config_home),
                     "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
                 },
             )
-            data = json.loads(output)
-
-            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "allow")
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("[external-review-gate] allow", proc.stderr)
 
     def test_external_review_gate_allows_after_round_two_budget_is_used(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -908,9 +907,7 @@ if (!denied) process.exit(1);
                     "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
                 },
             )
-            data = json.loads(output)
-
-            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "allow")
+            self.assertEqual(output, "")
             self.assertFalse(uv_log.exists(), "reviewer must not run after round 2")
             self.assertFalse(
                 (marker_dir / "remote.json").exists(),
@@ -984,8 +981,7 @@ if (!denied) process.exit(1);
             "tool_input": {"user_prompt": "x", "language": ["python"]},
         }
         output = run_hook(CODEX_SKILL_PREFLIGHT_HOOK, payload)
-        data = json.loads(output)
-        self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "allow")
+        self.assertEqual(output, "")
 
     def test_codex_skill_preflight_ignores_unrelated_tools(self) -> None:
         payload = {"tool_name": "Bash", "tool_input": {"command": "ls"}}
@@ -1002,6 +998,14 @@ if (!denied) process.exit(1);
         self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
         reason = data["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("mcp__skill-catalog__resolve", reason)
+
+    def test_claude_skill_preflight_allows_when_any_tag_present(self) -> None:
+        payload = {
+            "tool_name": "mcp__skill-catalog__resolve",
+            "tool_input": {"user_prompt": "x", "tech_stack": ["fastapi"]},
+        }
+        output = run_hook(CLAUDE_SKILL_PREFLIGHT_HOOK, payload)
+        self.assertEqual(output, "")
 
     def test_opencode_skill_preflight_plugin_blocks_and_passes(self) -> None:
         # Drive the OpenCode plugin via node and assert it raises for missing

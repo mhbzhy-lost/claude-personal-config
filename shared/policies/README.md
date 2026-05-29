@@ -33,6 +33,11 @@ harness 能力差异（例如某 host 没有对应 hook 类型）时尊重差异
 
 Qwen Code 参数嵌套：`tool_input.parameters.command`（Claude 是 `tool_input.command`）。共享脚本统一用 `params = tool_input.get("parameters") or tool_input` 兼容。
 
+PreToolUse 的放行路径必须保持透明：**stdout 为空且 exit 0**。不要输出
+`permissionDecision: "allow"`；Codex 当前不支持这个值，会报
+`unsupported permissionDecision:allow`。只有阻断路径输出结构化
+`permissionDecision: "deny"`。
+
 ## Qwen Code 事件支持状态（待验证）
 
 | 事件 | 已注册 hook | 状态 |

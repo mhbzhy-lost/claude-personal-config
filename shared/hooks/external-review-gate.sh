@@ -50,10 +50,7 @@ def parse_section(review_text: str, header_keyword: str) -> bool:
 
 
 def allow():
-    print(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": "allow",
-    }}))
+    log("allow")
     sys.exit(0)
 
 
@@ -67,7 +64,6 @@ def deny(reason: str):
 
 
 def silent():
-    print("")
     sys.exit(0)
 
 

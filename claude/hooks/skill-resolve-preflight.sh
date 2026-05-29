@@ -36,7 +36,6 @@ try:
     payload = json.loads(raw)
 except Exception as exc:
     sys.stderr.write(f"skill-resolve-preflight: stdin parse failed: {exc}\n")
-    print("")
     sys.exit(0)
 
 policy_path = Path(os.environ["POLICY_PATH"]).resolve()
@@ -44,19 +43,16 @@ try:
     policy = json.loads(policy_path.read_text(encoding="utf-8"))
 except Exception as exc:
     sys.stderr.write(f"skill-resolve-preflight: policy load failed: {exc}\n")
-    print("")
     sys.exit(0)
 
 host = os.environ.get("HINT_HOST", "claude")
 target_tool = (policy.get("tool_names") or {}).get(host)
 if not target_tool:
     sys.stderr.write(f"skill-resolve-preflight: missing tool_names.{host} in {policy_path}\n")
-    print("")
     sys.exit(0)
 
 tool_name = payload.get("tool_name") or ""
 if tool_name != target_tool:
-    print("")
     sys.exit(0)
 
 tool_input = payload.get("tool_input") or {}
@@ -70,14 +66,7 @@ def _nonempty(v):
     )
 
 if _nonempty(tech_stack) or _nonempty(language) or _nonempty(capability):
-    out = {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-        }
-    }
-    sys.stderr.write("skill-resolve-preflight: allow\n")
-    print(json.dumps(out, ensure_ascii=False))
+    sys.stderr.write("skill-resolve-preflight: allow (silent)\n")
     sys.exit(0)
 
 template_lines = policy.get("deny_reason_template") or []
