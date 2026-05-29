@@ -36,6 +36,13 @@ assert provider["options"]["baseURL"] == "http://127.0.0.1:48761/compatible-mode
 assert provider["options"]["apiKey"] == "{env:OPENAI_COMPATIBLE_API_KEY}"
 assert "qwen3.6-plus" in provider["models"]
 assert "qwen3.7-max" in provider["models"]
+
+anthropic_provider = config["provider"]["anthropic-cached"]
+assert anthropic_provider["npm"] == "@ai-sdk/anthropic"
+assert anthropic_provider["options"]["baseURL"] == "http://127.0.0.1:48761/apps/anthropic/v1"
+assert "apiKey" not in anthropic_provider["options"]
+assert "claude-opus-4-6" in anthropic_provider["models"]
+
 assert "bailian-custom-cached" not in config["provider"]
 
 plugin_dir = Path(os.environ["OPENCODE_CONFIG_DIR"]) / "plugins"

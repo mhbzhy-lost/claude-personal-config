@@ -289,13 +289,23 @@ configure_opencode_cache_proxy() {
     return
   fi
 
-  node "$config_cli" opencode \
+  local configure_args=(
+    "$config_cli" opencode
     --repo-root "$SRC/vendor/opencode-cache-proxy" \
     --opencode-config "$OPENCODE_JSON" \
     --opencode-plugin-mode symlink \
     --opencode-plugin-dir "$plugin_dir" \
     --opencode-api-key-env "${OPENCODE_CACHE_PROXY_API_KEY_ENV:-OPENAI_COMPATIBLE_API_KEY}" \
+    --opencode-anthropic-models "${OPENCODE_CACHE_PROXY_ANTHROPIC_MODELS:-claude-opus-4-6}" \
     --port "$BAILIAN_CACHE_PROXY_PORT"
+  )
+  if [ -n "${OPENCODE_CACHE_PROXY_ANTHROPIC_API_KEY_ENV:-}" ]; then
+    configure_args+=(
+      --opencode-anthropic-api-key-env "$OPENCODE_CACHE_PROXY_ANTHROPIC_API_KEY_ENV"
+    )
+  fi
+
+  node "${configure_args[@]}"
 }
 
 # ── shared/policies SSOT 软链 ────────────────────────────
