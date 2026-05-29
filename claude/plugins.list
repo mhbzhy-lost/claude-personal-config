@@ -34,5 +34,4 @@ plugin-dev:claude-plugins-official       # Plugin 脚手架（plugin.json/skills
 skill-creator:claude-plugins-official    # Skill 创建/优化/触发率评测
 agent-sdk-dev:claude-plugins-official    # Agent SDK 应用脚手架
 frontend-design:claude-plugins-official  # 高质感前端 UI 生成
-github:claude-plugins-official           # GitHub PR/issue/review 一站式
 commit-commands:claude-plugins-official  # /commit / /commit-push-pr / /clean_gone
