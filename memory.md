@@ -397,3 +397,14 @@ Codex App 会话会在会话内加载 `~/.codex/hooks.json`，但修改该文件
 `codex exec --json` 事件显示 shell 为 `command_execution`，实测即使临时加
 `matcher: ".*"` 的 `~/.codex/hooks.json` 探针，也没有收到 payload。验证 App hook
 需要新开 App/Codex 会话，或在当前会话中用无副作用探针确认已加载的 hook 集合。
+
+## Anthropic 兼容缓存命中关键字段
+
+在 Anthropic 兼容端点上，prompt cache 命中不依赖 `x-claude-code-session-id`。
+实测同一缓存前缀在相同 session、不同 session、无 session 下都能命中。
+
+真正影响缓存隔离的是请求体里的 `metadata.user_id`：稳定填充同一个
+`metadata.user_id` 时可读到缓存；删除 metadata、空 metadata，或两次请求之间更换
+`metadata.user_id` 都会导致重新创建缓存。给 opencode 这类客户端做缓存代理时，
+如果客户端不稳定提供该字段，proxy 应在非 bypass 模式下补一个稳定、低敏的
+`metadata.user_id`。
