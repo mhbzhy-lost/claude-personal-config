@@ -509,11 +509,25 @@ def remove_table(text, table_name):
     return "\n".join(lines)
 
 
+def remove_table_prefix(text, table_prefix):
+    lines = text.splitlines()
+    out = []
+    skip = False
+    for line in lines:
+        stripped_line = line.strip()
+        if stripped_line.startswith("[") and stripped_line.endswith("]"):
+            table_name = stripped_line[1:-1]
+            skip = table_name == table_prefix or table_name.startswith(f"{table_prefix}.")
+        if not skip:
+            out.append(line)
+    return "\n".join(out)
+
+
 stripped = remove_table(stripped, "marketplaces.superpowers-dev").rstrip()
 stripped = remove_table(stripped, 'plugins."superpowers@superpowers-dev"').rstrip()
+stripped = remove_table_prefix(stripped, 'mcp_servers."skill-catalog"').rstrip()
 
 for needle in (
-    '[mcp_servers."skill-catalog"]',
     '[mcp_servers."block-catalog"]',
     '[mcp_servers."playwright-mcp"]',
     '[mcp_servers."playwright-mcp-headless"]',
@@ -537,13 +551,7 @@ elif 'multi_agent' not in stripped:
     print('[warn] existing [features] table found outside managed block; not auto-setting multi_agent')
 
 managed_sections.extend([
-f'''[mcp_servers."skill-catalog"]
-command = "{skill_catalog_python}"
-args = ["-m", "skill_catalog.server"]
-env = {{ SKILL_LIBRARY_PATH = "{src}/skills", SKILL_CATALOG_EMBEDDING_MODEL = "{embedding_model}", SKILL_CATALOG_OLLAMA_HOST = "{ollama_host_url}", ENABLE_INTENT_ENHANCEMENT = "{enable_intent_enhancement}" }}
-enabled = true
-
-[mcp_servers."block-catalog"]
+f'''[mcp_servers."block-catalog"]
 command = "{block_catalog_python}"
 args = ["-m", "block_catalog.server"]
 env = {{ BLOCK_LIBRARY_PATH = "{src}/blocks" }}
@@ -578,9 +586,7 @@ cleanup_legacy_global_agents
 link_path "$SRC/memory.md" "$CODEX_MEMORY_PATH"
 sync_codex_skills
 render_hooks_json
-ensure_skill_catalog_venv
 ensure_block_catalog_venv
-ensure_skill_catalog_ollama
 write_codex_managed_config
 
 # ---------------------------------------------------------------------------

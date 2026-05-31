@@ -639,7 +639,9 @@ fi
 
 # ---------------------------------------------------------------------------
 # 初始化 skill-catalog MCP server 的 Python 虚拟环境
+# 默认跳过：skill-catalog 源码保留，但 MCP 不再默认注册，避免拉起本地 Ollama。
 # ---------------------------------------------------------------------------
+if [ "${ENABLE_SKILL_CATALOG_MCP:-false}" = "true" ]; then
 SKILL_CATALOG_DIR="$SRC/mcp/skill-catalog"
 SKILL_CATALOG_VENV="$SKILL_CATALOG_DIR/.venv"
 
@@ -687,6 +689,9 @@ if [ -f "$INTENT_ENHANCEMENT_DIR/pyproject.toml" ] && [ -f "$SKILL_CATALOG_VENV/
     "$SKILL_CATALOG_VENV/bin/pip" install -e "$INTENT_ENHANCEMENT_DIR" >/dev/null
   fi
   echo "[venv] intent-enhancement 依赖就绪"
+fi
+else
+  echo "[skip] skill-catalog MCP 默认禁用，跳过 venv/intent-enhancement 初始化"
 fi
 
 # ---------------------------------------------------------------------------
@@ -747,6 +752,7 @@ fi
 #     - 模型已 pull → 跳过
 #     - 任一步失败告警但不退出，后续 MCP 注册仍能完成，LLM 能力 lazy 启用
 # ---------------------------------------------------------------------------
+if [ "${ENABLE_SKILL_CATALOG_MCP:-false}" = "true" ]; then
 OLLAMA_VERSION="${OLLAMA_VERSION:-v0.21.0}"
 EMBEDDING_MODEL="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
 OLLAMA_PORT="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
@@ -896,37 +902,41 @@ else
     echo "[ok] 临时 daemon 已关闭（daemon 生命周期移交给 MCP server lifecycle）"
   fi
 fi
+else
+  echo "[skip] skill-catalog MCP 默认禁用，跳过 Ollama 初始化"
+fi
 
 # ---------------------------------------------------------------------------
 # 注册 MCP server：通过 claude CLI 注册到 user scope (~/.claude.json)
 # Claude Code 不从 settings.json 读取 MCP 配置，必须用 CLI 注册
 # ---------------------------------------------------------------------------
 if command -v claude >/dev/null 2>&1; then
-  MCP_CMD="$SKILL_CATALOG_VENV/bin/python"
-
   # --- skill-catalog MCP ---
-  # 检查是否已注册且配置一致（所有 env 变量必须全部匹配）
-  # 历史曾注入 SKILL_CATALOG_OLLAMA_MODEL（qwen classifier），现已下线；
-  # 旧 state 若仍带该 env 视为配置不一致，触发一次性 re-register。
-  CURRENT=$(claude mcp get skill-catalog 2>&1 || true)
-  if echo "$CURRENT" | grep -q "Connected" \
-      && echo "$CURRENT" | grep -q "$MCP_CMD" \
-      && echo "$CURRENT" | grep -q "SKILL_LIBRARY_PATH=$SRC/skills" \
-      && echo "$CURRENT" | grep -q "SKILL_CATALOG_EMBEDDING_MODEL=$EMBEDDING_MODEL" \
-      && echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL" \
-      && echo "$CURRENT" | grep -q "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT" \
-      && ! echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_MODEL="; then
-    echo "[mcp] skill-catalog 已注册且配置一致"
-  else
-    # 先移除旧注册（如有），再重新注册
+  # 源码保留，但默认不再注册 MCP，避免自动拉起本地 Ollama embedding daemon。
+  if [ "${ENABLE_SKILL_CATALOG_MCP:-false}" = "true" ]; then
+    MCP_CMD="$SKILL_CATALOG_VENV/bin/python"
+    CURRENT=$(claude mcp get skill-catalog 2>&1 || true)
+    if echo "$CURRENT" | grep -q "Connected" \
+        && echo "$CURRENT" | grep -q "$MCP_CMD" \
+        && echo "$CURRENT" | grep -q "SKILL_LIBRARY_PATH=$SRC/skills" \
+        && echo "$CURRENT" | grep -q "SKILL_CATALOG_EMBEDDING_MODEL=$EMBEDDING_MODEL" \
+        && echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL" \
+        && echo "$CURRENT" | grep -q "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT" \
+        && ! echo "$CURRENT" | grep -q "SKILL_CATALOG_OLLAMA_MODEL="; then
+      echo "[mcp] skill-catalog 已注册且配置一致"
+    else
+      claude mcp remove skill-catalog -s user 2>/dev/null || true
+      claude mcp add -s user \
+        -e "SKILL_LIBRARY_PATH=$SRC/skills" \
+        -e "SKILL_CATALOG_EMBEDDING_MODEL=$EMBEDDING_MODEL" \
+        -e "SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL" \
+        -e "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT" \
+        -- skill-catalog "$MCP_CMD" -m skill_catalog.server
+      echo "[mcp] skill-catalog 已注册到 user scope（embedding=${EMBEDDING_MODEL}, intent_enhancement=${ENABLE_INTENT_ENHANCEMENT}）"
+    fi
+  elif claude mcp get skill-catalog >/dev/null 2>&1; then
     claude mcp remove skill-catalog -s user 2>/dev/null || true
-    claude mcp add -s user \
-      -e "SKILL_LIBRARY_PATH=$SRC/skills" \
-      -e "SKILL_CATALOG_EMBEDDING_MODEL=$EMBEDDING_MODEL" \
-      -e "SKILL_CATALOG_OLLAMA_HOST=$OLLAMA_HOST_URL" \
-      -e "ENABLE_INTENT_ENHANCEMENT=$ENABLE_INTENT_ENHANCEMENT" \
-      -- skill-catalog "$MCP_CMD" -m skill_catalog.server
-    echo "[mcp] skill-catalog 已注册到 user scope（embedding=${EMBEDDING_MODEL}, intent_enhancement=${ENABLE_INTENT_ENHANCEMENT}）"
+    echo "[mcp] skill-catalog 已移除（源码保留）"
   fi
 
   # --- block-catalog MCP：业务模式 block 索引 + copy ---

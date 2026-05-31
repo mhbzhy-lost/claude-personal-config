@@ -480,48 +480,10 @@ if os.path.exists(config_path):
 mcp = config.setdefault("mcp", {})
 changed = False
 
-# ── skill-catalog ──
-if os.path.exists(venv_python):
-    desired = {
-        "type": "local",
-        "command": [venv_python, "-m", "skill_catalog.server"],
-        "enabled": True,
-        "environment": {
-            "SKILL_LIBRARY_PATH": f"{src}/skills",
-            "SKILL_CATALOG_EMBEDDING_MODEL": embedding_model,
-            "SKILL_CATALOG_OLLAMA_HOST": ollama_host,
-            "ENABLE_INTENT_ENHANCEMENT": intent_enhancement,
-        },
-    }
-    existing = mcp.get("skill-catalog")
-    if existing != desired:
-        if existing is not None:
-            print("[mcp] skill-catalog 已有配置，更新为最新")
-        else:
-            print("[mcp] skill-catalog 新增")
-        mcp["skill-catalog"] = desired
-        changed = True
-    else:
-        print("[mcp] skill-catalog 已是最新")
-else:
-    # venv 未初始化但仍写入配置（路径稳定，venv 后续可用 init_claude.sh 补建）
-    print(f"[warn]  skill-catalog venv 不存在 ({venv_python})，先写入配置，venv 请用 init_claude.sh 初始化")
-    desired = {
-        "type": "local",
-        "command": [venv_python, "-m", "skill_catalog.server"],
-        "enabled": True,
-        "environment": {
-            "SKILL_LIBRARY_PATH": f"{src}/skills",
-            "SKILL_CATALOG_EMBEDDING_MODEL": embedding_model,
-            "SKILL_CATALOG_OLLAMA_HOST": ollama_host,
-            "ENABLE_INTENT_ENHANCEMENT": intent_enhancement,
-        },
-    }
-    existing = mcp.get("skill-catalog")
-    if existing != desired:
-        mcp["skill-catalog"] = desired
-        changed = True
-        print("[mcp] skill-catalog 配置已写入（venv 待初始化）")
+if "skill-catalog" in mcp:
+    mcp.pop("skill-catalog", None)
+    changed = True
+    print("[mcp] skill-catalog 已移除（源码保留）")
 
 # ── block-catalog ──
 if os.path.exists(bc_python):
@@ -687,6 +649,14 @@ elif grep -Fq "CLAUDE_CONFIG_HOME=" "$ZSHRC"; then
 else
   printf '\n# CLAUDE_CONFIG_HOME (auto-registered by init_opencode.sh)\n%s\n' "$EXPORT_LINE" >> "$ZSHRC"
   echo "[linked] CLAUDE_CONFIG_HOME=$SRC registered in ~/.zshrc"
+fi
+
+if command -v lsof >/dev/null 2>&1 \
+    && lsof -nP -iTCP:48761 -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "======================================================================"
+  echo "[warn] opencode-cache-proxy 正在监听 127.0.0.1:48761"
+  echo "       若刚更新 proxy 代码，请重启该进程以加载最新修复。"
+  echo "======================================================================"
 fi
 
 echo "[done] init_opencode.sh 完成"

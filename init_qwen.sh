@@ -85,25 +85,12 @@ if os.path.exists(settings_path):
         sys.exit(1)
 
 # ── mcpServers：完全覆盖 ──
-sc_python = os.path.join(sc_venv, "bin", "python")
 bc_python = os.path.join(bc_venv, "bin", "python")
 
-if not os.path.exists(sc_python):
-    print(f"[warn]  skill-catalog venv 不存在 ({sc_python})，配置仍会写入；请先运行 init_claude.sh 初始化 venv")
 if not os.path.exists(bc_python):
     print(f"[warn]  block-catalog venv 不存在 ({bc_python})，配置仍会写入；请先运行 init_claude.sh 初始化 venv")
 
 mcp_servers = {
-    "skill-catalog": {
-        "command": sc_python,
-        "args": ["-m", "skill_catalog.server"],
-        "env": {
-            "SKILL_LIBRARY_PATH": f"{src}/skills",
-            "SKILL_CATALOG_EMBEDDING_MODEL": embedding_model,
-            "SKILL_CATALOG_OLLAMA_HOST": ollama_host,
-            "ENABLE_INTENT_ENHANCEMENT": intent_enhancement,
-        },
-    },
     "block-catalog": {
         "command": bc_python,
         "args": ["-m", "block_catalog.server"],
@@ -288,7 +275,6 @@ else:
 
 # ── permissions.allow：并集合并（最小集） ──
 managed_perms = [
-    "mcp__skill-catalog",
     "mcp__block-catalog",
     "mcp__playwright-mcp",
     "mcp__playwright-mcp-headless",
