@@ -196,6 +196,22 @@ sync_opencode_plugins() {
   # 是真目录 → per-file symlink 模式
   echo "[plugin] $dst_path 是真目录，进入 per-file symlink 模式"
 
+  # 退役 plugin：stop-verification 曾在每个 session.idle toast 提醒，噪音过高。
+  # 大型任务结束检查统一挪到 git push gate，因此本仓托管的旧软链可自动清理。
+  local retired_plugin retired_link retired_target
+  for retired_plugin in "stop-verification.js"; do
+    retired_link="$dst_path/$retired_plugin"
+    if [ -L "$retired_link" ]; then
+      retired_target=$(readlink "$retired_link")
+      case "$retired_target" in
+        "$src_path/$retired_plugin")
+          rm -f "$retired_link"
+          echo "[plugin] 已移除退役 plugin 软链 $retired_link"
+          ;;
+      esac
+    fi
+  done
+
   # 清理旧版逐文件软链残留（指向已废弃路径）
   local legacy_link="$dst_path/git-commit-hint.js"
   if [ -L "$legacy_link" ]; then

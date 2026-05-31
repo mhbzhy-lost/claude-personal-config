@@ -3,8 +3,8 @@
 # Qwen Code 适配：run_shell_command 工具名 + 嵌套参数 + tool_response/tool_output。
 set -uo pipefail
 
-SESSION_KEY="${CLAUDE_SESSION_KEY:-$PPID}"
-export LAST_TEST_FILE="/tmp/.qwen-last-test-exit-${SESSION_KEY}"
+SESSION_KEY="${CLAUDE_SESSION_KEY:-}"
+export LAST_TEST_FILE="${SESSION_KEY:+/tmp/.qwen-last-test-exit-${SESSION_KEY}}"
 
 python3 -c '
 import json, sys, os, re
@@ -59,21 +59,23 @@ FAIL_SIGNALS = [
 has_failure = any(re.search(p, response) for p in FAIL_SIGNALS)
 
 if has_failure:
-    try:
-        with open(last_test_file, "w") as f:
-            f.write("1")
-    except Exception as e:
-        print(f"[test-failure-hint] write failed: {e}", file=sys.stderr)
+    if last_test_file:
+        try:
+            with open(last_test_file, "w") as f:
+                f.write("1")
+        except Exception as e:
+            print(f"[test-failure-hint] write failed: {e}", file=sys.stderr)
     msg = (
         "⚠️ 测试失败。先走 systematic-debugging 流程做根因分析，"
         "不要直接改实现代码。"
     )
     print(msg)
 else:
-    try:
-        if os.path.exists(last_test_file):
-            os.remove(last_test_file)
-    except Exception as e:
-        print(f"[test-failure-hint] cleanup failed: {e}", file=sys.stderr)
+    if last_test_file:
+        try:
+            if os.path.exists(last_test_file):
+                os.remove(last_test_file)
+        except Exception as e:
+            print(f"[test-failure-hint] cleanup failed: {e}", file=sys.stderr)
     print("")
 ' <<< "$(cat)"

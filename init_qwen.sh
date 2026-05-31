@@ -190,26 +190,6 @@ hooks = {
             ],
         },
     ],
-    "Stop": [
-        {
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": f"{src}/claude/hooks/stop-verification.sh",
-                }
-            ],
-        },
-    ],
-    "SessionStart": [
-        {
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": f"{src}/claude/hooks/memory-loader.sh",
-                }
-            ],
-        },
-    ],
     "SubagentStart": [
         {
             "matcher": "coding-expert",
@@ -252,8 +232,57 @@ for hook_key, desired_hook_value in hooks.items():
         existing_hooks[hook_key] = desired_hook_value
         hooks_changed = True
 
+# SessionStart 不是本仓独占事件，按 command upsert memory loader，保留用户
+# 或其它系统已有 hook（如 cache proxy start）。
+desired_session_start = {
+    "hooks": [
+        {
+            "type": "command",
+            "command": f"{src}/claude/hooks/memory-loader.sh",
+        }
+    ],
+}
+session_start = existing_hooks.setdefault("SessionStart", [])
+memory_cmd = desired_session_start["hooks"][0]["command"]
+found_memory = False
+for idx, entry in enumerate(session_start):
+    if not isinstance(entry, dict):
+        continue
+    if any(
+        isinstance(h, dict) and h.get("command") == memory_cmd
+        for h in entry.get("hooks", []) if isinstance(h, dict)
+    ):
+        found_memory = True
+        if entry != desired_session_start:
+            session_start[idx] = desired_session_start
+            hooks_changed = True
+        break
+if not found_memory:
+    session_start.append(desired_session_start)
+    hooks_changed = True
+
+existing_stop = existing_hooks.get("Stop")
+if isinstance(existing_stop, list):
+    pruned_stop = [
+        entry for entry in existing_stop
+        if not (
+            isinstance(entry, dict)
+            and any(
+                isinstance(h, dict)
+                and h.get("command", "").endswith("/stop-verification.sh")
+                for h in entry.get("hooks", []) if isinstance(h, dict)
+            )
+        )
+    ]
+    if len(pruned_stop) != len(existing_stop):
+        if pruned_stop:
+            existing_hooks["Stop"] = pruned_stop
+        else:
+            existing_hooks.pop("Stop", None)
+        hooks_changed = True
+
 if hooks_changed:
-    print("[hooks] 本仓 hooks 已同步（PreToolUse ×3 + PostToolUse + PostToolUseFailure + Stop + SessionStart + SubagentStart ×3；其它 hook 保留）")
+    print("[hooks] 本仓 hooks 已同步（PreToolUse ×3 + PostToolUse + PostToolUseFailure + SessionStart + SubagentStart ×3；其它 hook 保留）")
 else:
     print("[hooks] 本仓 hooks 已是最新")
 

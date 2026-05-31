@@ -5,6 +5,7 @@ import shlex
 import subprocess
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 
@@ -30,6 +31,10 @@ CLAUDE_SKILL_PREFLIGHT_HOOK = REPO_ROOT / "claude" / "hooks" / "skill-resolve-pr
 OPENCODE_SKILL_PREFLIGHT_PLUGIN = (
     REPO_ROOT / "opencode" / "plugins" / "skill-resolve-preflight.js"
 )
+OPENCODE_RM_OUTSIDE_WORKSPACE_GUARD_PLUGIN = (
+    REPO_ROOT / "opencode" / "plugins" / "rm-outside-workspace-guard.js"
+)
+OPENCODE_PERMISSION = REPO_ROOT / "opencode" / "opencode-permission.json"
 KNOWLEDGE_README = REPO_ROOT / "docs" / "knowledge" / "README.md"
 EXTERNAL_REVIEWER = (
     REPO_ROOT / "claude-skills" / "external-llm-review" / "reviewer.py"
@@ -659,6 +664,7 @@ if (!denied) process.exit(1);
                 },
                 {"CLAUDE_CONFIG_HOME": str(config_home)},
             )
+            self.assertNotEqual(output, "")
             data = json.loads(output)
             reason = data["hookSpecificOutput"]["permissionDecisionReason"]
 
@@ -854,6 +860,40 @@ if (!denied) process.exit(1);
             self.assertEqual(proc.stdout, "")
             self.assertIn("[external-review-gate] allow", proc.stderr)
 
+    def test_external_review_gate_blocks_after_recent_failed_test(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo, _remote = self._setup_repo_with_pending_push(tmp_path)
+            config_home = tmp_path / "config"
+            review_dir = config_home / "claude-skills" / "external-llm-review"
+            review_dir.mkdir(parents=True)
+            (review_dir / ".env").write_text("OPENAI_API_KEY=test\n")
+
+            session_key = f"push-gate-test-{uuid.uuid4()}"
+            failed_test_marker = Path(f"/tmp/.claude-last-test-exit-{session_key}")
+            failed_test_marker.write_text("1")
+            try:
+                output = run_hook_with_env(
+                    SHARED_EXTERNAL_REVIEW_GATE,
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": f"git -C {shlex.quote(str(repo))} push"},
+                    },
+                    {
+                        "CLAUDE_CONFIG_HOME": str(config_home),
+                        "CLAUDE_SESSION_KEY": session_key,
+                    },
+                )
+            finally:
+                failed_test_marker.unlink(missing_ok=True)
+
+            self.assertNotEqual(output, "")
+            data = json.loads(output)
+            reason = data["hookSpecificOutput"]["permissionDecisionReason"]
+            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
+            self.assertIn("最近一次测试执行失败", reason)
+            self.assertIn("git push", reason)
+
     def test_external_review_gate_allows_after_round_two_budget_is_used(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -936,6 +976,30 @@ if (!denied) process.exit(1);
         self.assertIn("CODEX_HOOKS_DIR", init_codex)
         self.assertIn("codex/hooks/git-commit-hint.sh", init_codex)
         self.assertIn("codex/hooks/external-llm-review-permission.sh", init_codex)
+
+    def test_turn_stop_verification_is_not_registered_by_any_host(self) -> None:
+        # Stop fires once per assistant turn, which is too frequent for the
+        # "large task is done" check. The end-of-task gate lives on git push.
+        init_claude = (REPO_ROOT / "init_claude.sh").read_text()
+        self.assertNotIn("desired_stop_hooks", init_claude)
+        self.assertNotIn("新增 hooks.Stop[command=...stop-verification.sh]", init_claude)
+
+        init_qwen = (REPO_ROOT / "init_qwen.sh").read_text()
+        self.assertNotIn('    "Stop": [', init_qwen)
+        self.assertNotIn('f"{src}/claude/hooks/stop-verification.sh"', init_qwen)
+
+        codex_hooks = (REPO_ROOT / "codex" / "hooks.json").read_text()
+        self.assertNotIn('"Stop"', codex_hooks)
+        self.assertNotIn("stop-verification.sh", codex_hooks)
+
+        self.assertFalse(
+            (REPO_ROOT / "opencode" / "plugins" / "stop-verification.js").exists()
+        )
+
+        push_gate = SHARED_EXTERNAL_REVIEW_GATE.read_text()
+        self.assertIn("git push", push_gate)
+        self.assertIn("工作区仍有未提交变更", push_gate)
+        self.assertIn("已运行验证命令", push_gate)
 
     def test_skill_resolve_preflight_policy_is_single_source(self) -> None:
         # SSOT contract: shared policy file holds the deny reason and per-host
@@ -1055,6 +1119,88 @@ await before(
             env=env,
         )
         self.assertEqual(proc.returncode, 0, f"stderr={proc.stderr}\nstdout={proc.stdout}")
+
+    def test_opencode_rm_outside_workspace_guard_blocks_only_external_rm(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            workspace = tmp_path / "workspace"
+            outside = tmp_path / "outside"
+            workspace.mkdir()
+            outside.mkdir()
+
+            script = f"""
+const mod = await import({json.dumps(OPENCODE_RM_OUTSIDE_WORKSPACE_GUARD_PLUGIN.as_uri())});
+const plugin = await mod.RmOutsideWorkspaceGuardPlugin();
+const before = plugin["tool.execute.before"];
+const cwd = {json.dumps(str(workspace))};
+const outside = {json.dumps(str(outside))};
+
+await before({{tool: "bash"}}, {{args: {{command: "rm -rf node_modules dist/file.txt", cwd}}}});
+await before({{tool: "bash"}}, {{args: {{command: "cd subdir && rm ../local.txt", cwd}}}});
+await before({{tool: "bash"}}, {{args: {{command: "echo rm -rf /tmp/not-real", cwd}}}});
+
+let denied = false;
+try {{
+  await before({{tool: "bash"}}, {{args: {{command: `rm -rf ${{outside}}`, cwd}}}});
+}} catch (err) {{
+  const message = String(err.message);
+  denied =
+    message.includes("workspace 外 rm 已被阻断") &&
+    message.includes(`rm -rf ${{outside}}`) &&
+    message.includes("请用户手动执行");
+}}
+if (!denied) {{
+  console.error("expected outside rm to be denied with manual command guidance");
+  process.exit(1);
+}}
+
+let dynamicDenied = false;
+try {{
+  await before({{tool: "bash"}}, {{args: {{command: "TARGET=/tmp/outside rm -rf $TARGET", cwd}}}});
+}} catch (err) {{
+  dynamicDenied = String(err.message).includes("shell 展开");
+}}
+if (!dynamicDenied) {{
+  console.error("expected dynamic rm target to be denied");
+  process.exit(1);
+}}
+
+let pipeDenied = false;
+try {{
+  await before({{tool: "bash"}}, {{args: {{command: `echo a | rm -rf ${{outside}}`, cwd}}}});
+}} catch (err) {{
+  pipeDenied = String(err.message).includes("shell 展开");
+}}
+if (!pipeDenied) {{
+  console.error("expected piped rm command to be denied");
+  process.exit(1);
+}}
+
+let absoluteRmDenied = false;
+try {{
+  await before({{tool: "bash"}}, {{args: {{command: `/bin/rm -rf ${{outside}}`, cwd}}}});
+}} catch (err) {{
+  absoluteRmDenied = String(err.message).includes("workspace 外 rm 已被阻断");
+}}
+if (!absoluteRmDenied) {{
+  console.error("expected /bin/rm outside workspace to be denied");
+  process.exit(1);
+}}
+"""
+            proc = subprocess.run(
+                ["node", "--input-type=module", "-e", script],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, f"stderr={proc.stderr}\nstdout={proc.stdout}")
+
+    def test_opencode_permission_is_yolo_and_rm_guard_is_plugin_owned(self) -> None:
+        permission = json.loads(OPENCODE_PERMISSION.read_text())["template"]
+
+        self.assertEqual(permission["bash"], {"*": "allow"})
+        self.assertEqual(permission["read"], "allow")
+        self.assertEqual(permission["external_directory"], "allow")
+        self.assertTrue(OPENCODE_RM_OUTSIDE_WORKSPACE_GUARD_PLUGIN.is_file())
 
     def test_sync_codex_skills_prefers_local_override_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1265,6 +1411,25 @@ sync_codex_skills
             self.assertIn("已不存在", proc.stdout)
             # Conservative: do NOT auto-rm; user must clean up.
             self.assertTrue((config_dir / "plugins" / "deprecated.js").is_symlink())
+
+    def test_sync_opencode_plugins_removes_retired_stop_verification_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            repo_plugins = repo / "opencode" / "plugins"
+            repo_plugins.mkdir(parents=True)
+            retired_target = repo_plugins / "stop-verification.js"
+
+            config_dir = tmp_path / "user-config"
+            (config_dir / "plugins").mkdir(parents=True)
+            retired_link = config_dir / "plugins" / "stop-verification.js"
+            retired_link.symlink_to(retired_target)
+
+            proc = self._run_sync_opencode_plugins(repo_root=repo, config_dir=config_dir)
+
+            self.assertEqual(proc.returncode, 0, f"stderr={proc.stderr}\nstdout={proc.stdout}")
+            self.assertIn("已移除退役 plugin", proc.stdout)
+            self.assertFalse(retired_link.exists())
 
     def test_sync_opencode_plugins_skips_repo_subdirectories(self) -> None:
         # Defence: if the repo ever ships a sub-directory inside plugins/,

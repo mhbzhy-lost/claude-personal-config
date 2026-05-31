@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # PostToolUse hook (matcher: Bash): 测试命令失败时提醒走 debugging 流程。
-# 同时写入 last-test-exit 状态文件供 stop-verification 读取。
+# 同时写入 last-test-exit 状态文件供 git push gate 读取。
 set -uo pipefail
 
-SESSION_KEY="${CLAUDE_SESSION_KEY:-$PPID}"
-export LAST_TEST_FILE="/tmp/.claude-last-test-exit-${SESSION_KEY}"
+SESSION_KEY="${CLAUDE_SESSION_KEY:-}"
+export LAST_TEST_FILE="${SESSION_KEY:+/tmp/.claude-last-test-exit-${SESSION_KEY}}"
 
 python3 -c '
 import json, sys, os, re
@@ -69,11 +69,12 @@ has_failure = any(re.search(p, response) for p in FAIL_SIGNALS)
 
 if has_failure:
     # 记录失败状态
-    try:
-        with open(last_test_file, "w") as f:
-            f.write("1")
-    except Exception as e:
-        print(f"[test-failure-hint] write failed: {e}", file=sys.stderr)
+    if last_test_file:
+        try:
+            with open(last_test_file, "w") as f:
+                f.write("1")
+        except Exception as e:
+            print(f"[test-failure-hint] write failed: {e}", file=sys.stderr)
     msg = (
         "⚠️ 测试失败。先走 systematic-debugging 流程做根因分析，"
         "不要直接改实现代码。"
@@ -81,10 +82,11 @@ if has_failure:
     print(msg)
 else:
     # 测试通过，清除失败状态
-    try:
-        if os.path.exists(last_test_file):
-            os.remove(last_test_file)
-    except Exception as e:
-        print(f"[test-failure-hint] cleanup failed: {e}", file=sys.stderr)
+    if last_test_file:
+        try:
+            if os.path.exists(last_test_file):
+                os.remove(last_test_file)
+        except Exception as e:
+            print(f"[test-failure-hint] cleanup failed: {e}", file=sys.stderr)
     print("")
 ' <<< "$(cat)"

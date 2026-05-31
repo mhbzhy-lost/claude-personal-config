@@ -338,18 +338,6 @@ desired_pretooluse_hooks = [
     },
 ]
 
-# Stop hook：终态验证提醒
-desired_stop_hooks = [
-    {
-        "hooks": [
-            {
-                "type": "command",
-                "command": f"{src_root}/claude/hooks/stop-verification.sh",
-            }
-        ],
-    },
-]
-
 # PostToolUseFailure hook：熔断计数
 desired_post_failure_hooks = [
     {
@@ -452,28 +440,6 @@ for desired in desired_pretooluse_hooks:
                     break
         changed = True
         print(f"[settings] 更新 hooks.PreToolUse[matcher={matcher!r} cmd=...{desired_cmd.split('/')[-1]}]")
-
-# 合并 hooks.Stop：无 matcher，按 command 路径 upsert
-stop_hooks = hooks.setdefault("Stop", [])
-for desired in desired_stop_hooks:
-    cmd = desired["hooks"][0]["command"]
-    found_idx = None
-    for i, entry in enumerate(stop_hooks):
-        if isinstance(entry, dict):
-            for h in entry.get("hooks", []):
-                if isinstance(h, dict) and h.get("command") == cmd:
-                    found_idx = i
-                    break
-        if found_idx is not None:
-            break
-    if found_idx is None:
-        stop_hooks.append(desired)
-        changed = True
-        print(f"[settings] 新增 hooks.Stop[command=...stop-verification.sh]")
-    elif stop_hooks[found_idx] != desired:
-        stop_hooks[found_idx] = desired
-        changed = True
-        print(f"[settings] 更新 hooks.Stop[command=...stop-verification.sh]")
 
 # 合并 hooks.PostToolUseFailure：按 matcher upsert
 post_failure = hooks.setdefault("PostToolUseFailure", [])
@@ -627,6 +593,29 @@ if isinstance(existing_user_prompt, list):
             "[settings] 已清理废弃的 UserPromptSubmit hooks"
             f"（{', '.join(s.lstrip('/') for s in deprecated_user_prompt_scripts)}）"
         )
+
+# 一次性清理：移除 turn-level 终态验证 hook。
+# Stop 每轮都会触发，时机过早；大型任务结束检查统一放到 git push gate。
+existing_stop = hooks.get("Stop")
+if isinstance(existing_stop, list):
+    pruned = [
+        entry for entry in existing_stop
+        if not (
+            isinstance(entry, dict)
+            and any(
+                isinstance(h, dict)
+                and h.get("command", "").endswith("/stop-verification.sh")
+                for h in entry.get("hooks", []) if isinstance(h, dict)
+            )
+        )
+    ]
+    if len(pruned) != len(existing_stop):
+        if pruned:
+            hooks["Stop"] = pruned
+        else:
+            hooks.pop("Stop", None)
+        changed = True
+        print("[settings] 已清理 turn-level stop verification hook")
 
 # 注入 CLAUDE_CONFIG_HOME 环境变量，供 skill 引用 claude-config 实际路径
 # （不硬编码 ~/claude-config，支持任意位置 clone）

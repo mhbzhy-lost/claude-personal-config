@@ -103,17 +103,17 @@ end_hooks = [
     for hook in group["hooks"]
 ]
 assert any(
-    hook["name"] == "bailian-cache-proxy-start"
+    hook.get("name") == "bailian-cache-proxy-start"
     and hook["command"].endswith("bailian-cache-proxy-qwen-hook.mjs start")
     for hook in start_hooks
 )
 assert any(
-    hook["name"] == "keep-session-start"
+    hook.get("name") == "keep-session-start"
     and hook["command"] == "echo keep-session-start"
     for hook in start_hooks
 )
 assert any(
-    hook["name"] == "bailian-cache-proxy-stop"
+    hook.get("name") == "bailian-cache-proxy-stop"
     and hook["command"].endswith("bailian-cache-proxy-qwen-hook.mjs stop")
     for hook in end_hooks
 )

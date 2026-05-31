@@ -243,6 +243,27 @@ if dirty_summary:
         f"检测到：\n{dirty_summary}"
     )
 
+# --- Check recent test failure marker ---
+# This used to be surfaced by a turn-level Stop hook. That fires too often for
+# "large task is done"; git push is the actual end-of-task boundary. Only use a
+# real session key; PPID-based fallback is predictable in /tmp and can be abused
+# by another local process to force false denies.
+session_key = os.environ.get("CLAUDE_SESSION_KEY")
+if session_key and re.fullmatch(r"[A-Za-z0-9_-]+", session_key):
+    for marker_prefix in ("/tmp/.claude-last-test-exit-", "/tmp/.qwen-last-test-exit-"):
+        marker_path = Path(f"{marker_prefix}{session_key}")
+        try:
+            if marker_path.is_file() and marker_path.read_text().strip() == "1":
+                deny(
+                    "🚫 禁止 git push。最近一次测试执行失败。\n"
+                    "请先按 systematic-debugging 流程完成根因分析，修复后重新运行验证命令，"
+                    "确认输出通过再 push。"
+                )
+        except OSError as exc:
+            log(f"last test marker check failed for {marker_path}: {exc}")
+elif session_key:
+    log("skip last test marker check: invalid CLAUDE_SESSION_KEY")
+
 # --- Check .env exists (reviewer.py needs credentials) ---
 if not Path(REVIEWER_ENV).is_file():
     log("no .env configured, degraded allow")
