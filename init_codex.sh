@@ -9,6 +9,7 @@
 #   - `agents/skills.list`        -> `~/.agents/skills/<name>`（Codex 原生 skill 白名单；
 #                                      与 init_claude.sh 共用同一份单源清单；
 #                                      来源为 claude-skills/ 或 vendor/superpowers/skills/；
+#                                      worker 派发类 skill 不暴露到 ~/.agents/skills；
 #                                      若存在 `agents/skills.list.local` 则本机覆盖）
 #   - `codex/hooks.json`          -> 渲染到 `~/.codex/hooks.json`
 #   - `mcp/*`                     -> 合并到 `~/.codex/config.toml`
@@ -66,6 +67,15 @@ codex_skills_list_file() {
   else
     printf '%s\n' "$default_list"
   fi
+}
+
+codex_agents_skill_excluded() {
+  case "$1" in
+    claude-code-worker|opencode-deepseek-worker)
+      return 0
+      ;;
+  esac
+  return 1
 }
 
 link_path() {
@@ -160,6 +170,11 @@ sync_codex_skills() {
   local skill_name src_skill dst_skill
   local skill_allowlist=()
   while IFS= read -r skill_name; do
+    if codex_agents_skill_excluded "$skill_name"; then
+      echo "[skills] skipping worker skill for ~/.agents/skills: $skill_name"
+      continue
+    fi
+
     skill_allowlist+=("$skill_name")
 
     if [ -d "$claude_skills_dir/$skill_name" ]; then

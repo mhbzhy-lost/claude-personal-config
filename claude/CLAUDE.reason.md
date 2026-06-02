@@ -62,11 +62,11 @@ skill 本身不可修改，原 reason 保留在下方备查：
 ## 并发
 
 > **原因**：串行浪费独立任务的并行潜力；DAG 显式声明依赖才能安全并发。
+> subagent 让独立任务在隔离上下文中推进，避免主对话串行吞吐受限；
 > worktree 隔离避免并发 subagent 的文件写入冲突。
 
 详细的 worktree 安全契约（目录优先级、gitignore 校验、submodule guard、
-sandbox 降级）已移入 subagent-driven-development / writing-plans skill 的
-职责范围。原 reason 保留在下方备查：
+sandbox 降级）已移入 writing-plans skill 的职责范围。原 reason 保留在下方备查：
 
 <details>
 <summary>并发策略原 reason（备查）</summary>
@@ -83,19 +83,12 @@ sandbox 降级）已移入 subagent-driven-development / writing-plans skill 的
 
 ---
 
-## Skill 行为 override
+## Subagent
 
-### `writing-plans`
-
-> **原因**：LLM 知识截止 + 训练数据中的代码常含过期 API，凭直觉写计划最容易翻车。
-> 强制先检索 = 用本地高质量 skill 库压制幻觉。Web 补充覆盖训练截止后的窗口期：
-> 版本/CVE/新协议这几类变化最快，必须实时查。计划含 DAG + 验证方式是为了
-> 支撑并发编排和终态校验。
-
-### `receiving-code-review`
-
-> **原因**：LLM 默认倾向"performative agreement"——收到反馈立刻同意并照做，
-> 即使反馈本身有误。强制先验证再采纳避免 reviewer 的误报被 agent 放大成错误修改。
+> **原因**：subagent 的价值在于把独立上下文并行推进；如果创建后同步等待，
+> 主对话会退化成串行调度器，既浪费并发窗口，也更容易在长任务中丢失全局协调。
+> 后台模式让主对话继续做 DAG 调度、风险收敛和验证准备，只在真实冲突或需要
+> 用户决策时停下来。
 
 ---
 
@@ -108,9 +101,25 @@ sandbox 降级）已移入 subagent-driven-development / writing-plans skill 的
 
 ---
 
+## Skill 行为 override
+
+### `writing-plans`
+
+> **原因**：LLM 知识截止 + 训练数据中的代码常含过期 API，凭直觉写计划最容易翻车。
+> 强制 Web 调研可以覆盖训练截止后的窗口期，并把第三方 SDK、CVE、新协议、
+> 平台规则等外部约束纳入计划。计划含 DAG + 验证方式是为了支撑并发编排和
+> 终态校验。
+
+### `receiving-code-review`
+
+> **原因**：LLM 默认倾向"performative agreement"——收到反馈立刻同意并照做，
+> 即使反馈本身有误。强制先验证再采纳避免 reviewer 的误报被 agent 放大成错误修改。
+
+---
+
 ## 修复卡壳熔断
 
 > **原因**：同一思路连续失败 3 次说明当前假设大概率有误，继续硬试是在错误方向
-> 上加倍投入。强制调研（knowledge-retrieval + Web）引入外部信息打破 agent 的
+> 上加倍投入。强制 Web 调研引入外部信息打破 agent 的
 > 确认偏误闭环。"换个角度"不重置计数，因为实际上仍在同一问题上，只是 agent
 > 在 rationalize 继续尝试。

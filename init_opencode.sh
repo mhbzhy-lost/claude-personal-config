@@ -6,7 +6,7 @@
 #
 # 职责：
 #   - MCP server：转为 opencode 原生格式写入 opencode.json（幂等）
-#   - Skills：opencode 原生读取 ~/.claude/skills/，已由 init_claude.sh 维护
+#   - Skills：关闭 Claude Code 兼容加载；保留 OpenCode 原生 skills / plugin
 #   - OpenAI-compatible cache proxy：调用 vendor/opencode-cache-proxy 自带配置入口
 #
 # 不影响 ~/.claude.json / ~/.claude/，可独立运行。
@@ -81,9 +81,6 @@ ensure_opencode_required_submodules() {
   ensure_opencode_submodule_ready \
     "vendor/opencode-cache-proxy" \
     "$SRC/vendor/opencode-cache-proxy/proxy/bin/bailian-cache-proxy-configure.mjs"
-  ensure_opencode_submodule_ready \
-    "vendor/superpowers" \
-    "$SRC/vendor/superpowers/skills"
 }
 
 # ── OpenCode binary ─────────────────────────────────────
@@ -408,9 +405,10 @@ ensure_opencode_required_submodules
 ensure_opencode_installed
 
 # ── Skills ──────────────────────────────────────────────
-# opencode 原生搜索路径含 ~/.claude/skills/<name>/SKILL.md，
-# 由 init_claude.sh 的 sync_claude_skills 维护，无需额外操作。
-echo "[skills] opencode 读取 ~/.claude/skills/，已由 init_claude.sh 维护，无需额外配置"
+# 默认关闭 OpenCode 的 Claude Code 兼容加载，避免把 ~/.claude/CLAUDE.md 和
+# ~/.claude/skills/ 叠加进 OpenCode 首轮上下文；OpenCode 原生 skills / plugin
+# 仍由自身配置加载。
+echo "[skills] OpenCode Claude Code compatibility loading disabled via OPENCODE_DISABLE_CLAUDE_CODE"
 
 # ── Run sync ────────────────────────────────────────────
 sync_opencode_plugins
@@ -560,15 +558,19 @@ else:
     print("[mcp] playwright-mcp-headless 已是最新")
 
 # ── Plugin ──
-desired_plugins = [f"{src}/vendor/superpowers"]
 existing_plugins = config.get("plugin")
-if existing_plugins != desired_plugins:
-    if existing_plugins is not None:
-        print("[plugin] plugin 已有配置，更新为最新")
+retired_plugins = {f"{src}/vendor/superpowers"}
+if isinstance(existing_plugins, list):
+    kept_plugins = [item for item in existing_plugins if item not in retired_plugins]
+    if kept_plugins != existing_plugins:
+        if kept_plugins:
+            config["plugin"] = kept_plugins
+        else:
+            config.pop("plugin", None)
+        changed = True
+        print("[plugin] 已移除 vendor/superpowers plugin，保留用户自管 plugin")
     else:
-        print("[plugin] plugin 新增")
-    config["plugin"] = desired_plugins
-    changed = True
+        print("[plugin] plugin 已是最新")
 else:
     print("[plugin] plugin 已是最新")
 
@@ -627,29 +629,47 @@ else:
     print("[mcp] opencode.json 已是最新，无需改动")
 '
 
-# ── CLAUDE_CONFIG_HOME 注册到 ~/.zshrc ──────────────────
+# ── OpenCode 运行环境注册到 ~/.zshrc ──────────────────
 # OpenCode 的 opencode.json 没有 top-level env 字段（仅 mcp.<name>.environment
 # 可设；不覆盖 agent 主进程），shell 环境变量是 skill 中
 # ${CLAUDE_CONFIG_HOME} 引用的唯一一致来源。逻辑与
 # init_claude.sh / init_codex.sh 保持一致：
 #   行内容 (export ...) 已存在 → no-op
-#   CLAUDE_CONFIG_HOME 存在但路径不同 → warn 不覆盖
+#   变量存在但值不同 → warn 不覆盖
 #   完全不存在 → 追加
 ZSHRC="$HOME/.zshrc"
-EXPORT_LINE="export CLAUDE_CONFIG_HOME=\"$SRC\""
 
-if [ ! -f "$ZSHRC" ]; then
-  echo "[skip] ~/.zshrc not found, please export CLAUDE_CONFIG_HOME manually"
-elif grep -Fq "CLAUDE_CONFIG_HOME=" "$ZSHRC"; then
-  if grep -Fxq "$EXPORT_LINE" "$ZSHRC"; then
-    echo "[ok] CLAUDE_CONFIG_HOME already set to $SRC in ~/.zshrc"
+register_zshrc_export() {
+  local env_name="$1"
+  local export_line="$2"
+  local display_value="$3"
+  local comment="$4"
+
+  if [ ! -f "$ZSHRC" ]; then
+    echo "[skip] ~/.zshrc not found, please set ${env_name} manually"
+  elif grep -Fq "${env_name}=" "$ZSHRC"; then
+    if grep -Fxq "$export_line" "$ZSHRC"; then
+      echo "[ok] ${env_name} already set to ${display_value} in ~/.zshrc"
+    else
+      echo "[warn] ${env_name} exists in ~/.zshrc but points elsewhere; please verify manually"
+    fi
   else
-    echo "[warn] CLAUDE_CONFIG_HOME exists in ~/.zshrc but points elsewhere; please verify manually"
+    printf '\n# %s (auto-registered by init_opencode.sh)\n%s\n' "$comment" "$export_line" >> "$ZSHRC"
+    echo "[linked] ${env_name}=${display_value} registered in ~/.zshrc"
   fi
-else
-  printf '\n# CLAUDE_CONFIG_HOME (auto-registered by init_opencode.sh)\n%s\n' "$EXPORT_LINE" >> "$ZSHRC"
-  echo "[linked] CLAUDE_CONFIG_HOME=$SRC registered in ~/.zshrc"
-fi
+}
+
+register_zshrc_export \
+  "CLAUDE_CONFIG_HOME" \
+  "export CLAUDE_CONFIG_HOME=\"$SRC\"" \
+  "$SRC" \
+  "CLAUDE_CONFIG_HOME"
+
+register_zshrc_export \
+  "OPENCODE_DISABLE_CLAUDE_CODE" \
+  "export OPENCODE_DISABLE_CLAUDE_CODE=1" \
+  "1" \
+  "Disable OpenCode Claude Code compatibility loading"
 
 if command -v lsof >/dev/null 2>&1 \
     && lsof -nP -iTCP:48761 -sTCP:LISTEN >/dev/null 2>&1; then

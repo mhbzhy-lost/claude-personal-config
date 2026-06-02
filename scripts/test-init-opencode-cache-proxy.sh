@@ -19,6 +19,25 @@ export PATH="$FAKE_BIN:$PATH"
 export OPENCODE_CONFIG_DIR="$TMP_DIR/opencode-config"
 
 mkdir -p "$HOME"
+touch "$HOME/.zshrc"
+mkdir -p "$OPENCODE_CONFIG_DIR"
+USER_PLUGIN="$TMP_DIR/user-opencode-plugin"
+export USER_PLUGIN
+
+python3 <<'PY'
+import json
+import os
+from pathlib import Path
+
+config_dir = Path(os.environ["OPENCODE_CONFIG_DIR"])
+root = Path(os.environ["ROOT"])
+user_plugin = os.environ["USER_PLUGIN"]
+config_dir.mkdir(parents=True, exist_ok=True)
+(config_dir / "opencode.json").write_text(
+    json.dumps({"plugin": [str(root / "vendor/superpowers"), user_plugin]}, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
 
 bash "$ROOT/init_opencode.sh" >/dev/null
 
@@ -61,6 +80,7 @@ assert "claude-opus-4-6" in (anthropic_provider.get("models") or {}), "Missing c
 
 assert "bailian-custom-cached" not in providers
 assert "anthropic-cached" not in providers
+assert config.get("plugin") == [os.environ["USER_PLUGIN"]], config.get("plugin")
 
 plugin_dir = Path(os.environ["OPENCODE_CONFIG_DIR"]) / "plugins"
 plugin_link = plugin_dir / "bailian-cache-proxy.js"
@@ -70,6 +90,11 @@ assert proxy_link.is_symlink(), proxy_link
 root = Path(os.environ["ROOT"])
 assert os.readlink(plugin_link) == str(root / "vendor/opencode-cache-proxy/plugins/bailian-cache-proxy.js")
 assert os.readlink(proxy_link) == str(root / "vendor/opencode-cache-proxy/proxy")
+
+zshrc = Path(os.environ["HOME"]) / ".zshrc"
+zshrc_text = zshrc.read_text(encoding="utf-8")
+assert f'export CLAUDE_CONFIG_HOME="{root}"' in zshrc_text
+assert "export OPENCODE_DISABLE_CLAUDE_CODE=1" in zshrc_text
 
 print("init_opencode cache proxy integration test passed")
 PY
