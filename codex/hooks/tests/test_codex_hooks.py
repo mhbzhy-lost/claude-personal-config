@@ -641,7 +641,7 @@ if (!denied) process.exit(1);
                 )
                 self.assertEqual(output, "", tool_name)
 
-    def test_external_review_gate_blocks_tracked_dirty_tree_before_push(self) -> None:
+    def test_external_review_gate_allows_tracked_dirty_tree_before_push_review(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             repo, _remote = self._setup_repo_with_pending_push(tmp_path)
@@ -664,14 +664,7 @@ if (!denied) process.exit(1);
                 },
                 {"CLAUDE_CONFIG_HOME": str(config_home)},
             )
-            self.assertNotEqual(output, "")
-            data = json.loads(output)
-            reason = data["hookSpecificOutput"]["permissionDecisionReason"]
-
-            self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
-            self.assertIn("未提交变更", reason)
-            self.assertIn("已运行验证命令", reason)
-            assert_no_review_strategy_leaks(self, reason)
+            self.assertEqual(output, "")
 
     def test_external_review_gate_allows_untracked_only_before_push_review(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -748,6 +741,121 @@ if (!denied) process.exit(1);
             self.assertFalse(
                 (root_repo / ".git" / "review-markers" / "remote.json").exists(),
                 "bare git push with tool workdir must not consume root repo marker",
+            )
+
+    def test_external_review_gate_uses_current_branch_upstream_not_origin_head(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            remote = tmp_path / "remote.git"
+            repo = tmp_path / "repo"
+
+            subprocess.run(
+                ["git", "init", "--bare", str(remote)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "init", "-b", "master", str(repo)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.email", "test@example.com"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.name", "Test User"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            (repo / "tracked.py").write_text("print('master')\n")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "tracked.py"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "commit", "-m", "master"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "remote", "add", "origin", str(remote)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "push", "-u", "origin", "master"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "switch", "-c", "main"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            (repo / "tracked.py").write_text(
+                "print('master')\n"
+                + "".join(f"print('main {idx}')\n" for idx in range(12))
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "tracked.py"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "commit", "-m", "main"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "push", "-u", "origin", "main"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "remote", "set-head", "origin", "master"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+
+            config_home = tmp_path / "config"
+            review_dir = config_home / "claude-skills" / "external-llm-review"
+            review_dir.mkdir(parents=True)
+            (review_dir / ".env").write_text("OPENAI_API_KEY=test\n")
+            (review_dir / "reviewer.py").write_text("raise SystemExit(1)\n")
+
+            fake_bin = tmp_path / "bin"
+            fake_bin.mkdir()
+            uv_log = tmp_path / "uv-called"
+            fake_uv = fake_bin / "uv"
+            fake_uv.write_text(
+                "#!/usr/bin/env bash\n"
+                f"printf called > {shlex.quote(str(uv_log))}\n"
+                "cat <<'EOF'\n"
+                "### Important\n"
+                "- should not review a clean current upstream\n"
+                "EOF\n"
+            )
+            fake_uv.chmod(0o755)
+
+            output = run_hook_with_env(
+                SHARED_EXTERNAL_REVIEW_GATE,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": f"git -C {shlex.quote(str(repo))} push"},
+                },
+                {
+                    "CLAUDE_CONFIG_HOME": str(config_home),
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                },
+            )
+
+            self.assertEqual(output, "")
+            self.assertFalse(
+                uv_log.exists(),
+                "clean current branch upstream must not trigger external review",
             )
 
     def test_external_review_gate_denial_hides_review_strategy(self) -> None:
@@ -998,8 +1106,8 @@ if (!denied) process.exit(1);
 
         push_gate = SHARED_EXTERNAL_REVIEW_GATE.read_text()
         self.assertIn("git push", push_gate)
-        self.assertIn("工作区仍有未提交变更", push_gate)
-        self.assertIn("已运行验证命令", push_gate)
+        self.assertIn("最近一次测试执行失败", push_gate)
+        self.assertNotIn("工作区仍有未提交变更", push_gate)
 
     def test_skill_resolve_preflight_policy_is_single_source(self) -> None:
         # SSOT contract: shared policy file holds the deny reason and per-host
@@ -1244,6 +1352,83 @@ sync_codex_skills
             self.assertTrue((user_skills_dir / "local-only").is_symlink())
             self.assertFalse((user_skills_dir / "default-only").exists())
             self.assertTrue((user_skills_dir / "external-only").is_symlink())
+
+    def test_sync_codex_skills_excludes_worker_skills_from_agents_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            agents_dir = repo / "agents"
+            claude_skills_dir = repo / "claude-skills"
+            user_skills_dir = tmp_path / "home" / ".agents" / "skills"
+
+            agents_dir.mkdir(parents=True)
+            claude_skills_dir.mkdir(parents=True)
+            user_skills_dir.mkdir(parents=True)
+            for skill in [
+                "using-superpowers",
+                "claude-code-worker",
+                "opencode-deepseek-worker",
+            ]:
+                (claude_skills_dir / skill).mkdir()
+            (agents_dir / "skills.list").write_text(
+                "using-superpowers\nclaude-code-worker\nopencode-deepseek-worker\n"
+            )
+            (user_skills_dir / "claude-code-worker").symlink_to(
+                claude_skills_dir / "claude-code-worker"
+            )
+            (user_skills_dir / "opencode-deepseek-worker").symlink_to(
+                claude_skills_dir / "opencode-deepseek-worker"
+            )
+            init_prelude = tmp_path / "init_codex_prelude.sh"
+            init_prelude.write_text(
+                INIT_CODEX.read_text().split("\nensure_codex_installed\n", 1)[0]
+            )
+
+            script = f"""
+source {shlex.quote(str(init_prelude))}
+SRC={shlex.quote(str(repo))}
+USER_SKILLS_DIR={shlex.quote(str(user_skills_dir))}
+sync_codex_skills
+"""
+            proc = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue((user_skills_dir / "using-superpowers").is_symlink())
+            self.assertFalse((user_skills_dir / "claude-code-worker").exists())
+            self.assertFalse((user_skills_dir / "opencode-deepseek-worker").exists())
+
+    def test_using_superpowers_is_repo_scoped_native_skill(self) -> None:
+        skills = [
+            line.strip()
+            for line in (REPO_ROOT / "agents" / "skills.list").read_text().splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        self.assertIn("using-superpowers", skills)
+
+        skill_path = REPO_ROOT / "claude-skills" / "using-superpowers" / "SKILL.md"
+        skill_text = skill_path.read_text()
+        self.assertIn("name: using-superpowers", skill_text)
+        self.assertIn("Do not load `vendor/superpowers` as a plugin", skill_text)
+        for linked_skill in [
+            "systematic-debugging",
+            "test-driven-development",
+            "writing-plans",
+            "verification-before-completion",
+            "receiving-code-review",
+        ]:
+            self.assertIn(f"`{linked_skill}`", skill_text)
+        for omitted_skill in [
+            "brainstorming",
+            "requesting-code-review",
+            "subagent-driven-development",
+            "dispatching-parallel-agents",
+            "finishing-a-development-branch",
+        ]:
+            self.assertNotIn(omitted_skill, skill_text)
 
     def test_init_codex_uses_uppercase_agents_md_as_global_rules_entry(self) -> None:
         init_codex = INIT_CODEX.read_text()

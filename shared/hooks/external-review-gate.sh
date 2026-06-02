@@ -194,54 +194,29 @@ MARKER_DIR = Path(_eff_top) / ".git" / "review-markers"
 
 # --- Determine base ref ---
 try:
-    default_branch = subprocess.check_output(
-        _git_prefix + ["rev-parse", "--abbrev-ref", "origin/HEAD"],
+    base_ref = subprocess.check_output(
+        _git_prefix + ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
         text=True, stderr=subprocess.DEVNULL
     ).strip()
 except Exception:
-    default_branch = "origin/main"
+    try:
+        base_ref = subprocess.check_output(
+            _git_prefix + ["rev-parse", "--abbrev-ref", "origin/HEAD"],
+            text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except Exception:
+        base_ref = "origin/main"
 
 # --- Check if there are commits to push ---
 try:
     ahead = subprocess.check_output(
-        _git_prefix + ["rev-list", f"{default_branch}..HEAD", "--count"],
+        _git_prefix + ["rev-list", f"{base_ref}..HEAD", "--count"],
         text=True, stderr=subprocess.DEVNULL
     ).strip()
     if ahead == "0":
         silent()  # nothing to push, let git handle it
 except Exception:
     silent()
-
-def _working_tree_summary():
-    try:
-        staged = subprocess.check_output(
-            _git_prefix + ["diff", "--cached", "--shortstat"],
-            text=True, stderr=subprocess.DEVNULL,
-        ).strip()
-        unstaged = subprocess.check_output(
-            _git_prefix + ["diff", "--shortstat"],
-            text=True, stderr=subprocess.DEVNULL,
-        ).strip()
-    except (subprocess.CalledProcessError, OSError, FileNotFoundError) as exc:
-        log(f"working tree summary failed: {exc}")
-        return ""
-
-    lines = []
-    if staged:
-        lines.append("  staged: " + staged)
-    if unstaged:
-        lines.append("  unstaged: " + unstaged)
-    return "\n".join(lines)
-
-
-dirty_summary = _working_tree_summary()
-if dirty_summary:
-    deny(
-        "🚫 禁止 push。检测到工作区仍有未提交变更。\n"
-        "请先确认已运行验证命令并确认输出，再提交或明确处理这些本地变更，"
-        "避免把未验证/未提交内容漏在本机。\n"
-        f"检测到：\n{dirty_summary}"
-    )
 
 # --- Check recent test failure marker ---
 # This used to be surfaced by a turn-level Stop hook. That fires too often for
@@ -272,11 +247,11 @@ if not Path(REVIEWER_ENV).is_file():
 # --- Get diff stats for exemption ---
 try:
     diff_stat = subprocess.check_output(
-        ["git", "diff", "--stat", f"{default_branch}..HEAD"],
+        ["git", "diff", "--stat", f"{base_ref}..HEAD"],
         text=True, stderr=subprocess.DEVNULL
     ).strip()
     diff_numstat = subprocess.check_output(
-        ["git", "diff", "--numstat", f"{default_branch}..HEAD"],
+        ["git", "diff", "--numstat", f"{base_ref}..HEAD"],
         text=True, stderr=subprocess.DEVNULL
     ).strip()
 except Exception:
@@ -315,7 +290,7 @@ if diff_numstat:
 # --- Compute diff hash ---
 try:
     diff_content = subprocess.check_output(
-        ["git", "diff", f"{default_branch}..HEAD"],
+        ["git", "diff", f"{base_ref}..HEAD"],
         text=True, stderr=subprocess.DEVNULL
     )
     diff_hash = hashlib.sha256(diff_content.encode()).hexdigest()[:16]
@@ -463,7 +438,7 @@ reviewer_cmd = [
     "uv", "run", "--no-project",
     "--with", "openai>=1.50", "--with", "python-dotenv",
     "python", REVIEWER_PY,
-    default_branch, "HEAD",
+    base_ref, "HEAD",
     "--backend", "api",
     "--review-depth", "exhaustive",
     "--review-round", str(review_round),
@@ -507,7 +482,7 @@ new_marker = {
     "has_critical": has_critical,
     "has_important": has_important,
     "has_minor": has_minor,
-    "base_ref": default_branch,
+    "base_ref": base_ref,
     "head_sha": head_sha,
     "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
 }
