@@ -19,7 +19,19 @@ export PATH="$FAKE_BIN:$PATH"
 export OPENCODE_CONFIG_DIR="$TMP_DIR/opencode-config"
 
 mkdir -p "$HOME"
-touch "$HOME/.zshrc"
+ROOT="$ROOT" HOME="$HOME" python3 <<'PY'
+import os
+from pathlib import Path
+
+root = Path(os.environ["ROOT"])
+home = Path(os.environ["HOME"])
+zshrc = home / ".zshrc"
+zshrc.write_text(
+    f'export CLAUDE_CONFIG_HOME="{root}" # existing value with comment\n'
+    "export MY_OPENCODE_DISABLE_CLAUDE_CODE=1\n",
+    encoding="utf-8",
+)
+PY
 mkdir -p "$OPENCODE_CONFIG_DIR"
 USER_PLUGIN="$TMP_DIR/user-opencode-plugin"
 export USER_PLUGIN
@@ -34,7 +46,20 @@ root = Path(os.environ["ROOT"])
 user_plugin = os.environ["USER_PLUGIN"]
 config_dir.mkdir(parents=True, exist_ok=True)
 (config_dir / "opencode.json").write_text(
-    json.dumps({"plugin": [str(root / "vendor/superpowers"), user_plugin]}, indent=2) + "\n",
+    json.dumps(
+        {
+            "instructions": ["UserGuide.md"],
+            "plugin": [str(root / "vendor/superpowers"), user_plugin],
+            "mcp": {
+                "block-catalog": {
+                    "type": "local",
+                    "command": [str(root / "mcp/block-catalog/.venv/bin/python"), "-m", "block_catalog.server"],
+                    "enabled": True,
+                }
+            },
+        },
+        indent=2,
+    ) + "\n",
     encoding="utf-8",
 )
 PY
@@ -52,6 +77,8 @@ with config_path.open(encoding="utf-8") as f:
 
 providers = config.get("provider")
 assert isinstance(providers, dict), f"Missing or invalid provider map: {providers!r}"
+assert "block-catalog" not in (config.get("mcp") or {}), config.get("mcp")
+assert config.get("instructions") == ["UserGuide.md", "Superpowers.md"], config.get("instructions")
 
 provider = providers.get("openai-compatible-cached")
 assert isinstance(provider, dict), "Missing openai-compatible-cached provider"
@@ -91,10 +118,28 @@ root = Path(os.environ["ROOT"])
 assert os.readlink(plugin_link) == str(root / "vendor/opencode-cache-proxy/plugins/bailian-cache-proxy.js")
 assert os.readlink(proxy_link) == str(root / "vendor/opencode-cache-proxy/proxy")
 
+agents_link = Path(os.environ["OPENCODE_CONFIG_DIR"]) / "AGENTS.md"
+superpowers_link = Path(os.environ["OPENCODE_CONFIG_DIR"]) / "Superpowers.md"
+assert agents_link.is_symlink(), agents_link
+assert superpowers_link.is_symlink(), superpowers_link
+assert os.readlink(agents_link) == str(root / "claude/CLAUDE.md")
+assert os.readlink(superpowers_link) == str(root / "claude/Superpowers.md")
+
 zshrc = Path(os.environ["HOME"]) / ".zshrc"
-zshrc_text = zshrc.read_text(encoding="utf-8")
-assert f'export CLAUDE_CONFIG_HOME="{root}"' in zshrc_text
-assert "export OPENCODE_DISABLE_CLAUDE_CODE=1" in zshrc_text
+zshrc_lines = zshrc.read_text(encoding="utf-8").splitlines()
+claude_config_home_lines = [
+    line
+    for line in zshrc_lines
+    if line.strip().startswith("export CLAUDE_CONFIG_HOME=")
+]
+assert len(claude_config_home_lines) == 1, claude_config_home_lines
+assert claude_config_home_lines[0].startswith(f'export CLAUDE_CONFIG_HOME="{root}"')
+opencode_disable_lines = [
+    line
+    for line in zshrc_lines
+    if line.strip() == "export OPENCODE_DISABLE_CLAUDE_CODE=1"
+]
+assert len(opencode_disable_lines) == 1, zshrc_lines
 
 print("init_opencode cache proxy integration test passed")
 PY

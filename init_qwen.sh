@@ -40,7 +40,6 @@ fi
 
 # 路径变量（供 Python 脚本读取）
 SKILL_CATALOG_VENV="$SRC/mcp/skill-catalog/.venv"
-BLOCK_CATALOG_VENV="$SRC/mcp/block-catalog/.venv"
 
 EMBEDDING_MODEL="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
 OLLAMA_PORT="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
@@ -58,7 +57,6 @@ mkdir -p "$QWEN_CONFIG_DIR"
 export QWEN_SETTINGS="$QWEN_SETTINGS"
 export SRC="$SRC"
 export SKILL_CATALOG_VENV="$SKILL_CATALOG_VENV"
-export BLOCK_CATALOG_VENV="$BLOCK_CATALOG_VENV"
 export EMBEDDING_MODEL="$EMBEDDING_MODEL"
 export OLLAMA_HOST_URL="$OLLAMA_HOST_URL"
 export ENABLE_INTENT_ENHANCEMENT="$ENABLE_INTENT_ENHANCEMENT"
@@ -69,7 +67,6 @@ import json, os, sys, tempfile
 settings_path = os.environ["QWEN_SETTINGS"]
 src = os.environ["SRC"]
 sc_venv = os.environ["SKILL_CATALOG_VENV"]
-bc_venv = os.environ["BLOCK_CATALOG_VENV"]
 embedding_model = os.environ["EMBEDDING_MODEL"]
 ollama_host = os.environ["OLLAMA_HOST_URL"]
 intent_enhancement = os.environ["ENABLE_INTENT_ENHANCEMENT"]
@@ -84,20 +81,7 @@ if os.path.exists(settings_path):
         print(f"[error] {settings_path} 不是合法 JSON：{e}", file=sys.stderr)
         sys.exit(1)
 
-# ── mcpServers：完全覆盖 ──
-bc_python = os.path.join(bc_venv, "bin", "python")
-
-if not os.path.exists(bc_python):
-    print(f"[warn]  block-catalog venv 不存在 ({bc_python})，配置仍会写入；请先运行 init_claude.sh 初始化 venv")
-
 mcp_servers = {
-    "block-catalog": {
-        "command": bc_python,
-        "args": ["-m", "block_catalog.server"],
-        "env": {
-            "BLOCK_LIBRARY_PATH": f"{src}/blocks",
-        },
-    },
     "playwright-mcp": {
         "command": "npx",
         "args": ["-y", "@playwright/mcp"],
@@ -109,11 +93,13 @@ mcp_servers = {
 }
 
 existing_mcp = settings.get("mcpServers")
+if isinstance(existing_mcp, dict):
+    existing_mcp.pop("block-catalog", None)
 if existing_mcp != mcp_servers:
     if existing_mcp is not None:
         print("[mcp] mcpServers 已有配置，覆盖为最新")
     else:
-        print("[mcp] mcpServers 新增（4 个 server）")
+        print("[mcp] mcpServers 新增（2 个 server）")
     settings["mcpServers"] = mcp_servers
 else:
     print("[mcp] mcpServers 已是最新")
@@ -275,7 +261,6 @@ else:
 
 # ── permissions.allow：并集合并（最小集） ──
 managed_perms = [
-    "mcp__block-catalog",
     "mcp__playwright-mcp",
     "mcp__playwright-mcp-headless",
     "Bash(git commit *)",

@@ -11,7 +11,7 @@
 # 而非写入 settings.json（Claude Code 不从 settings.json 读取 MCP 配置）。
 #
 # claude-skills/ 暴露给 ~/.claude/skills，承载 Claude Code 原生 user-invocable
-# Skill（如 /git-commit、/knowledge-retrieval）。与 init_codex.sh 一致的
+# Skill（如 /git-commit）。与 init_codex.sh 一致的
 # 「白名单 + 逐 skill 软链」模式：
 #   - 单源白名单 `agents/skills.list`（可选 `.local` 覆盖），三家共用
 #   - 候选源解析顺序 claude-skills/<name> → vendor/superpowers/skills/<name>
@@ -105,6 +105,7 @@ resolve_list_file() {
 # 仓库根的 CLAUDE.md 是本仓 repo-only 覆盖（Claude Code 自动按 cwd 加载），
 # 不应被全局软链。
 link_item "claude/CLAUDE.md" "CLAUDE.md"
+link_item "claude/Superpowers.md" "Superpowers.md"
 link_item "guidelines"
 link_item "memory.md"
 
@@ -217,7 +218,7 @@ sync_claude_skills() {
       if [ "$cur" = "$src_skill" ]; then
         echo "[ok] $dst_skill -> $src_skill"
       else
-        echo "[warn] $dst_skill 是软链但指向 ${cur}（预期 $src_skill），人工核对"
+        echo "[warn] ${dst_skill} 是软链但指向 ${cur}（预期 ${src_skill}），人工核对"
       fi
     elif [ -e "$dst_skill" ]; then
       echo "[warn] $dst_skill 存在为非目录文件，人工核对"
@@ -290,7 +291,7 @@ settings_path = Path(sys.argv[2])
 #   coding-expert*      (SubagentStart)  → coding-expert-rules-inject.sh
 #       三档 subagent 已删
 #   stack-detector / skill-matcher (SubagentStart) → 由 skill-intent-inject.sh 替代后又下线
-#   skill-intent-inject (UserPromptSubmit) → %skill 关键字与 /knowledge-retrieval 重合后下线
+#   skill-intent-inject (UserPromptSubmit) → 旧 skill 关键字开关，下线
 #   skill-resolve-inject (UserPromptSubmit) → 被 PreToolUse + skill-resolve-preflight 替代
 #   coding-expert-audit (SubagentStop) → 只采集日志无消费，下线
 desired_sub_start_hooks = []
@@ -562,7 +563,7 @@ if isinstance(existing_sub_stop, list):
         print("[settings] 已清理废弃的 SubagentStop hooks（coding-expert-audit）")
 
 # 一次性清理：移除已废弃的 UserPromptSubmit hooks
-#   skill-intent-inject.sh  —— %skill 关键字开关，与 /knowledge-retrieval 重合后下线
+#   skill-intent-inject.sh  —— 旧 skill 关键字开关，下线
 #   skill-resolve-inject.sh —— 早期知识检索注入器，被 PreToolUse + skill-resolve-preflight
 #                              替代后随 533a684 一并删除文件，但 settings.json 残留死引用
 # 仅当条目的 command 指向上述脚本才删除，避免误伤用户自定义 hook。
@@ -798,7 +799,7 @@ else
       case "$ARCH" in
         x86_64) OLLAMA_ARCH="amd64" ;;
         aarch64|arm64) OLLAMA_ARCH="arm64" ;;
-        *) echo "[warn] Linux 架构未支持: $ARCH，LLM 功能不可用" ; OLLAMA_ARCH="" ;;
+        *) echo "[warn] Linux 架构未支持: ${ARCH}，LLM 功能不可用" ; OLLAMA_ARCH="" ;;
       esac
       if [ -n "$OLLAMA_ARCH" ]; then
         TARBALL_URL="https://github.com/ollama/ollama/releases/download/$OLLAMA_VERSION/ollama-linux-$OLLAMA_ARCH.tar.zst"
@@ -820,7 +821,7 @@ else
       fi
       ;;
     *)
-      echo "[warn] 操作系统未支持: $OS，LLM 功能不可用"
+      echo "[warn] 操作系统未支持: ${OS}，LLM 功能不可用"
       ;;
   esac
 fi
@@ -939,23 +940,11 @@ if command -v claude >/dev/null 2>&1; then
     echo "[mcp] skill-catalog 已移除（源码保留）"
   fi
 
-  # --- block-catalog MCP：业务模式 block 索引 + copy ---
-  if [ -f "$BLOCK_CATALOG_VENV/bin/python" ]; then
-    BC_CMD="$BLOCK_CATALOG_VENV/bin/python"
-    BC_CURRENT=$(claude mcp get block-catalog 2>&1 || true)
-    if echo "$BC_CURRENT" | grep -q "Connected" \
-        && echo "$BC_CURRENT" | grep -q "$BC_CMD" \
-        && echo "$BC_CURRENT" | grep -q "BLOCK_LIBRARY_PATH=$SRC/blocks"; then
-      echo "[mcp] block-catalog 已注册且配置一致"
-    else
-      claude mcp remove block-catalog -s user 2>/dev/null || true
-      claude mcp add -s user \
-        -e "BLOCK_LIBRARY_PATH=$SRC/blocks" \
-        -- block-catalog "$BC_CMD" -m block_catalog.server
-      echo "[mcp] block-catalog 已注册到 user scope（library=$SRC/blocks）"
-    fi
-  else
-    echo "[mcp] block-catalog venv 未就绪，跳过 MCP 注册"
+  # --- block-catalog MCP ---
+  # 源码与可选 venv 初始化保留，但默认不再注册 MCP。
+  if claude mcp get block-catalog >/dev/null 2>&1; then
+    claude mcp remove block-catalog -s user 2>/dev/null || true
+    echo "[mcp] block-catalog 已移除（源码保留）"
   fi
 
   # --- playwright-mcp MCP：浏览器自动化（headed 模式，默认） ---
@@ -1237,7 +1226,7 @@ p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n')
 fi
 
 # 提示：已不再使用的 qwen2.5:7b 模型可手动清理（留给用户自决）
-if [ -x "$OLLAMA_BIN" ] && [ -e "$(manifest_path_for "qwen2.5:7b")" ]; then
+if [ "${ENABLE_SKILL_CATALOG_MCP:-false}" = "true" ] && [ -x "${OLLAMA_BIN:-}" ] && [ -e "$(manifest_path_for "qwen2.5:7b")" ]; then
   echo "[hint] qwen2.5:7b 模型已不再使用，可用 'OLLAMA_HOST=$OLLAMA_HOST_URL OLLAMA_MODELS=$OLLAMA_MODELS_DIR $OLLAMA_BIN rm qwen2.5:7b' 手动清理（~4.7GB）"
 fi
 

@@ -2,6 +2,9 @@
 
 与 CLAUDE.md 节标题一一对应。
 
+`CLAUDE.md` 顶部导入 `Superpowers.md`，用于承载选择性软链 Superpowers
+workflow 的使用规则；单独拆文件避免把这部分策略混入宪法级规则正文。
+
 ---
 
 ## 记忆

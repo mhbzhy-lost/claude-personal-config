@@ -463,7 +463,6 @@ write_codex_managed_config() {
   touch "$CONFIG_PATH"
 
   local skill_catalog_python="$SRC/mcp/skill-catalog/.venv/bin/python"
-  local block_catalog_python="$SRC/mcp/block-catalog/.venv/bin/python"
   local embedding_model="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
   local ollama_port="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
   local ollama_host_url="http://127.0.0.1:${ollama_port}"
@@ -474,7 +473,6 @@ write_codex_managed_config() {
   END_MARKER="$END_MARKER" \
   SRC="$SRC" \
   SKILL_CATALOG_PYTHON="$skill_catalog_python" \
-  BLOCK_CATALOG_PYTHON="$block_catalog_python" \
   EMBEDDING_MODEL="$embedding_model" \
   OLLAMA_HOST_URL="$ollama_host_url" \
   ENABLE_INTENT_ENHANCEMENT="$enable_intent_enhancement" \
@@ -488,7 +486,6 @@ begin_marker = os.environ["BEGIN_MARKER"]
 end_marker = os.environ["END_MARKER"]
 src = os.environ["SRC"]
 skill_catalog_python = os.environ["SKILL_CATALOG_PYTHON"]
-block_catalog_python = os.environ["BLOCK_CATALOG_PYTHON"]
 embedding_model = os.environ["EMBEDDING_MODEL"]
 ollama_host_url = os.environ["OLLAMA_HOST_URL"]
 enable_intent_enhancement = os.environ["ENABLE_INTENT_ENHANCEMENT"]
@@ -541,9 +538,9 @@ def remove_table_prefix(text, table_prefix):
 stripped = remove_table(stripped, "marketplaces.superpowers-dev").rstrip()
 stripped = remove_table(stripped, 'plugins."superpowers@superpowers-dev"').rstrip()
 stripped = remove_table_prefix(stripped, 'mcp_servers."skill-catalog"').rstrip()
+stripped = remove_table_prefix(stripped, 'mcp_servers."block-catalog"').rstrip()
 
 for needle in (
-    '[mcp_servers."block-catalog"]',
     '[mcp_servers."playwright-mcp"]',
     '[mcp_servers."playwright-mcp-headless"]',
 ):
@@ -566,13 +563,7 @@ elif 'multi_agent' not in stripped:
     print('[warn] existing [features] table found outside managed block; not auto-setting multi_agent')
 
 managed_sections.extend([
-f'''[mcp_servers."block-catalog"]
-command = "{block_catalog_python}"
-args = ["-m", "block_catalog.server"]
-env = {{ BLOCK_LIBRARY_PATH = "{src}/blocks" }}
-enabled = true
-
-[mcp_servers."playwright-mcp"]
+'''[mcp_servers."playwright-mcp"]
 command = "npx"
 args = ["-y", "@playwright/mcp"]
 enabled = true

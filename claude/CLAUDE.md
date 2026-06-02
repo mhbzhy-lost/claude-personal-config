@@ -1,5 +1,7 @@
 # 核心约束（宪法级）
 
+@Superpowers.md
+
 ## 记忆
 
 memory 内容在支持 SessionStart 的环境已自动注入。

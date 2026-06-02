@@ -7,6 +7,7 @@
 # 职责：
 #   - MCP server：转为 opencode 原生格式写入 opencode.json（幂等）
 #   - Skills：关闭 Claude Code 兼容加载；保留 OpenCode 原生 skills / plugin
+#   - Instructions：同步 AGENTS.md / Superpowers.md 到 OpenCode 全局规则入口
 #   - OpenAI-compatible cache proxy：调用 vendor/opencode-cache-proxy 自带配置入口
 #
 # 不影响 ~/.claude.json / ~/.claude/，可独立运行。
@@ -81,6 +82,9 @@ ensure_opencode_required_submodules() {
   ensure_opencode_submodule_ready \
     "vendor/opencode-cache-proxy" \
     "$SRC/vendor/opencode-cache-proxy/proxy/bin/bailian-cache-proxy-configure.mjs"
+  ensure_opencode_submodule_ready \
+    "vendor/superpowers" \
+    "$SRC/vendor/superpowers/skills"
 }
 
 # ── OpenCode binary ─────────────────────────────────────
@@ -386,6 +390,41 @@ sync_opencode_docs() {
   echo "[warn]  $dst_path 已存在且不是软链；请手动核对后指向 $src_path"
 }
 
+# ── Global instructions 软链 ────────────────────────────
+# OpenCode 在 OPENCODE_DISABLE_CLAUDE_CODE=1 时不会读取 ~/.claude/CLAUDE.md，
+# 因此需要把本仓全局规则接到 OpenCode 原生全局入口：
+#   ~/.config/opencode/AGENTS.md -> claude/CLAUDE.md
+# CLAUDE.md 内通过 @Superpowers.md 导入选择性 Superpowers 规则，所以同目录也
+# 需要 Superpowers.md 软链。
+sync_opencode_instructions() {
+  mkdir -p "$OPENCODE_CONFIG_DIR"
+
+  local src_path dst_path cur
+  for entry in "claude/CLAUDE.md:AGENTS.md" "claude/Superpowers.md:Superpowers.md"; do
+    src_path="$SRC/${entry%%:*}"
+    dst_path="$OPENCODE_CONFIG_DIR/${entry##*:}"
+
+    if [ ! -e "$src_path" ] && [ ! -L "$src_path" ]; then
+      echo "[skip]  ${src_path} 不存在，跳过 OpenCode instructions 同步"
+      continue
+    fi
+
+    if [ -L "$dst_path" ]; then
+      cur=$(readlink "$dst_path")
+      if [ "$cur" = "$src_path" ]; then
+        echo "[instructions] ${dst_path} -> ${src_path}（已就绪）"
+      else
+        echo "[warn]  ${dst_path} 是软链但指向 ${cur}（预期 ${src_path}），人工核对"
+      fi
+    elif [ -e "$dst_path" ]; then
+      echo "[warn]  ${dst_path} 已存在且不是软链；请手动核对后指向 ${src_path}"
+    else
+      ln -s "$src_path" "$dst_path"
+      echo "[instructions] $dst_path -> $src_path"
+    fi
+  done
+}
+
 # ===========================================================================
 # === Library guard =========================================================
 # 单测把 OPENCODE_INIT_AS_LIBRARY=1 之后 source 此脚本，期望只加载上面的
@@ -413,6 +452,7 @@ echo "[skills] OpenCode Claude Code compatibility loading disabled via OPENCODE_
 # ── Run sync ────────────────────────────────────────────
 sync_opencode_plugins
 configure_opencode_cache_proxy
+sync_opencode_instructions
 sync_opencode_shared
 sync_opencode_docs
 
@@ -425,10 +465,6 @@ EMBEDDING_MODEL="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
 OLLAMA_PORT="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
 OLLAMA_HOST_URL="http://127.0.0.1:$OLLAMA_PORT"
 ENABLE_INTENT_ENHANCEMENT="${ENABLE_INTENT_ENHANCEMENT:-true}"
-
-BLOCK_CATALOG_DIR="$SRC/mcp/block-catalog"
-BLOCK_CATALOG_VENV="$BLOCK_CATALOG_DIR/.venv"
-BC_CMD="$BLOCK_CATALOG_VENV/bin/python"
 
 mkdir -p "$OPENCODE_CONFIG_DIR"
 
@@ -453,14 +489,11 @@ export SRC="$SRC"
 export EMBEDDING_MODEL="$EMBEDDING_MODEL"
 export OLLAMA_HOST_URL="$OLLAMA_HOST_URL"
 export ENABLE_INTENT_ENHANCEMENT="$ENABLE_INTENT_ENHANCEMENT"
-export BC_CMD="$BC_CMD"
-
 $PY -c '
 import json, os, sys
 
 config_path = os.environ["OPENCODE_JSON"]
 venv_python = os.environ["MCP_CMD"]
-bc_python = os.environ["BC_CMD"]
 src = os.environ["SRC"]
 embedding_model = os.environ["EMBEDDING_MODEL"]
 ollama_host = os.environ["OLLAMA_HOST_URL"]
@@ -483,43 +516,29 @@ if "skill-catalog" in mcp:
     changed = True
     print("[mcp] skill-catalog 已移除（源码保留）")
 
-# ── block-catalog ──
-if os.path.exists(bc_python):
-    desired_bc = {
-        "type": "local",
-        "command": [bc_python, "-m", "block_catalog.server"],
-        "enabled": True,
-        "environment": {
-            "BLOCK_LIBRARY_PATH": f"{src}/blocks",
-        },
-    }
-    existing_bc = mcp.get("block-catalog")
-    if existing_bc != desired_bc:
-        if existing_bc is not None:
-            print("[mcp] block-catalog 已有配置，更新为最新")
-        else:
-            print("[mcp] block-catalog 新增")
-        mcp["block-catalog"] = desired_bc
+if "block-catalog" in mcp:
+    mcp.pop("block-catalog", None)
+    changed = True
+    print("[mcp] block-catalog 已移除（源码保留）")
+
+# ── Instructions ──
+# OpenCode 不展开 AGENTS.md 里的 @file 引用；通过原生 instructions 字段
+# 让 Superpowers.md 与 AGENTS.md 一起注入。
+desired_instruction = "Superpowers.md"
+existing_instructions = config.get("instructions")
+if existing_instructions is None:
+    config["instructions"] = [desired_instruction]
+    changed = True
+    print("[instructions] Superpowers.md 新增")
+elif isinstance(existing_instructions, list):
+    if desired_instruction not in existing_instructions:
+        existing_instructions.append(desired_instruction)
         changed = True
+        print("[instructions] Superpowers.md 已追加")
     else:
-        print("[mcp] block-catalog 已是最新")
+        print("[instructions] Superpowers.md 已是最新")
 else:
-    print(f"[warn]  block-catalog venv 不存在 ({bc_python})，先写入配置，venv 请用 init_claude.sh 初始化")
-    desired_bc = {
-        "type": "local",
-        "command": [bc_python, "-m", "block_catalog.server"],
-        "enabled": True,
-        "environment": {
-            "BLOCK_LIBRARY_PATH": f"{src}/blocks",
-        },
-    }
-    existing_bc = mcp.get("block-catalog")
-    if existing_bc != desired_bc:
-        mcp["block-catalog"] = desired_bc
-        changed = True
-        print("[mcp] block-catalog 配置已写入（venv 待初始化）")
-    else:
-        print("[mcp] block-catalog 已是最新（venv 待初始化）")
+    print("[warn]  instructions 字段不是 list，跳过 Superpowers.md 自动追加")
 
 # ── playwright-mcp ──
 # 暴露两个 server，agent 自由选用：
@@ -634,28 +653,73 @@ else:
 # 可设；不覆盖 agent 主进程），shell 环境变量是 skill 中
 # ${CLAUDE_CONFIG_HOME} 引用的唯一一致来源。逻辑与
 # init_claude.sh / init_codex.sh 保持一致：
-#   行内容 (export ...) 已存在 → no-op
+#   变量存在且值一致（允许前后空白、可选 export、尾部注释）→ no-op
 #   变量存在但值不同 → warn 不覆盖
 #   完全不存在 → 追加
 ZSHRC="$HOME/.zshrc"
+
+zshrc_export_state() {
+  local env_name="$1"
+  local expected_value="$2"
+
+  "$PY" - "$ZSHRC" "$env_name" "$expected_value" <<'PY'
+import re
+import shlex
+import sys
+from pathlib import Path
+
+zshrc = Path(sys.argv[1])
+env_name = sys.argv[2]
+expected_value = sys.argv[3]
+
+
+def normalize(value: str) -> str:
+    value = value.strip()
+    try:
+        parsed = shlex.split("x=" + value, posix=True)
+    except ValueError:
+        return value.strip("\"'")
+    if parsed and parsed[0].startswith("x="):
+        return parsed[0][2:]
+    return value.strip("\"'")
+
+
+pattern = re.compile(
+    r"^\s*(?:export\s+)?" + re.escape(env_name) + r"\s*=\s*(.*?)\s*(?:#.*)?\r?$"
+)
+expected = normalize(expected_value)
+
+for line in zshrc.read_text(encoding="utf-8").splitlines():
+    match = pattern.match(line)
+    if not match:
+        continue
+    print("match" if normalize(match.group(1)) == expected else "different")
+    raise SystemExit(0)
+
+print("missing")
+PY
+}
 
 register_zshrc_export() {
   local env_name="$1"
   local export_line="$2"
   local display_value="$3"
   local comment="$4"
+  local expected_value="${export_line#*=}"
+  local state
 
   if [ ! -f "$ZSHRC" ]; then
     echo "[skip] ~/.zshrc not found, please set ${env_name} manually"
-  elif grep -Fq "${env_name}=" "$ZSHRC"; then
-    if grep -Fxq "$export_line" "$ZSHRC"; then
-      echo "[ok] ${env_name} already set to ${display_value} in ~/.zshrc"
-    else
-      echo "[warn] ${env_name} exists in ~/.zshrc but points elsewhere; please verify manually"
-    fi
   else
-    printf '\n# %s (auto-registered by init_opencode.sh)\n%s\n' "$comment" "$export_line" >> "$ZSHRC"
-    echo "[linked] ${env_name}=${display_value} registered in ~/.zshrc"
+    state="$(zshrc_export_state "$env_name" "$expected_value")"
+    if [ "$state" = "match" ]; then
+      echo "[ok] ${env_name} already set to ${display_value} in ~/.zshrc"
+    elif [ "$state" = "different" ]; then
+      echo "[warn] ${env_name} exists in ~/.zshrc but points elsewhere; please verify manually"
+    else
+      printf '\n# %s (auto-registered by init_opencode.sh)\n%s\n' "$comment" "$export_line" >> "$ZSHRC"
+      echo "[linked] ${env_name}=${display_value} registered in ~/.zshrc"
+    fi
   fi
 }
 

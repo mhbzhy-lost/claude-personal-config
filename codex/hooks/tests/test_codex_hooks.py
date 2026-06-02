@@ -1365,13 +1365,13 @@ sync_codex_skills
             claude_skills_dir.mkdir(parents=True)
             user_skills_dir.mkdir(parents=True)
             for skill in [
-                "using-superpowers",
+                "systematic-debugging",
                 "claude-code-worker",
                 "opencode-deepseek-worker",
             ]:
                 (claude_skills_dir / skill).mkdir()
             (agents_dir / "skills.list").write_text(
-                "using-superpowers\nclaude-code-worker\nopencode-deepseek-worker\n"
+                "systematic-debugging\nclaude-code-worker\nopencode-deepseek-worker\n"
             )
             (user_skills_dir / "claude-code-worker").symlink_to(
                 claude_skills_dir / "claude-code-worker"
@@ -1397,22 +1397,27 @@ sync_codex_skills
             )
 
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertTrue((user_skills_dir / "using-superpowers").is_symlink())
+            self.assertTrue((user_skills_dir / "systematic-debugging").is_symlink())
             self.assertFalse((user_skills_dir / "claude-code-worker").exists())
             self.assertFalse((user_skills_dir / "opencode-deepseek-worker").exists())
 
-    def test_using_superpowers_is_repo_scoped_native_skill(self) -> None:
+    def test_superpowers_is_global_instruction_not_native_skill(self) -> None:
         skills = [
             line.strip()
             for line in (REPO_ROOT / "agents" / "skills.list").read_text().splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         ]
-        self.assertIn("using-superpowers", skills)
+        self.assertNotIn("using-superpowers", skills)
+        self.assertFalse(
+            (REPO_ROOT / "claude-skills" / "using-superpowers" / "SKILL.md").exists()
+        )
 
-        skill_path = REPO_ROOT / "claude-skills" / "using-superpowers" / "SKILL.md"
-        skill_text = skill_path.read_text()
-        self.assertIn("name: using-superpowers", skill_text)
-        self.assertIn("Do not load `vendor/superpowers` as a plugin", skill_text)
+        claude_global = (REPO_ROOT / "claude" / "CLAUDE.md").read_text()
+        self.assertIn("@Superpowers.md", claude_global)
+
+        superpowers_path = REPO_ROOT / "claude" / "Superpowers.md"
+        superpowers_text = superpowers_path.read_text()
+        self.assertIn("Do not load upstream Superpowers", superpowers_text)
         for linked_skill in [
             "systematic-debugging",
             "test-driven-development",
@@ -1420,7 +1425,7 @@ sync_codex_skills
             "verification-before-completion",
             "receiving-code-review",
         ]:
-            self.assertIn(f"`{linked_skill}`", skill_text)
+            self.assertIn(f"`{linked_skill}`", superpowers_text)
         for omitted_skill in [
             "brainstorming",
             "requesting-code-review",
@@ -1428,7 +1433,7 @@ sync_codex_skills
             "dispatching-parallel-agents",
             "finishing-a-development-branch",
         ]:
-            self.assertNotIn(omitted_skill, skill_text)
+            self.assertNotIn(omitted_skill, superpowers_text)
 
     def test_init_codex_uses_uppercase_agents_md_as_global_rules_entry(self) -> None:
         init_codex = INIT_CODEX.read_text()
@@ -1655,6 +1660,7 @@ sync_codex_skills
         init_codex = INIT_CODEX.read_text()
         self.assertIn('[mcp_servers."playwright-mcp"]', init_codex)
         self.assertIn('[mcp_servers."playwright-mcp-headless"]', init_codex)
+        self.assertNotIn('[mcp_servers."block-catalog"]', init_codex)
         # Confirm headless arg propagates into the managed block, not lost
         # in a comment.
         self.assertRegex(
@@ -1666,11 +1672,32 @@ sync_codex_skills
         init_opencode = (REPO_ROOT / "init_opencode.sh").read_text()
         self.assertIn('mcp["playwright-mcp"]', init_opencode)
         self.assertIn('mcp["playwright-mcp-headless"]', init_opencode)
+        self.assertNotIn('mcp["block-catalog"] =', init_opencode)
         # The headless variant must carry --headless in its command list.
         self.assertRegex(
             init_opencode,
             r'desired_pw_headless\s*=\s*\{[^}]*"--headless"',
         )
+
+    def test_block_catalog_code_is_retained_but_mcp_registration_is_disabled(self) -> None:
+        self.assertTrue((REPO_ROOT / "mcp" / "block-catalog").is_dir())
+
+        init_claude = (REPO_ROOT / "init_claude.sh").read_text()
+        self.assertIn("mcp/block-catalog", init_claude)
+        self.assertIn("claude mcp remove block-catalog", init_claude)
+        self.assertNotIn("claude mcp add -s user \\\n        -e \"BLOCK_LIBRARY_PATH", init_claude)
+
+        init_codex = INIT_CODEX.read_text()
+        self.assertIn("remove_table_prefix(stripped, 'mcp_servers.\"block-catalog\"')", init_codex)
+        self.assertNotIn("args = [\"-m\", \"block_catalog.server\"]", init_codex)
+
+        init_qwen = (REPO_ROOT / "init_qwen.sh").read_text()
+        self.assertIn("existing_mcp.pop(\"block-catalog\", None)", init_qwen)
+        self.assertNotIn('"mcp__block-catalog"', init_qwen)
+
+        init_opencode = (REPO_ROOT / "init_opencode.sh").read_text()
+        self.assertIn('mcp.pop("block-catalog", None)', init_opencode)
+        self.assertNotIn('"command": [bc_python, "-m", "block_catalog.server"]', init_opencode)
 
     def test_init_claude_configures_codex_plugin_marketplace_and_install_list(self) -> None:
         # Keep this hermetic: source-level assertions catch config drift without

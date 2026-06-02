@@ -1,5 +1,8 @@
 # Bug: OpenCode Claude Opus provider 在 proxy upstream fetch 卡住 10 分钟
 
+状态：本次提交先修复 OpenCode 上下文膨胀与 Superpowers 加载策略，proxy upstream
+timeout 仍待用户确认后在 `vendor/opencode-cache-proxy` 子模块内单独修复。
+
 ## 现象
 
 用户在 OpenCode 中选择 `anthropic-idealab-cached` 的 Claude Opus 4.6 provider

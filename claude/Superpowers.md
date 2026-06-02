@@ -1,23 +1,6 @@
----
-name: using-superpowers
-description: Use when starting a conversation or task in this repo's selective native-skill setup; explains how to use only the Superpowers skills linked into ~/.agents/skills.
----
-
 <SUBAGENT-STOP>
 If you were dispatched as a subagent to execute a specific task, skip this skill.
 </SUBAGENT-STOP>
-
-<EXTREMELY-IMPORTANT>
-This repo does not load the full `vendor/superpowers` plugin.
-
-Only use Superpowers skills that are actually exposed as native skills in
-`~/.agents/skills`. Do not load `vendor/superpowers` as a plugin, do not assume
-unlinked Superpowers skills are available, and do not refer agents to missing
-Superpowers workflows.
-
-If one of the linked skills applies to your task, invoke/read that skill before
-acting and follow it.
-</EXTREMELY-IMPORTANT>
 
 ## Instruction Priority
 
@@ -70,14 +53,14 @@ Currently linked Superpowers workflow skills in `~/.agents/skills`:
 digraph skill_flow {
     "User message received" [shape=doublecircle];
     "Is this a subagent?" [shape=diamond];
-    "Skip using-superpowers" [shape=box];
+    "Skip Superpowers bootstrap" [shape=box];
     "Might a linked skill apply?" [shape=diamond];
     "Load linked skill" [shape=box];
     "Follow skill workflow" [shape=box];
     "Respond or act" [shape=doublecircle];
 
     "User message received" -> "Is this a subagent?";
-    "Is this a subagent?" -> "Skip using-superpowers" [label="yes"];
+    "Is this a subagent?" -> "Skip Superpowers bootstrap" [label="yes"];
     "Is this a subagent?" -> "Might a linked skill apply?" [label="no"];
     "Might a linked skill apply?" -> "Load linked skill" [label="yes"];
     "Might a linked skill apply?" -> "Respond or act" [label="no"];

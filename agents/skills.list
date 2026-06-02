@@ -10,7 +10,6 @@
 # 语法：`#` 起首为注释，空行忽略；行内 " #..." 注释会被剥离；首尾空白 trim。
 
 knowledge-retrieval
-using-superpowers
 git-commit
 external-llm-review
 opencode-deepseek-worker

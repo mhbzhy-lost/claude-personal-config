@@ -45,7 +45,7 @@ except Exception as e:
 if count >= 3:
     msg = (
         f"⚠️ 同一 session 已连续 Bash 失败 {count} 次。"
-        "请停止硬试，先跑 knowledge-retrieval + Web 调研，"
+        "请停止硬试，先做 Web 调研，"
         "重做根因分析后再继续。"
     )
     print(msg)
