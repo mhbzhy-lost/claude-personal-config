@@ -735,6 +735,12 @@ register_zshrc_export \
   "1" \
   "Disable OpenCode Claude Code compatibility loading"
 
+register_zshrc_export \
+  "OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS" \
+  "export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true" \
+  "true" \
+  "Enable OpenCode experimental background subagents"
+
 if command -v lsof >/dev/null 2>&1 \
     && lsof -nP -iTCP:48761 -sTCP:LISTEN >/dev/null 2>&1; then
   echo "======================================================================"
