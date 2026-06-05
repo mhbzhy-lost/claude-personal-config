@@ -408,3 +408,57 @@ Codex App 会话会在会话内加载 `~/.codex/hooks.json`，但修改该文件
 `metadata.user_id` 都会导致重新创建缓存。给 opencode 这类客户端做缓存代理时，
 如果客户端不稳定提供该字段，proxy 应在非 bypass 模式下补一个稳定、低敏的
 `metadata.user_id`。
+
+## 本机安装指定 Xcode 与 iOS runtime 的注意点
+
+`xcodes` CLI 可通过 Homebrew 安装；当前 1.6.2 没有单独 `sign-in` 子命令，
+`xcodes install/download 26.2` 会在下载阶段要求 Apple Developer Apple ID 或
+`FASTLANE_SESSION`。如果没有凭证，会报 `Apple ID: Missing username or a password`。
+
+iOS runtime 的 `xcodes runtimes install` 参数要带平台名，例如 `iOS 26.2`，裸
+`26.2` 会报 runtime invalid。当前 Xcode 26.5 下执行
+`xcodebuild -downloadPlatform iOS -buildVersion 26.2` 会报 `iOS 26.2 is not
+available for download`，因此更可靠的顺序是先装匹配的 Xcode，再用其组件/runtime
+能力补齐配套 runtime。
+
+本机 `xcodes install` 下载慢有两个独立原因：
+1. 系统/环境代理 `127.0.0.1:7897` 会让 Apple CDN 大文件下载极慢；测试中
+   `devimages-cdn.apple.com` 20MB 分片代理约 0.47MB/s，直连约 17MB/s。
+2. `~/.aria2/aria2.conf` 启用了 `input-file/save-session/enable-rpc`，
+   `xcodes` 调起 aria2 后可能只启动 RPC/session 而不实际写 `.xip`。
+
+可行做法：让 `xcodes` 用代理拿 Apple Cookie，但把 aria2 替换成临时 wrapper，
+wrapper 中 `unset *_proxy`，并使用空配置文件：
+
+```sh
+ARIA2_CONF=$(mktemp)
+ARIA2_BIN=$(mktemp)
+trap 'rm -f "$ARIA2_CONF" "$ARIA2_BIN"' EXIT
+: > "$ARIA2_CONF"
+cat >"$ARIA2_BIN" <<EOF
+#!/bin/sh
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
+exec aria2c --conf-path="$ARIA2_CONF" \
+  --all-proxy= --http-proxy= --https-proxy= "\$@"
+EOF
+chmod +x "$ARIA2_BIN"
+xcodes install 26.2 --directory /Applications --experimental-unxip --aria2 "$ARIA2_BIN"
+```
+
+若 `xcodes` 仍不推进，可先让 wrapper 记录 aria2 参数，再手动过滤掉
+`--stop-with-process` 后执行 aria2；实测 Xcode 26.2 Apple silicon xip 可达到约
+87MiB/s。
+
+
+## OpenCode provider limit schema
+
+OpenCode 1.15.13 的 `opencode.json` 中，custom provider 的 model `limit` 对象
+不能只写 `context`。一旦出现 `limit`，schema 要求同时提供 `context` 和 `output`。
+例如 Qwen context alias 应写成：
+
+```json
+"limit": { "context": 512000, "output": 65536 }
+```
+
+只写 `{ "context": 512000 }` 会导致启动时 `ConfigInvalidError: Missing key
+...limit.output`，TUI bootstrap 闪退。

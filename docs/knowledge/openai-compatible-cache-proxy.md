@@ -6,7 +6,7 @@ applies_to:
   - init_opencode.sh
   - init_qwen.sh
   - vendor/opencode-cache-proxy/
-last_verified: 2026-06-04
+last_verified: 2026-06-05
 source: OpenCode provider-driven proxy config migration; cache proxy lifecycle fix
 ---
 
@@ -37,8 +37,10 @@ node vendor/opencode-cache-proxy/proxy/bin/bailian-cache-proxy-configure.mjs all
 
 OpenCode 托管 provider id 包括：
 
-- `openai-compatible-cached`：走 `@ai-sdk/openai-compatible`，用于 Qwen/OpenAI
-  compatible chat-completions。
+- `openai-bailiab-api`：走 `@ai-sdk/openai-compatible`，上游为 DashScope
+  compatible-mode。
+- `openai-bailian-token-plan`：走 `@ai-sdk/openai-compatible`，上游为百炼
+  token-plan compatible-mode。
 - `anthropic-idealab-cached`：走 `@ai-sdk/anthropic`，用于 Idealab 提供的
   Anthropic Messages API 形态 Opus provider，base URL 指向本地 proxy 的
   `/apps/anthropic/v1`，上游 URL 与 Claude-compatible upstream user-agent 固定写在
@@ -71,6 +73,14 @@ Qwen Code 通过 `settings.json` 的 `modelProviders.openai` 增加托管 provid
 默认维护 `qwen3.6-plus` 与 `qwen3.7-max`，并用 SessionStart hook 确保本地
 proxy 单例已启动。SessionEnd hook 可以继续调用 stop，但 stop 当前是 no-op，
 因为 proxy 生命周期在 OpenCode 与 Qwen Code 之间共享。
+
+OpenCode 侧的 Qwen `qwen3.7-max-512k` 与 `qwen3.7-max-1m` 是
+context-size aliases，只用于 OpenCode 本地模型选择和上下文管理；proxy 转发前必须
+把它们改写回真实上游模型 `qwen3.7-max`。OpenCode 1.15.13 的 model `limit`
+schema 要求 `context` 与 `output` 同时存在，不能只写 `limit.context`。Qwen3.7
+Max aliases 应写 `limit: { context: 512000|1000000, output: 65536 }`，否则
+`opencode.json` 配置校验会报 `Missing key ... limit.output` 并导致 TUI bootstrap
+失败。
 
 OpenCode plugin 目录不能再整目录软链到主仓 `opencode/plugins/`。主仓自有 plugin
 必须逐文件软链到 `~/.config/opencode/plugins/`，否则子仓配置入口写入
@@ -168,8 +178,9 @@ git -C vendor/opencode-cache-proxy diff --check
 - `~/.config/opencode/plugins` 是真实目录，不是整目录软链；
 - `~/.config/opencode/plugins/bailian-cache-proxy.js` 指向子仓 plugin；
 - 主仓 `opencode/plugins/bailian-cache-proxy.js` 不存在；
-- `~/.config/opencode/opencode.json` 里有 `openai-compatible-cached` 与
-  `anthropic-idealab-cached`，且默认都没有 `options.apiKey`；
+- `~/.config/opencode/opencode.json` 里有 `openai-bailiab-api`、
+  `openai-bailian-token-plan` 与 `anthropic-idealab-cached`，且默认都没有
+  `options.apiKey`；
 - 两个 cached provider 都带 `options.headers["x-cache-proxy-upstream-base-url"]`；
 - `anthropic-idealab-cached.options.headers["x-cache-proxy-upstream-base-url"]`
   固定为 `https://idealab.alibaba-inc.com/api/anthropic`；

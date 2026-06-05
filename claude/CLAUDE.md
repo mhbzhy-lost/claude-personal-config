@@ -1,45 +1,44 @@
-# 核心约束（宪法级）
+# 核心约束
 
-@Superpowers.md
+必须严格遵循。优先级高于一切其他约束和规范。
+
+## TDD
+
+**绝对红线**：任何产生逻辑变更的 coding，动手前必须先加载 test-driven-development
+skill 并严格执行其流程。先写实现再补测试 = 违规，回退重来。
+豁免：单行改动 / 已有测试覆盖（必须显式声明豁免理由）。
 
 ## 记忆
 
 memory 内容在支持 SessionStart 的环境已自动注入。
 遇到可沉淀的经验（踩坑、规避方案、外部系统地址）时写入 ~/.claude/memory.md。
 
-## Bug
+## Bugfix
 
-bug 禁止直接修。必须先写 `docs/bugs/bug-<摘要>.md`（根因分析 6 要素），
-用户确认后才执行修复。流程细节见 systematic-debugging skill。
-
-## TDD
-
-coding 必须 TDD（RED→GREEN→REFACTOR）。
-豁免：单行改动 / 已有测试覆盖。豁免优先于 skill 判定。
-分层测试策略与 e2e 准入见 test-driven-development skill。
+遇到任何 bug/issue/incident 等非预期表现需要修复时，禁止直接修。
+必须先写 `docs/bugs/bug-<摘要>.md`（根因分析 6 要素），然后再执行修复。
+流程细节见 systematic-debugging skill
 
 ## 输出语言
 
 编写 skill 可全英文；技术文档（需要人审的文章）默认中文。
 
+禁止：人审材料使用英文。
+
 ## 并发
 
-可隔离的独立子任务必须优先使用 subagent 按 DAG 并发（worktree 隔离）。
+可隔离的独立子任务必须优先使用 subagent 按 DAG 并发。
+若为 coding 任务，则必须通过 git worktree 隔离，若为探索等只读任务可不必。
+worktree 合并后必须跑验证；自动合并失败或语义冲突 → 停止并请求用户决策。
 
-- worktree 目录优先级：`.worktrees/` > `worktrees/` > 默认新建 `.worktrees/`
-- submodule 内先切 superproject root 再建 worktree；sandbox 拒绝时整批降级串行
-- 合并后必须跑验证；自动合并失败或语义冲突 → 停止并请求用户决策
+禁止：在有明确 DAG 依赖分析的情况下串行执行无依赖任务。
 
 ## Subagent
 
-任何 subagent 创建都必须采用后台模式：派发后不阻塞主对话，主对话继续推进
-可并行的分析、实现、验证或协调工作。
+任何 subagent 创建都必须采用后台模式：派发后不阻塞主 agent
+长耗时或耗时不确定的 bash 命令调用必须交给后台 subagent 执行。
 
-长耗时或耗时不确定的 bash 命令调用必须交给后台 subagent 执行，避免阻塞
-主对话交互；主对话负责记录命令目的、回收点和结果校验。
-
-主对话负责记录 subagent 任务边界、依赖关系和回收点；只有遇到语义冲突、
-合并冲突或必须用户决策的问题时才暂停等待。
+禁止：同步调用 subagent，使得用户在 subagent 结束前无法与主 agent 对话。
 
 ## 决策报告
 
@@ -49,7 +48,14 @@ coding 必须 TDD（RED→GREEN→REFACTOR）。
 - **不选原因**：___
 - **选错代价**：___ 时暴露，修复代价 低/中/高
 
-禁止：技术术语未解释 / 对比表（移附录）/ >2 备选并列 / "各有优劣"。
+禁止：技术术语未解释 / 使用"各有优劣"等模糊说法 / 细节披露过于详细。
+
+## playwright 浏览器操作
+
+尽可能使用 headless 模式进行操作。
+除非需要用户手动登录验证，或用户明确要求使用 headed/前台模式。
+
+禁止：在有登录态/无需用户干预的情况下自行决定使用 headed/前台模式。
 
 ## Skill 行为 override
 
@@ -57,10 +63,9 @@ coding 必须 TDD（RED→GREEN→REFACTOR）。
 使用前必须先进行 Web 调研，补充最新资料与外部约束。
 计划必须含子任务拆分、DAG、可并发集合、验证方式。
 
+禁止：编写计划前不做 Web 调研，计划中缺失 DAG 依赖分析。
+
 ### `receiving-code-review`
-必须先判断反馈是否技术上成立，再决定采纳；禁止无验证地表演式同意。
+必须先判断反馈是否技术上成立，再决定采纳。
 
-## 修复卡壳熔断
-
-同一问题连续 3 次无进展 → 停止硬试，先进行 Web 调研，
-重做根因分析后再继续。
+禁止：无验证地表演式同意，无脑采纳 reviewer 的一切反馈。
