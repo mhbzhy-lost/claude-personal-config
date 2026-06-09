@@ -129,29 +129,10 @@
   "hooks": {
     "SubagentStart": [
       {
-        "matcher": "coding-expert",
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/mhbzhy/claude-config/claude/hooks/coding-expert-rules-inject.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "coding-expert-light",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/mhbzhy/claude-config/claude/hooks/coding-expert-rules-inject.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "coding-expert-heavy",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/mhbzhy/claude-config/claude/hooks/coding-expert-rules-inject.sh"
+            "command": "/Users/mhbzhy/claude-config/shared/hooks/subagent-dispatch-hint.sh"
           }
         ]
       }

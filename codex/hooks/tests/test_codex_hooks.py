@@ -27,12 +27,21 @@ SHARED_GIT_COMMIT_HINT = (
 SHARED_SKILL_RESOLVE_PREFLIGHT = (
     REPO_ROOT / "shared" / "policies" / "skill-resolve-preflight.json"
 )
+SHARED_SUBAGENT_DISPATCH_HINT = (
+    REPO_ROOT / "shared" / "policies" / "subagent-dispatch-hint.json"
+)
+SHARED_SUBAGENT_DISPATCH_HOOK = (
+    REPO_ROOT / "shared" / "hooks" / "subagent-dispatch-hint.sh"
+)
 CLAUDE_SKILL_PREFLIGHT_HOOK = REPO_ROOT / "claude" / "hooks" / "skill-resolve-preflight.sh"
 OPENCODE_SKILL_PREFLIGHT_PLUGIN = (
     REPO_ROOT / "opencode" / "plugins" / "skill-resolve-preflight.js"
 )
 OPENCODE_RM_OUTSIDE_WORKSPACE_GUARD_PLUGIN = (
     REPO_ROOT / "opencode" / "plugins" / "rm-outside-workspace-guard.js"
+)
+OPENCODE_DAG_DISPATCH_HINT_PLUGIN = (
+    REPO_ROOT / "opencode" / "plugins" / "dag-dispatch-hint.js"
 )
 OPENCODE_PERMISSION = REPO_ROOT / "opencode" / "opencode-permission.json"
 KNOWLEDGE_README = REPO_ROOT / "docs" / "knowledge" / "README.md"
@@ -1120,7 +1129,8 @@ if (!denied) process.exit(1);
         rendered = "".join(policy["deny_reason_template"])
         self.assertIn("意图识别结果", rendered)
         self.assertIn("tech_stack / language / capability", rendered)
-        self.assertIn("knowledge-retrieval", rendered)
+        self.assertNotIn("SubagentStart", rendered)
+        self.assertNotIn("knowledge-retrieval", rendered)
 
         for adapter in (
             CODEX_SKILL_PREFLIGHT_HOOK,
@@ -1301,6 +1311,92 @@ if (!absoluteRmDenied) {{
                 capture_output=True,
             )
             self.assertEqual(proc.returncode, 0, f"stderr={proc.stderr}\nstdout={proc.stdout}")
+
+    def test_opencode_dag_dispatch_hint_matches_global_concurrency_rules(self) -> None:
+        claude_global = (REPO_ROOT / "claude" / "CLAUDE.md").read_text()
+        for snippet in (
+            "可隔离的独立子任务必须优先使用 subagent 按 DAG 并发。",
+            "若为 coding 任务，则必须通过 git worktree 隔离",
+            "worktree 合并后必须跑验证",
+            "自动合并失败或语义冲突",
+            "任何 subagent 创建都必须采用后台模式",
+        ):
+            self.assertIn(snippet, claude_global)
+
+        policy = json.loads(SHARED_SUBAGENT_DISPATCH_HINT.read_text())
+        expected_hint = "\n".join(policy["template"])
+
+        script = f"""
+const mod = await import({json.dumps(OPENCODE_DAG_DISPATCH_HINT_PLUGIN.as_uri())});
+const plugin = await mod.DagDispatchHintPlugin({{}});
+const before = plugin["tool.execute.before"];
+try {{
+  await before({{tool: "task"}}, {{args: {{description: "implement slice", prompt: "do work"}}}});
+}} catch (err) {{
+  console.log(err.message);
+}}
+"""
+        proc = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        hint = proc.stdout
+        self.assertEqual(hint.rstrip("\n"), expected_hint)
+        for snippet in (
+            "DAG 拓扑分析",
+            "git worktree 隔离",
+            "worktree 合并后必须跑验证",
+            "自动合并失败或语义冲突",
+            "后台模式",
+        ):
+            self.assertIn(snippet, hint)
+        self.assertNotIn("CLAUDE.md §2", hint)
+        self.assertNotIn("CLAUDE.md §3", hint)
+
+    def test_subagent_dispatch_hint_policy_is_four_host_single_source(self) -> None:
+        policy = json.loads(SHARED_SUBAGENT_DISPATCH_HINT.read_text())
+        rendered = "\n".join(policy["template"])
+        self.assertIn("DAG 拓扑分析", rendered)
+        self.assertIn("git worktree 隔离", rendered)
+        self.assertIn("后台模式", rendered)
+        self.assertNotIn("知识检索", rendered)
+        self.assertNotIn("skill-catalog", rendered)
+        self.assertNotIn("mcp__skill-catalog", rendered)
+
+        for text in (
+            INIT_CODEX.read_text(),
+            (REPO_ROOT / "codex" / "hooks.json").read_text(),
+            (REPO_ROOT / "init_claude.sh").read_text(),
+            (REPO_ROOT / "init_qwen.sh").read_text(),
+            OPENCODE_DAG_DISPATCH_HINT_PLUGIN.read_text(),
+        ):
+            self.assertIn("subagent-dispatch-hint", text)
+
+        self.assertNotIn("coding-expert-rules-inject", (REPO_ROOT / "init_qwen.sh").read_text())
+        self.assertNotIn("coding-expert-rules-inject", (REPO_ROOT / "codex" / "hooks.json").read_text())
+        self.assertFalse((REPO_ROOT / "claude" / "hooks" / "coding-expert-rules-inject.sh").exists())
+
+    def test_shared_subagent_dispatch_hook_outputs_policy_as_additional_context(self) -> None:
+        policy = json.loads(SHARED_SUBAGENT_DISPATCH_HINT.read_text())
+        expected_hint = "\n".join(policy["template"])
+        proc = subprocess.run(
+            ["bash", str(SHARED_SUBAGENT_DISPATCH_HOOK)],
+            input=json.dumps({"hook_event_name": "SubagentStart"}),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        data = json.loads(proc.stdout)
+        self.assertEqual(
+            data["hookSpecificOutput"]["hookEventName"],
+            "SubagentStart",
+        )
+        self.assertEqual(
+            data["hookSpecificOutput"]["additionalContext"],
+            expected_hint,
+        )
 
     def test_opencode_permission_is_yolo_and_rm_guard_is_plugin_owned(self) -> None:
         permission = json.loads(OPENCODE_PERMISSION.read_text())["template"]

@@ -9,8 +9,8 @@ This directory contains Codex shared agent runtime resources derived from
   Template for Codex lifecycle hooks. `init_codex.sh` renders it into
   `~/.codex/hooks.json` with the local repository path substituted in place of
   `__CLAUDE_CONFIG_HOME__`. It currently registers PreToolUse checks for skill
-  lookup / git commit workflow and a PermissionRequest allowlist for
-  `external-llm-review` reviewer.py Bash calls.
+  lookup / git commit workflow, a SubagentStart shared DAG dispatch hint, and
+  a PermissionRequest allowlist for `external-llm-review` reviewer.py Bash calls.
 - `superpowers-bootstrap.md`
   Handwritten Codex-side bootstrap prompt for using Superpowers workflows
   without relying on plugin `SessionStart` injection.

@@ -165,29 +165,10 @@ hooks = {
     ],
     "SubagentStart": [
         {
-            "matcher": "coding-expert",
             "hooks": [
                 {
                     "type": "command",
-                    "command": f"{src}/claude/hooks/coding-expert-rules-inject.sh",
-                }
-            ],
-        },
-        {
-            "matcher": "coding-expert-light",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": f"{src}/claude/hooks/coding-expert-rules-inject.sh",
-                }
-            ],
-        },
-        {
-            "matcher": "coding-expert-heavy",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": f"{src}/claude/hooks/coding-expert-rules-inject.sh",
+                    "command": f"{src}/shared/hooks/subagent-dispatch-hint.sh",
                 }
             ],
         },
@@ -255,7 +236,7 @@ if isinstance(existing_stop, list):
         hooks_changed = True
 
 if hooks_changed:
-    print("[hooks] 本仓 hooks 已同步（PreToolUse ×3 + PostToolUse + PostToolUseFailure + SessionStart + SubagentStart ×3；其它 hook 保留）")
+    print("[hooks] 本仓 hooks 已同步（PreToolUse ×3 + PostToolUse + PostToolUseFailure + SessionStart + SubagentStart；其它 hook 保留）")
 else:
     print("[hooks] 本仓 hooks 已是最新")
 

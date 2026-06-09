@@ -1,0 +1,31 @@
+{
+  "template": [
+    "[dag-dispatch 插件] 准备派发 subagent，必须先完成 DAG 拓扑分析。",
+    "",
+    "1) DAG 并发要求（CLAUDE.md ## 并发）",
+    "   - 列出当前阶段所有待派发 task",
+    "   - 标注每个 task 的前驱依赖",
+    "   - 无相互依赖的 task 必须在同一 assistant message 内",
+    "     一次性发出多个 task tool call 实现并行派发",
+    "   - 串行派发独立 task 视为流程违规",
+    "   - 若为 coding 任务，必须说明 git worktree 隔离方案和写入范围",
+    "   - worktree 合并后必须跑验证",
+    "   - 自动合并失败或语义冲突时，停止并请求用户决策",
+    "",
+    "2) 后台模式（CLAUDE.md ## Subagent）",
+    "   - 任何 subagent 创建都必须采用后台模式，不阻塞主对话",
+    "   - 长耗时或耗时不确定的 bash 命令调用必须交给后台 subagent 执行",
+    "   - 依赖前驱的 task 必须等前驱完成后再派发",
+    "",
+    "3) 逃生路径（满足任一时，在本次 task 的 description 字段",
+    "   （或 prompt 等任一字符串参数）中加入字面值 \"skip-dag-hint\"",
+    "   即可放行）：",
+    "   a. 当前阶段实际只有 1 个 task，无并发空间",
+    "   b. 已完成 DAG 分析，本次派发是某并发集合内的全部 task",
+    "      之一，且其余兄弟 task 已在同一 message 内一并发出",
+    "   c. 当前 task 依赖未完成的前驱，必须串行等待",
+    "   d. 当前 task 是探索等只读任务，无需 worktree，但仍需满足 DAG/后台规则",
+    "",
+    "不满足放行条件请重新组织派发方式后再次发起。"
+  ]
+}

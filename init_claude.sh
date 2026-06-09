@@ -281,9 +281,7 @@ from pathlib import Path
 src_root = sys.argv[1]
 settings_path = Path(sys.argv[2])
 
-# SubagentStart 当前不需要任何 hook（迁移至 Superpowers 工作流后，原有的
-#   coding-expert / coding-expert-light / coding-expert-heavy 三档 subagent
-#   已随 335213f 删除）。此列表保留为空，便于未来追加。
+# SubagentStart：注入四端共享的 DAG / 后台 / worktree 派发提示。
 #
 # 已废弃 hook 历史（由文件下方一次性清理逻辑负责从 settings.json 移除）：
 #   skill-marker        (SubagentStart)  → capability-taxonomy-inject.sh
@@ -294,7 +292,16 @@ settings_path = Path(sys.argv[2])
 #   skill-intent-inject (UserPromptSubmit) → 旧 skill 关键字开关，下线
 #   skill-resolve-inject (UserPromptSubmit) → 被 PreToolUse + skill-resolve-preflight 替代
 #   coding-expert-audit (SubagentStop) → 只采集日志无消费，下线
-desired_sub_start_hooks = []
+desired_sub_start_hooks = [
+    {
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{src_root}/shared/hooks/subagent-dispatch-hint.sh",
+            }
+        ],
+    },
+]
 
 # PreToolUse hook：拦截 mcp__skill-catalog__resolve 调用，硬约束调用方必须
 # 在 tool_input 里携带 tech_stack / capability 至少一个非空，避免 resolve
@@ -389,24 +396,30 @@ else:
 
 changed = False
 
-# 合并 hooks.SubagentStart：按 matcher upsert，不动其他 matcher 的条目
+# 合并 hooks.SubagentStart：按 (matcher, command) upsert，不动其他条目
 hooks = data.setdefault("hooks", {})
 sub_start = hooks.setdefault("SubagentStart", [])
 for desired in desired_sub_start_hooks:
-    matcher = desired["matcher"]
+    matcher = desired.get("matcher")
+    desired_cmd = desired["hooks"][0]["command"]
     found_idx = None
     for i, entry in enumerate(sub_start):
-        if isinstance(entry, dict) and entry.get("matcher") == matcher:
+        if not isinstance(entry, dict) or entry.get("matcher") != matcher:
+            continue
+        if any(
+            isinstance(h, dict) and h.get("command") == desired_cmd
+            for h in entry.get("hooks", []) if isinstance(h, dict)
+        ):
             found_idx = i
             break
     if found_idx is None:
         sub_start.append(desired)
         changed = True
-        print(f"[settings] 新增 hooks.SubagentStart[matcher={matcher}]")
+        print(f"[settings] 新增 hooks.SubagentStart[cmd=...{desired_cmd.split('/')[-1]}]")
     elif sub_start[found_idx] != desired:
         sub_start[found_idx] = desired
         changed = True
-        print(f"[settings] 更新 hooks.SubagentStart[matcher={matcher}]")
+        print(f"[settings] 更新 hooks.SubagentStart[cmd=...{desired_cmd.split('/')[-1]}]")
 
 # 合并 hooks.PreToolUse：按 (matcher, command) 联合键 upsert
 # 同一 matcher 可有多个 hook（如 Bash: git-commit-hint + external-review-gate）

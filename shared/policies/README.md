@@ -10,13 +10,12 @@ harness 能力差异（例如某 host 没有对应 hook 类型）时尊重差异
 |---|---|---|
 | `git-commit-hint.json` | `claude/hooks/git-commit-hint.sh`、`codex/hooks/git-commit-hint.sh`、`qwen/hooks/git-commit-hint.sh`、`opencode/plugins/git-commit-hint.js` | 各端都通过 PreToolUse / `tool.execute.before` 拦截 `git commit`，业务流程（verification-before-completion skill + commit-message skill + 按全局指南判断目标仓知识文档）相同；异源 review 由 push hook 单独控制，不在 commit 提示中暴露 |
 | `skill-resolve-preflight.json` | `claude/hooks/skill-resolve-preflight.sh`、`codex/hooks/skill-resolve-preflight.sh`、`qwen/hooks/skill-resolve-preflight.sh`、`opencode/plugins/skill-resolve-preflight.js` | 各端都需要在 `skill-catalog.resolve` 调用前强制 agent 先做意图识别。tool 名按 host 区分（OpenCode `skill-catalog_resolve` 单下划线 vs claude/codex/qwen 的 `mcp__*` 双下划线）；deny reason 文案完全共用 |
+| `subagent-dispatch-hint.json` | `shared/hooks/subagent-dispatch-hint.sh`（Claude / Codex / Qwen 的 `SubagentStart`）、`opencode/plugins/dag-dispatch-hint.js`（OpenCode `task` 派发前） | 各端都要对齐 `claude/CLAUDE.md` 的 `## 并发` 与 `## Subagent` 规则；OpenCode 没有 `SubagentStart`，因此用 task 派发前插件表达同一约束 |
 
 ## 故意**不**进 SSOT 的本仓 hook
 
 | Hook | 在 | 为什么不抽 |
 |---|---|---|
-| `dag-dispatch-hint.js` | OpenCode only | Claude / Codex 当前没有对应的 task 派发拦截 hook，"为统一而统一"会引入两份新 hook 代码却没有实际行为收益 |
-| `coding-expert-rules-inject.sh` | Claude / Qwen（SubagentStart） | Codex / OpenCode 没有 SubagentStart 这种"sub-agent 启动时注入 context"的 hook 类型；Qwen Code 复用 claude 端脚本 |
 | `external-llm-review-permission.{py,sh}` | Codex only | Codex 自己的 PermissionRequest hook 用于自动授权 review 子进程命令；其他 host 没有这种"命令准入"机制 |
 
 ## 各端工具名映射
@@ -43,7 +42,7 @@ PreToolUse 的放行路径必须保持透明：**stdout 为空且 exit 0**。不
 | 事件 | 已注册 hook | 状态 |
 |---|---|---|
 | PreToolUse | git-commit-hint, external-review-gate, coding-guard | ✅ 确认支持 |
-| SubagentStart | coding-expert-rules-inject ×3 | ✅ 确认支持 |
+| SubagentStart | subagent-dispatch-hint | ✅ 确认支持 |
 | PostToolUse | test-failure-hint | ⚠️ 试探性注册，待验证 |
 | PostToolUseFailure | circuit-breaker | ⚠️ 试探性注册，待验证 |
 | Stop | stop-verification | ⚠️ 试探性注册，待验证 |

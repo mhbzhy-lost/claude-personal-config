@@ -54,6 +54,17 @@
           }
         ]
       }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"__CLAUDE_CONFIG_HOME__/shared/hooks/subagent-dispatch-hint.sh\"",
+            "statusMessage": "Checking subagent DAG dispatch rules"
+          }
+        ]
+      }
     ]
   }
 }

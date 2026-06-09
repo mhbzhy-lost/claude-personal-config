@@ -12,6 +12,7 @@
 #                                      worker 派发类 skill 不暴露到 ~/.agents/skills；
 #                                      若存在 `agents/skills.list.local` 则本机覆盖）
 #   - `codex/hooks.json`          -> 渲染到 `~/.codex/hooks.json`
+#                                      （含 shared SubagentStart DAG dispatch hint）
 #   - `mcp/*`                     -> 合并到 `~/.codex/config.toml`
 #   - `mcp/skill-catalog/vendor/ollama` 与 `bge-m3` embedding 模型
 #                                  -> skill-catalog MCP 启动所需的本地运行时
@@ -39,6 +40,7 @@ CODEX_GIT_COMMIT_HOOK_REL="codex/hooks/git-commit-hint.sh"
 CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK_REL="codex/hooks/external-llm-review-permission.sh"
 CODEX_CODING_GUARD_HOOK_REL="codex/hooks/coding-guard.sh"
 CODEX_REVIEW_GATE_HOOK_REL="shared/hooks/external-review-gate.sh"
+CODEX_SUBAGENT_DISPATCH_HOOK_REL="shared/hooks/subagent-dispatch-hint.sh"
 HOOKS_OUTPUT="$CODEX_HOME/hooks.json"
 CONFIG_PATH="$CODEX_HOME/config.toml"
 BEGIN_MARKER="# >>> claude-config codex init >>>"
@@ -219,7 +221,8 @@ render_hooks_json() {
     "$SRC/$CODEX_GIT_COMMIT_HOOK_REL" \
     "$SRC/$CODEX_EXTERNAL_REVIEW_PERMISSION_HOOK_REL" \
     "$SRC/$CODEX_CODING_GUARD_HOOK_REL" \
-    "$SRC/$CODEX_REVIEW_GATE_HOOK_REL"; do
+    "$SRC/$CODEX_REVIEW_GATE_HOOK_REL" \
+    "$SRC/$CODEX_SUBAGENT_DISPATCH_HOOK_REL"; do
     if [ ! -f "$required_hook" ]; then
       echo "[warn] Codex hook script not found at $required_hook; skipping hooks rendering"
       return
