@@ -29,6 +29,10 @@ source: knowledge gate design decision
 
 默认不实现一源文件一文档的 mapped 模式；需要这种强约束的项目应在自己的 checker 副本上扩展，而不是把复杂映射推回全局模板。
 
+模板 checker 使用 Python `fnmatch.fnmatchcase` 匹配路径，`*` 会匹配 `/`。如果目标
+项目需要 shell glob 式“单星不跨目录、双星跨目录”，应在 vendored 副本中扩展匹配
+实现，并同步更新该项目自己的规则说明。
+
 ## 修改时注意
 
 - 安装器默认不覆盖目标项目已有文件。

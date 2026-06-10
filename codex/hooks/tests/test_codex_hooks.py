@@ -162,6 +162,11 @@ def assert_no_review_strategy_leaks(testcase: unittest.TestCase, reason: str) ->
 
 
 class CodexHooksTest(unittest.TestCase):
+    def test_codex_hook_tests_do_not_hardcode_checkout_path(self) -> None:
+        test_source = Path(__file__).read_text()
+
+        self.assertNotIn(str(REPO_ROOT), test_source)
+
     def _setup_repo_with_initial_commit(self, tmp_path: Path) -> Path:
         repo = tmp_path / "repo"
         subprocess.run(
@@ -1339,9 +1344,62 @@ render_hooks_json
             )
             self.assertNotIn("/old/claude-config/shared/hooks/subagent-dispatch-hint.sh", rendered_text)
             self.assertIn(
-                "/Users/leshi.zhy/claude-config/shared/hooks/subagent-dispatch-hint.sh",
+                str(REPO_ROOT / "shared" / "hooks" / "subagent-dispatch-hint.sh"),
                 rendered_text,
             )
+
+    def test_init_codex_keeps_unmanaged_hooks_that_only_mention_managed_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            hooks_output = tmp_path / "hooks.json"
+            init_prelude = tmp_path / "init_codex_prelude.sh"
+            init_prelude.write_text(
+                INIT_CODEX.read_text().split("\nensure_codex_installed\n", 1)[0]
+            )
+            unmanaged_command = (
+                "bash \"/third-party/pre.sh\" "
+                "--note shared/hooks/subagent-dispatch-hint.sh"
+            )
+            hooks_output.write_text(
+                json.dumps(
+                    {
+                        "hooks": {
+                            "SubagentStart": [
+                                {
+                                    "hooks": [
+                                        {
+                                            "type": "command",
+                                            "command": unmanaged_command,
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    }
+                )
+            )
+
+            script = f"""
+source {shlex.quote(str(init_prelude))}
+SRC={shlex.quote(str(REPO_ROOT))}
+HOOKS_TEMPLATE={shlex.quote(str(CODEX_HOOKS_JSON))}
+HOOKS_OUTPUT={shlex.quote(str(hooks_output))}
+render_hooks_json
+"""
+            proc = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            rendered = json.loads(hooks_output.read_text())
+            subagent_commands = [
+                hook["command"]
+                for entry in rendered["hooks"]["SubagentStart"]
+                for hook in entry["hooks"]
+            ]
+            self.assertIn(unmanaged_command, subagent_commands)
 
     def test_turn_stop_verification_is_not_registered_by_any_host(self) -> None:
         # Stop fires once per assistant turn, which is too frequent for the

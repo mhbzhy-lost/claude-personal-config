@@ -233,6 +233,7 @@ render_hooks_json() {
   SRC="$SRC" HOOKS_TEMPLATE="$HOOKS_TEMPLATE" HOOKS_OUTPUT="$HOOKS_OUTPUT" python3 <<'PY'
 import json
 import os
+import shlex
 from pathlib import Path
 
 src_root = os.environ["SRC"]
@@ -267,9 +268,31 @@ def _command_markers(hooks_data):
     return markers
 
 
+def _command_script(command):
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return ""
+    if len(parts) >= 2 and Path(parts[0]).name in {"bash", "sh"}:
+        return parts[1]
+    return parts[0] if parts else ""
+
+
 def _is_managed_entry(entry, markers):
-    text = json.dumps(entry, ensure_ascii=False)
-    return any(marker in text for marker in markers)
+    hooks = entry.get("hooks") if isinstance(entry, dict) else None
+    if not isinstance(hooks, list):
+        return False
+
+    for hook in hooks:
+        if not isinstance(hook, dict):
+            continue
+        command = hook.get("command")
+        if not isinstance(command, str):
+            continue
+        script = _command_script(command)
+        if any(script == marker or script.endswith("/" + marker) for marker in markers):
+            return True
+    return False
 
 
 existing = _load_existing(output_path)
