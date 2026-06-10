@@ -24,12 +24,13 @@ source: codex hooks overwrite bugfix
 ## 项目事实 / 约定
 
 仓内 `codex/hooks.json` 是本仓托管 hook 的单一来源。渲染时会把
-`__CLAUDE_CONFIG_HOME__` 替换成当前仓库绝对路径，再用模板中的 hook 命令路径推导
-托管 marker，例如 `codex/hooks/git-commit-hint.sh` 或
-`shared/hooks/subagent-dispatch-hint.sh`。
+`__CLAUDE_CONFIG_HOME__` 替换成当前仓库绝对路径，再用模板中 hook command 的脚本
+路径推导托管 marker，例如 `codex/hooks/git-commit-hint.sh` 或
+`shared/hooks/subagent-dispatch-hint.sh`；command 里的脚本参数不属于 marker。
 
-目标 `~/.codex/hooks.json` 中命中这些 marker 的旧条目会被替换为模板中的当前条目。
-未命中托管 marker 的条目和事件视为非托管配置，必须保留，包括第三方
+目标 `~/.codex/hooks.json` 中脚本路径命中这些 marker 的旧条目会被替换为模板中的
+当前条目。仅在命令参数或说明中提到 marker 不算命中。未命中托管 marker 的条目和
+事件视为非托管配置，必须保留，包括第三方
 `PreToolUse`、`PostToolUse`、`PostToolUseFailure` 等 hook。非托管条目的既有顺序
 也应保留；如果某个事件原来没有本仓托管条目，新托管条目追加到该事件末尾。
 

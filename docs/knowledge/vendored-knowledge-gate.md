@@ -37,6 +37,8 @@ source: knowledge gate design decision
 
 - 安装器默认不覆盖目标项目已有文件。
 - 无 `.agent/knowledge-gate.json` 时 checker 必须 no-op。
+- `.agent/knowledge-gate.json` 存在但无效，或 `git diff --cached` 无法读取 staged
+  diff 时，checker 必须 fail-close 并返回 `2`。
 - checker 必须只依赖 Python 标准库和 Git。
 - 不要让目标项目运行时 import `claude-config`。
 

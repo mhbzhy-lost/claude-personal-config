@@ -50,11 +50,12 @@ def _load_config(config_path: Path) -> tuple[dict[str, Any] | None, str | None]:
     return raw, None
 
 
-def _staged_files(repo: Path) -> list[str]:
+def _staged_files(repo: Path) -> list[str] | None:
     proc = _run_git(repo, ["diff", "--cached", "--name-only", "--diff-filter=ACMRT"])
     if proc.returncode != 0:
-        print(proc.stderr.strip() or "knowledge-gate: git diff failed", file=sys.stderr)
-        return []
+        detail = proc.stderr.strip() or "unknown error"
+        print(f"knowledge-gate: git diff failed: {detail}", file=sys.stderr)
+        return None
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
@@ -130,13 +131,13 @@ def main(argv: list[str]) -> int:
     config, error = _load_config(config_path)
     if error:
         print(error, file=sys.stderr)
-        if config and config.get("invalid_config") == "block":
-            return 2
-        return 0
+        return 2
     if config is None:
         return 0
 
     staged = _staged_files(repo)
+    if staged is None:
+        return 2
     if not staged:
         return 0
 

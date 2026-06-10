@@ -9,6 +9,10 @@ fi
 
 SRC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE="$SRC_ROOT/templates/knowledge-gate"
+if [ ! -d "$TARGET" ]; then
+  echo "error: target directory does not exist: $TARGET" >&2
+  exit 2
+fi
 TARGET="$(cd "$TARGET" && pwd)"
 
 copy_one() {

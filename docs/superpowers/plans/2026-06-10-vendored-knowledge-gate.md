@@ -252,7 +252,6 @@ Create `templates/knowledge-gate/.agent/knowledge-gate.json`:
 ```json
 {
   "version": 1,
-  "invalid_config": "warn",
   "rules": [
     {
       "id": "example-agent-runtime",
@@ -281,7 +280,7 @@ Create `templates/knowledge-gate/.agent/hooks/knowledge-gate.py` with these beha
 - A rule matches if any staged file matches `paths`.
 - A rule is satisfied if any staged file matches `satisfy_by`.
 - If any matched rule is unsatisfied: print a concise report to stdout and exit `2`.
-- Invalid config: default warn and exit `0`; if `invalid_config == "block"`, exit `2`.
+- Invalid config: print the error and exit `2`.
 
 - [ ] **Step 3: Run RED tests again**
 
@@ -546,4 +545,4 @@ Expected: all `test -f` commands pass.
 
 - Spec coverage: covers vendored checker, no global runtime dependency, no-op compatibility for projects without config, any/topic granularity, installer behavior, tests and docs.
 - Placeholder scan: no TBD/TODO/later placeholders.
-- Type consistency: schema consistently uses `version`, `invalid_config`, `rules`, `id`, `paths`, `satisfy_by`, `reason`.
+- Type consistency: schema consistently uses `version`, `rules`, `id`, `paths`, `satisfy_by`, `reason`.

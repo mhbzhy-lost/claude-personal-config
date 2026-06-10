@@ -173,32 +173,27 @@ class CodexHooksTest(unittest.TestCase):
             ["git", "init", "-b", "main", str(repo)],
             check=True,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
         )
         subprocess.run(
             ["git", "-C", str(repo), "config", "user.email", "test@example.com"],
             check=True,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
         )
         subprocess.run(
             ["git", "-C", str(repo), "config", "user.name", "Test User"],
             check=True,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
         )
         (repo / "README.md").write_text("# test\n")
         subprocess.run(
             ["git", "-C", str(repo), "add", "README.md"],
             check=True,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
         )
         subprocess.run(
             ["git", "-C", str(repo), "commit", "-m", "initial"],
             check=True,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
         )
         return repo
 
@@ -456,6 +451,39 @@ if (!denied) process.exit(1);
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("knowledge-gate: no config", proc.stderr)
 
+    def test_knowledge_gate_blocks_invalid_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._setup_repo_with_initial_commit(Path(tmp))
+            config = repo / ".agent" / "knowledge-gate.json"
+            config.parent.mkdir()
+            config.write_text("{not-json")
+
+            proc = subprocess.run(
+                ["python3", str(KNOWLEDGE_GATE), "--repo", str(repo)],
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("invalid JSON", proc.stderr)
+
+    def test_knowledge_gate_blocks_when_staged_diff_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "not-git"
+            repo.mkdir()
+            config = repo / ".agent" / "knowledge-gate.json"
+            config.parent.mkdir()
+            config.write_text(json.dumps({"version": 1, "rules": []}))
+
+            proc = subprocess.run(
+                ["python3", str(KNOWLEDGE_GATE), "--repo", str(repo)],
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("knowledge-gate: git diff failed", proc.stderr)
+
     def test_knowledge_gate_blocks_matching_paths_without_knowledge_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._setup_repo_with_initial_commit(Path(tmp))
@@ -563,6 +591,19 @@ if (!denied) process.exit(1);
             self.assertTrue((repo / ".agent" / "hooks" / "knowledge-gate.py").is_file())
             self.assertTrue((repo / ".agent" / "knowledge-gate.json").is_file())
             self.assertTrue((repo / ".githooks" / "pre-commit").is_file())
+
+    def test_install_knowledge_gate_reports_missing_target_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing"
+
+            proc = subprocess.run(
+                ["bash", str(INSTALL_KNOWLEDGE_GATE), str(missing)],
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("target directory does not exist", proc.stderr)
 
     def test_codex_coding_guard_warns_for_apply_patch_code_file(self) -> None:
         patch = """*** Begin Patch
@@ -1400,6 +1441,50 @@ render_hooks_json
                 for hook in entry["hooks"]
             ]
             self.assertIn(unmanaged_command, subagent_commands)
+
+    def test_init_codex_does_not_duplicate_managed_hooks_with_arguments(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            hooks_output = tmp_path / "hooks.json"
+            hooks_template = tmp_path / "hooks-template.json"
+            init_prelude = tmp_path / "init_codex_prelude.sh"
+            init_prelude.write_text(
+                INIT_CODEX.read_text().split("\nensure_codex_installed\n", 1)[0]
+            )
+            template_data = json.loads(CODEX_HOOKS_JSON.read_text())
+            for entry in template_data["hooks"]["SubagentStart"]:
+                for hook in entry["hooks"]:
+                    hook["command"] = f'{hook["command"]} --strict'
+            hooks_template.write_text(json.dumps(template_data))
+
+            script = f"""
+source {shlex.quote(str(init_prelude))}
+SRC={shlex.quote(str(REPO_ROOT))}
+HOOKS_TEMPLATE={shlex.quote(str(hooks_template))}
+HOOKS_OUTPUT={shlex.quote(str(hooks_output))}
+render_hooks_json
+"""
+            for _ in range(2):
+                proc = subprocess.run(
+                    ["bash", "-c", script],
+                    text=True,
+                    capture_output=True,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            rendered = json.loads(hooks_output.read_text())
+            subagent_commands = [
+                hook["command"]
+                for entry in rendered["hooks"]["SubagentStart"]
+                for hook in entry["hooks"]
+            ]
+            managed_commands = [
+                command
+                for command in subagent_commands
+                if "shared/hooks/subagent-dispatch-hint.sh" in command
+            ]
+            self.assertEqual(1, len(managed_commands))
+            self.assertIn("--strict", managed_commands[0])
 
     def test_turn_stop_verification_is_not_registered_by_any_host(self) -> None:
         # Stop fires once per assistant turn, which is too frequent for the

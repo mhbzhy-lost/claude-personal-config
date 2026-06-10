@@ -253,6 +253,16 @@ def _load_existing(path):
     return data if isinstance(data, dict) else {}
 
 
+def _command_script(command):
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return ""
+    if len(parts) >= 2 and Path(parts[0]).name in {"bash", "sh"}:
+        return parts[1]
+    return parts[0] if parts else ""
+
+
 def _command_markers(hooks_data):
     markers = set()
     for entries in (hooks_data.get("hooks") or {}).values():
@@ -263,19 +273,10 @@ def _command_markers(hooks_data):
                 command = hook.get("command")
                 if not isinstance(command, str):
                     continue
-                if src_root in command:
-                    markers.add(command.split(src_root + "/", 1)[-1].strip('"'))
+                script = _command_script(command)
+                if script.startswith(src_root + "/"):
+                    markers.add(script.split(src_root + "/", 1)[-1])
     return markers
-
-
-def _command_script(command):
-    try:
-        parts = shlex.split(command)
-    except ValueError:
-        return ""
-    if len(parts) >= 2 and Path(parts[0]).name in {"bash", "sh"}:
-        return parts[1]
-    return parts[0] if parts else ""
 
 
 def _is_managed_entry(entry, markers):

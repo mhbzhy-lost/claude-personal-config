@@ -41,6 +41,8 @@ git -C /path/to/project config core.hooksPath .githooks
 
 `paths` 命中 staged diff 时，必须同时 stage 至少一个 `satisfy_by` 命中的文件。
 如果项目没有 `.agent/knowledge-gate.json`，checker 直接 no-op。
+如果配置文件存在但不是合法 JSON，或 checker 无法读取 staged diff，会返回 `2`
+阻断提交。
 
 匹配使用 Python `fnmatch.fnmatchcase`。其中 `*` 会匹配 `/`，不是 shell glob
 里“只匹配单级目录”的语义；需要严格目录层级时，请在目标项目的 checker 副本中扩展
