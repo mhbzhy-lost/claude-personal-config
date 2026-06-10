@@ -354,7 +354,6 @@ curl: (7) Failed to connect to 127.0.0.1 port 7897 after 0 ms: Couldn't connect 
 **解法**：本地 smoke 用 `curl --noproxy '*' ...` 绕过代理。若服务在沙箱外启动，
 curl 本身也要在沙箱外执行，否则还会受 Codex 沙箱本地端口隔离影响。
 
-
 ## opencode task tool 的 subagent_type 只有 explore 和 general
 
 **现象**：派发 subagent 时报 `Unknown agent type: general-purpose is not a valid
@@ -448,7 +447,6 @@ xcodes install 26.2 --directory /Applications --experimental-unxip --aria2 "$ARI
 若 `xcodes` 仍不推进，可先让 wrapper 记录 aria2 参数，再手动过滤掉
 `--stop-with-process` 后执行 aria2；实测 Xcode 26.2 Apple silicon xip 可达到约
 87MiB/s。
-
 
 ## OpenCode provider limit schema
 
