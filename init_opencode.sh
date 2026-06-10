@@ -394,8 +394,8 @@ sync_opencode_docs() {
 # OpenCode 在 OPENCODE_DISABLE_CLAUDE_CODE=1 时不会读取 ~/.claude/CLAUDE.md，
 # 因此需要把本仓全局规则接到 OpenCode 原生全局入口：
 #   ~/.config/opencode/AGENTS.md -> claude/CLAUDE.md
-# CLAUDE.md 内通过 @Superpowers.md 导入选择性 Superpowers 规则，所以同目录也
-# 需要 Superpowers.md 软链。
+# Superpowers.md 由 opencode.json.instructions 显式注入；同目录保留软链用于
+# 让该 instruction 能解析到本仓选择性 Superpowers 规则。
 sync_opencode_instructions() {
   mkdir -p "$OPENCODE_CONFIG_DIR"
 

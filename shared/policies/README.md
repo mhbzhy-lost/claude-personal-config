@@ -8,7 +8,7 @@ harness 能力差异（例如某 host 没有对应 hook 类型）时尊重差异
 
 | 文件 | 各端 wrapper | 何以共用 |
 |---|---|---|
-| `git-commit-hint.json` | `claude/hooks/git-commit-hint.sh`、`codex/hooks/git-commit-hint.sh`、`qwen/hooks/git-commit-hint.sh`、`opencode/plugins/git-commit-hint.js` | 各端都通过 PreToolUse / `tool.execute.before` 拦截 `git commit`，业务流程（verification-before-completion skill + commit-message skill + 按全局指南判断目标仓知识文档）相同；异源 review 由 push hook 单独控制，不在 commit 提示中暴露 |
+| `git-commit-hint.json` | `claude/hooks/git-commit-hint.sh`、`codex/hooks/git-commit-hint.sh`、`qwen/hooks/git-commit-hint.sh`、`opencode/plugins/git-commit-hint.js` | 各端都通过 PreToolUse / `tool.execute.before` 拦截 `git commit`，业务流程（verification-before-completion skill + commit-message skill + 项目内 vendored knowledge gate + 按全局指南判断目标仓知识文档）相同；具体路径硬门禁由目标项目复制进仓的 checker 执行，全局提示只做流程提醒；异源 review 由 push hook 单独控制，不在 commit 提示中暴露 |
 | `skill-resolve-preflight.json` | `claude/hooks/skill-resolve-preflight.sh`、`codex/hooks/skill-resolve-preflight.sh`、`qwen/hooks/skill-resolve-preflight.sh`、`opencode/plugins/skill-resolve-preflight.js` | 各端都需要在 `skill-catalog.resolve` 调用前强制 agent 先做意图识别。tool 名按 host 区分（OpenCode `skill-catalog_resolve` 单下划线 vs claude/codex/qwen 的 `mcp__*` 双下划线）；deny reason 文案完全共用 |
 | `subagent-dispatch-hint.json` | `shared/hooks/subagent-dispatch-hint.sh`（Claude / Codex / Qwen 的 `SubagentStart`）、`opencode/plugins/dag-dispatch-hint.js`（OpenCode `task` 派发前） | 各端都要对齐 `claude/CLAUDE.md` 的 `## 并发` 与 `## Subagent` 规则；OpenCode 没有 `SubagentStart`，因此用 task 派发前插件表达同一约束 |
 

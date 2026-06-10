@@ -231,6 +231,7 @@ render_hooks_json() {
 
   mkdir -p "$CODEX_HOME"
   SRC="$SRC" HOOKS_TEMPLATE="$HOOKS_TEMPLATE" HOOKS_OUTPUT="$HOOKS_OUTPUT" python3 <<'PY'
+import json
 import os
 from pathlib import Path
 
@@ -240,7 +241,75 @@ output_path = Path(os.environ["HOOKS_OUTPUT"])
 
 content = template_path.read_text()
 content = content.replace("__CLAUDE_CONFIG_HOME__", src_root)
-output_path.write_text(content)
+desired = json.loads(content)
+
+
+def _load_existing(path):
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _command_markers(hooks_data):
+    markers = set()
+    for entries in (hooks_data.get("hooks") or {}).values():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            for hook in entry.get("hooks") or []:
+                command = hook.get("command")
+                if not isinstance(command, str):
+                    continue
+                if src_root in command:
+                    markers.add(command.split(src_root + "/", 1)[-1].strip('"'))
+    return markers
+
+
+def _is_managed_entry(entry, markers):
+    text = json.dumps(entry, ensure_ascii=False)
+    return any(marker in text for marker in markers)
+
+
+existing = _load_existing(output_path)
+desired_hooks = desired.get("hooks") if isinstance(desired.get("hooks"), dict) else {}
+existing_hooks = existing.get("hooks") if isinstance(existing.get("hooks"), dict) else {}
+managed_markers = _command_markers(desired)
+
+merged = dict(existing)
+for key, value in desired.items():
+    if key != "hooks":
+        merged[key] = value
+
+merged_hooks = {}
+event_names = list(existing_hooks)
+event_names.extend(name for name in desired_hooks if name not in existing_hooks)
+
+for event_name in event_names:
+    existing_entries = existing_hooks.get(event_name)
+    desired_entries = desired_hooks.get(event_name)
+    rendered = []
+    desired_inserted = False
+    desired_list = desired_entries if isinstance(desired_entries, list) else []
+    existing_list = existing_entries if isinstance(existing_entries, list) else []
+
+    for entry in existing_list:
+        if _is_managed_entry(entry, managed_markers):
+            if desired_list and not desired_inserted:
+                rendered.extend(desired_list)
+                desired_inserted = True
+            continue
+        rendered.append(entry)
+
+    if desired_list and not desired_inserted:
+        rendered.extend(desired_list)
+
+    if rendered:
+        merged_hooks[event_name] = rendered
+
+merged["hooks"] = merged_hooks
+output_path.write_text(json.dumps(merged, indent=2, ensure_ascii=False) + "\n")
 print(f"[hooks] wrote {output_path}")
 PY
 }

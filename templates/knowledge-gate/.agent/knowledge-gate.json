@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "example-agent-runtime",
+      "paths": [
+        "init_*.sh",
+        "shared/policies/**"
+      ],
+      "satisfy_by": [
+        "docs/knowledge/**"
+      ],
+      "reason": "这些路径通常改变 agent 运行时、初始化流程或配置契约"
+    }
+  ]
+}

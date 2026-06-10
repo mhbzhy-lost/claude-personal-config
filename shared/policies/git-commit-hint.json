@@ -15,7 +15,7 @@
     "{hook_name} 提交前必须完成：",
     "1) 按照 verification-before-completion skill 要求执行：明确验证命令，运行并确认输出，再声明完成。",
     "2) 加载 git-commit skill，按规范生成 commit message。",
-    "3) 知识文档：按 `{knowledge_readme}` 的全局指南判断本次 staged diff 是否需要新增/更新目标仓 `docs/knowledge/`。需要则先创建或更新并接入项目入口；不需要则 commit message 注明原因。",
+    "3) 知识文档：若项目内安装了 vendored knowledge gate，请先满足该项目脚本的硬门禁；未安装或未命中时，仍需按 `{knowledge_readme}` 的全局指南判断本次 staged diff 是否需要新增/更新目标仓 `docs/knowledge/`。需要则先创建或更新并接入项目入口；不需要则 commit message 注明原因。",
     "{escape_instruction}"
   ]
 }

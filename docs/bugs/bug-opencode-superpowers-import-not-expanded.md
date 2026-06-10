@@ -1,4 +1,4 @@
-# Bug: OpenCode 全局 AGENTS 不展开 @Superpowers.md
+# Bug: OpenCode 全局 AGENTS 未加载 Superpowers.md
 
 ## 现象
 
@@ -18,20 +18,18 @@
 2. **期望链路**：OpenCode 读取全局规则时，通过 `opencode.json.instructions`
    同时加载 `Superpowers.md`，让选择性 Superpowers 使用指南默认进入上下文。
 3. **实际链路**：`~/.config/opencode/AGENTS.md` 只是软链到 `claude/CLAUDE.md`；
-   该文件顶部的 `@Superpowers.md` 是 Claude Code 风格导入，OpenCode 没有证据会
-   展开这个引用。
-4. **关键假设失效**：实现假设 OpenCode 对 `AGENTS.md` 支持与 Claude Code 相同的
-   `@file` 导入语义；实际 OpenCode 的补充规则文件应通过原生 `instructions`
+   选择性 Superpowers 规则不在该正文内，必须走 OpenCode 原生 `instructions`
    配置声明。
+4. **关键假设失效**：实现曾假设全局 AGENTS 入口会顺带带入补充规则文件；实际
+   OpenCode 的补充规则文件应通过原生 `instructions` 配置声明。
 5. **旁证**：
    - 当前软链与文件内容存在，说明不是路径缺失。
    - 旧 OpenCode 日志里“Using-Superpowers 已内联注入”来自移除前的
-     `vendor/superpowers` plugin，而不是 `@Superpowers.md`。
-   - 移除 plugin 后，若 OpenCode 不展开 `@file`，上下文只会看到字面量
-     `@Superpowers.md`。
+     `vendor/superpowers` plugin，而不是当前的选择性软链规则入口。
+   - 移除 plugin 后，若不显式配置 `instructions`，上下文不会加载
+     `Superpowers.md`。
 6. **实现偏差**：OpenCode init 把 Claude 全局规则原样软链给 OpenCode，但没有通过
-   `opencode.json.instructions` 注册 `Superpowers.md`；`@Superpowers.md` 只适合
-   Claude Code。
+   `opencode.json.instructions` 注册 `Superpowers.md`。
 
 ## 影响范围
 
@@ -44,7 +42,7 @@
 ## 修复原则
 
 - 不恢复 `vendor/superpowers` plugin。
-- 保留 `claude/CLAUDE.md` 的 `@Superpowers.md`，供 Claude Code 使用。
+- `claude/CLAUDE.md` 保持宪法级规则正文，不内联选择性 Superpowers 规则。
 - OpenCode 侧保留 `~/.config/opencode/AGENTS.md -> claude/CLAUDE.md` 软链。
 - `~/.config/opencode/Superpowers.md` 继续软链到 `claude/Superpowers.md`。
 - `init_opencode.sh` 在 `opencode.json.instructions` 中追加 `Superpowers.md`，并保留

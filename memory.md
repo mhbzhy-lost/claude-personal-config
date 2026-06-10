@@ -462,3 +462,9 @@ OpenCode 1.15.13 的 `opencode.json` 中，custom provider 的 model `limit` 对
 
 只写 `{ "context": 512000 }` 会导致启动时 `ConfigInvalidError: Missing key
 ...limit.output`，TUI bootstrap 闪退。
+
+OpenCode 官方安装脚本入口是 `https://opencode.ai/install`，会安装到
+`~/.opencode/bin/opencode` 并把 `export PATH=$HOME/.opencode/bin:$PATH` 写入
+交互 shell 配置。脚本会先检查 PATH 里的现有 `opencode`，若版本相同会直接退出；
+从 Homebrew 切到官方脚本时应先 `brew uninstall opencode`，再带代理执行：
+`http_proxy=http://127.0.0.1:7897 https_proxy=http://127.0.0.1:7897 bash /tmp/opencode-install`。

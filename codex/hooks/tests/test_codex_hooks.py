@@ -51,6 +51,10 @@ EXTERNAL_REVIEWER = (
 CODEX_HOOKS_JSON = REPO_ROOT / "codex" / "hooks.json"
 INIT_CODEX = REPO_ROOT / "init_codex.sh"
 INIT_OPENCODE = REPO_ROOT / "init_opencode.sh"
+KNOWLEDGE_GATE = (
+    REPO_ROOT / "templates" / "knowledge-gate" / ".agent" / "hooks" / "knowledge-gate.py"
+)
+INSTALL_KNOWLEDGE_GATE = REPO_ROOT / "scripts" / "install-knowledge-gate.sh"
 
 
 def run_hook(script: Path, payload: dict) -> str:
@@ -158,6 +162,41 @@ def assert_no_review_strategy_leaks(testcase: unittest.TestCase, reason: str) ->
 
 
 class CodexHooksTest(unittest.TestCase):
+    def _setup_repo_with_initial_commit(self, tmp_path: Path) -> Path:
+        repo = tmp_path / "repo"
+        subprocess.run(
+            ["git", "init", "-b", "main", str(repo)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.email", "test@example.com"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.name", "Test User"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        (repo / "README.md").write_text("# test\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "README.md"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "initial"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return repo
+
     def _setup_repo_with_pending_push(self, tmp_path: Path) -> tuple[Path, Path]:
         remote = tmp_path / "remote.git"
         repo = tmp_path / "repo"
@@ -239,7 +278,8 @@ class CodexHooksTest(unittest.TestCase):
         self.assertIn("提交前必须完成", reason)
         self.assertIn("加载 git-commit skill", reason)
         self.assertIn("verification-before-completion skill", reason)
-        self.assertIn("知识文档：按", reason)
+        self.assertIn("知识文档：若项目内安装了 vendored knowledge gate", reason)
+        self.assertIn("未安装或未命中时", reason)
         self.assertIn("全局指南", reason)
         self.assertIn("新增/更新目标仓 `docs/knowledge/`", reason)
         self.assertIn("先创建或更新并接入项目入口", reason)
@@ -292,7 +332,8 @@ class CodexHooksTest(unittest.TestCase):
         reason = data["hookSpecificOutput"]["permissionDecisionReason"]
 
         self.assertIn("提交前必须完成", reason)
-        self.assertIn("知识文档：按", reason)
+        self.assertIn("vendored knowledge gate", reason)
+        self.assertIn("未安装或未命中时", reason)
         self.assertIn("全局指南", reason)
         self.assertIn("新增/更新目标仓 `docs/knowledge/`", reason)
         self.assertIn("verification-before-completion skill", reason)
@@ -305,7 +346,8 @@ class CodexHooksTest(unittest.TestCase):
         self.assertIn("提交前必须完成", reason)
         self.assertIn("加载 git-commit skill", reason)
         self.assertIn("verification-before-completion skill", reason)
-        self.assertIn("知识文档：按", reason)
+        self.assertIn("vendored knowledge gate", reason)
+        self.assertIn("未安装或未命中时", reason)
         self.assertIn("GIT_COMMIT_HINT_SKIP=1", reason)
         self.assertNotIn("命令文本中包含", reason)
 
@@ -326,7 +368,8 @@ class CodexHooksTest(unittest.TestCase):
         self.assertIn("提交前必须完成", rendered)
         self.assertIn("加载 git-commit skill", rendered)
         self.assertIn("verification-before-completion skill", rendered)
-        self.assertIn("知识文档：按", rendered)
+        self.assertIn("知识文档：若项目内安装了 vendored knowledge gate", rendered)
+        self.assertIn("未安装或未命中时", rendered)
         self.assertIn("全局指南", rendered)
         self.assertIn("新增/更新目标仓 `docs/knowledge/`", rendered)
         self.assertIn("先创建或更新并接入项目入口", rendered)
@@ -387,6 +430,134 @@ if (!denied) process.exit(1);
         )
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_knowledge_gate_noops_when_config_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._setup_repo_with_initial_commit(Path(tmp))
+            (repo / "init_codex.sh").write_text("#!/usr/bin/env bash\n")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "init_codex.sh"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            proc = subprocess.run(
+                ["python3", str(KNOWLEDGE_GATE), "--repo", str(repo)],
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("knowledge-gate: no config", proc.stderr)
+
+    def test_knowledge_gate_blocks_matching_paths_without_knowledge_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._setup_repo_with_initial_commit(Path(tmp))
+            config = repo / ".agent" / "knowledge-gate.json"
+            config.parent.mkdir()
+            config.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "rules": [
+                            {
+                                "id": "agent-runtime",
+                                "paths": ["init_*.sh", "shared/policies/**"],
+                                "satisfy_by": ["docs/knowledge/**"],
+                                "reason": "agent runtime behavior changed",
+                            }
+                        ],
+                    }
+                )
+            )
+            (repo / "init_codex.sh").write_text("#!/usr/bin/env bash\n")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", ".agent/knowledge-gate.json", "init_codex.sh"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            proc = subprocess.run(
+                ["python3", str(KNOWLEDGE_GATE), "--repo", str(repo)],
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("agent-runtime", proc.stdout)
+        self.assertIn("init_codex.sh", proc.stdout)
+        self.assertIn("docs/knowledge/**", proc.stdout)
+
+    def test_knowledge_gate_allows_when_matching_knowledge_file_is_staged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._setup_repo_with_initial_commit(Path(tmp))
+            config = repo / ".agent" / "knowledge-gate.json"
+            config.parent.mkdir()
+            config.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "rules": [
+                            {
+                                "id": "agent-runtime",
+                                "paths": ["init_*.sh"],
+                                "satisfy_by": ["docs/knowledge/**"],
+                            }
+                        ],
+                    }
+                )
+            )
+            (repo / "init_codex.sh").write_text("#!/usr/bin/env bash\n")
+            knowledge = repo / "docs" / "knowledge" / "runtime.md"
+            knowledge.parent.mkdir(parents=True)
+            knowledge.write_text("# Runtime\n")
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "add",
+                    ".agent/knowledge-gate.json",
+                    "init_codex.sh",
+                    "docs/knowledge/runtime.md",
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            proc = subprocess.run(
+                ["python3", str(KNOWLEDGE_GATE), "--repo", str(repo)],
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_install_knowledge_gate_copies_template_without_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+
+            first = subprocess.run(
+                ["bash", str(INSTALL_KNOWLEDGE_GATE), str(repo)],
+                text=True,
+                capture_output=True,
+            )
+            second = subprocess.run(
+                ["bash", str(INSTALL_KNOWLEDGE_GATE), str(repo)],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("exists, keeping", second.stdout)
+            self.assertTrue((repo / ".agent" / "hooks" / "knowledge-gate.py").is_file())
+            self.assertTrue((repo / ".agent" / "knowledge-gate.json").is_file())
+            self.assertTrue((repo / ".githooks" / "pre-commit").is_file())
 
     def test_codex_coding_guard_warns_for_apply_patch_code_file(self) -> None:
         patch = """*** Begin Patch
@@ -1094,6 +1265,84 @@ if (!denied) process.exit(1);
         self.assertIn("codex/hooks/git-commit-hint.sh", init_codex)
         self.assertIn("codex/hooks/external-llm-review-permission.sh", init_codex)
 
+    def test_init_codex_preserves_unmanaged_hooks_when_rendering(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            hooks_output = tmp_path / "hooks.json"
+            init_prelude = tmp_path / "init_codex_prelude.sh"
+            init_prelude.write_text(
+                INIT_CODEX.read_text().split("\nensure_codex_installed\n", 1)[0]
+            )
+            hooks_output.write_text(
+                json.dumps(
+                    {
+                        "hooks": {
+                            "PreToolUse": [
+                                {
+                                    "matcher": "Bash",
+                                    "hooks": [
+                                        {
+                                            "type": "command",
+                                            "command": "bash \"/third-party/pre.sh\"",
+                                            "timeout": 15,
+                                        }
+                                    ],
+                                }
+                            ],
+                            "PostToolUse": [
+                                {
+                                    "matcher": "Bash",
+                                    "hooks": [
+                                        {
+                                            "type": "command",
+                                            "command": "bash \"/third-party/post.sh\"",
+                                        }
+                                    ],
+                                }
+                            ],
+                            "SubagentStart": [
+                                {
+                                    "hooks": [
+                                        {
+                                            "type": "command",
+                                            "command": "bash \"/old/claude-config/shared/hooks/subagent-dispatch-hint.sh\"",
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    }
+                )
+            )
+
+            script = f"""
+source {shlex.quote(str(init_prelude))}
+SRC={shlex.quote(str(REPO_ROOT))}
+HOOKS_TEMPLATE={shlex.quote(str(CODEX_HOOKS_JSON))}
+HOOKS_OUTPUT={shlex.quote(str(hooks_output))}
+render_hooks_json
+"""
+            proc = subprocess.run(
+                ["bash", "-c", script],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            rendered = json.loads(hooks_output.read_text())
+            rendered_text = json.dumps(rendered, ensure_ascii=False)
+            self.assertIn("/third-party/pre.sh", rendered_text)
+            self.assertIn("/third-party/post.sh", rendered_text)
+            self.assertEqual(
+                rendered["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+                "bash \"/third-party/pre.sh\"",
+            )
+            self.assertNotIn("/old/claude-config/shared/hooks/subagent-dispatch-hint.sh", rendered_text)
+            self.assertIn(
+                "/Users/leshi.zhy/claude-config/shared/hooks/subagent-dispatch-hint.sh",
+                rendered_text,
+            )
+
     def test_turn_stop_verification_is_not_registered_by_any_host(self) -> None:
         # Stop fires once per assistant turn, which is too frequent for the
         # "large task is done" check. The end-of-task gate lives on git push.
@@ -1509,7 +1758,7 @@ sync_codex_skills
         )
 
         claude_global = (REPO_ROOT / "claude" / "CLAUDE.md").read_text()
-        self.assertIn("@Superpowers.md", claude_global)
+        self.assertNotIn("@" + "Superpowers.md", claude_global)
 
         superpowers_path = REPO_ROOT / "claude" / "Superpowers.md"
         superpowers_text = superpowers_path.read_text()
