@@ -42,10 +42,16 @@ OpenCode 托管 provider id 包括：
 - `openai-bailian-token-plan`：走 `@ai-sdk/openai-compatible`，上游为百炼
   token-plan compatible-mode。
 - `openai-idealab`：走 `@ai-sdk/openai-compatible`，直连 Idealab OpenAI endpoint
-  `https://idealab.alibaba-inc.com/api/openai/v1`，当前只暴露
-  `Qwen3.7-Max-DogFooding`。该模型名来自 token-hub 的 `name` 字段；不要改成裸
-  `qwen3.7-max`，dogfooding AK 对裸模型会返回“该模型需要授权”。先不走 cache proxy，
-  待使用一段时间并观察缓存数据后再决定是否接入缓存。
+  `https://idealab.alibaba-inc.com/api/openai/v1`。当前模型列表：
+  - `Qwen3.7-Max-DogFooding`（base，不设 `limit`，由上游 1M 窗口控制，opencode 不主动 compact）
+  - `Qwen3.7-Max-DogFooding-256k`（context-size alias，`limit: { context: 256000, output: 32768 }`，用于短对话较早触发 compact）
+
+  模型名来自 token-hub 的 `name` 字段；不要改成裸 `qwen3.7-max`，dogfooding AK 对
+  裸模型会返回"该模型需要授权"。先不走 cache proxy；Idealab DashScope-compatible
+  upstream 本身会 honor `cache_control` markers，model 定义中配置 `variants` 可让
+  opencode SDK 发送 markers，使上游自行缓存 system prompt + 历史 turns（验证数据：
+  7.87M cache_read tokens / session）。TUI 自动追加 "Default" variant 条目，所以
+  `variants` map 中不能显式写 `default` key，否则会出现重复条目。
 - `anthropic-idealab-cached`：走 `@ai-sdk/anthropic`，用于 Idealab 提供的
   Anthropic Messages API 形态 Opus provider，base URL 指向本地 proxy 的
   `/apps/anthropic/v1`，上游 URL 与 Claude-compatible upstream user-agent 固定写在
