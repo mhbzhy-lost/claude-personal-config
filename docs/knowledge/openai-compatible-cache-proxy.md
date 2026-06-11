@@ -54,15 +54,16 @@ OpenCode 托管 provider id 包括：
   opencode SDK 发送 markers，使上游自行缓存 system prompt + 历史 turns（验证数据：
   7.87M cache_read tokens / session）。TUI 自动追加 "Default" variant 条目，所以
   `variants` map 中不能显式写 `default` key，否则会出现重复条目。
-- `anthropic-idealab-cached`：走 `@ai-sdk/anthropic`，用于 Idealab 提供的
+- `anthropic-idealab`：走 `@ai-sdk/anthropic`，用于 Idealab 提供的
   Anthropic Messages API 形态 Opus provider，base URL 指向本地 proxy 的
   `/apps/anthropic/v1`，上游 URL 与 Claude-compatible upstream user-agent 固定写在
-  provider header 中。模型列表：`claude-opus-4-6`（base，200k context）、
+  provider header 中。模型列表：
   `claude-opus-4-6-200k`、`claude-opus-4-6-1m`。
 
-旧 id `bailian-cache` / `bailian-custom-cached` / `anthropic-cached` 视为 legacy，
+旧 id `bailian-cache` / `bailian-custom-cached` / `openai-compatible-cached` /
+`anthropic-cached` / `anthropic-idealab-cached` 视为 legacy，
 配置入口会清理迁移；旧 `anthropic-cached` 的稳定 `metadata.user_id` 会迁移到
-`anthropic-idealab-cached`。
+`anthropic-idealab`。
 
 OpenCode cached providers 默认都不写 `options.apiKey`。OpenCode custom provider
 的凭据由子仓交互式 bootstrap 写入：
@@ -195,20 +196,20 @@ git -C vendor/opencode-cache-proxy diff --check
 - `~/.config/opencode/plugins/bailian-cache-proxy.js` 指向子仓 plugin；
 - 主仓 `opencode/plugins/bailian-cache-proxy.js` 不存在；
 - `~/.config/opencode/opencode.json` 里有 `openai-bailiab-api`、
-  `openai-bailian-token-plan`、`openai-idealab` 与 `anthropic-idealab-cached`，且默认都没有
+  `openai-bailian-token-plan`、`openai-idealab` 与 `anthropic-idealab`，且默认都没有
   `options.apiKey`；
 - 两个 OpenAI-compatible cached provider 都带
   `options.headers["x-cache-proxy-upstream-base-url"]`；
 - `openai-idealab.options.baseURL` 固定为
   `https://idealab.alibaba-inc.com/api/openai/v1`，且没有 `options.headers`；
 - `openai-idealab.models` 包含 `Qwen3.7-Max-DogFooding` 和 `Qwen3.7-Max-DogFooding-256k`；
-- `anthropic-idealab-cached.options.headers["x-cache-proxy-upstream-base-url"]`
+- `anthropic-idealab.options.headers["x-cache-proxy-upstream-base-url"]`
   固定为 `https://idealab.alibaba-inc.com/api/anthropic`；
-- `anthropic-idealab-cached.options.headers["x-cache-proxy-upstream-user-agent"]`
+- `anthropic-idealab.options.headers["x-cache-proxy-upstream-user-agent"]`
   固定为 `claude-cli/2.1.156 (external, sdk-cli)`；
-- `opencode models anthropic-idealab-cached` 能列出
-  `anthropic-idealab-cached/claude-opus-4-6` 以及 context-size aliases
-  `claude-opus-4-6-200k` / `-300k` / `-500k` / `-1m`；
+- `opencode models anthropic-idealab` 能列出
+  `anthropic-idealab/claude-opus-4-6-200k` 和
+  `claude-opus-4-6-1m`；
 - 第二遍配置快照无差异。
 
 ## 未来工作（当前未实施）
