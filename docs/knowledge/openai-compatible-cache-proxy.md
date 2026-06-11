@@ -38,9 +38,11 @@ node vendor/opencode-cache-proxy/proxy/bin/bailian-cache-proxy-configure.mjs all
 OpenCode 托管 provider id 包括：
 
 - `openai-bailiab-api`：走 `@ai-sdk/openai-compatible`，上游为 DashScope
-  compatible-mode。
+  compatible-mode。模型列表：`qwen3.7-max`、`qwen3.7-max-256k`
+  （context-size alias，`limit: { context: 256000, output: 32768 }`）、
+  `qwen3.7-plus`、`qwen3.7-plus-nothink`。裸 `-max` 与 `-plus` 不设 `limit`。
 - `openai-bailian-token-plan`：走 `@ai-sdk/openai-compatible`，上游为百炼
-  token-plan compatible-mode。
+  token-plan compatible-mode。模型列表与 `openai-bailiab-api` 一致。
 - `openai-idealab`：走 `@ai-sdk/openai-compatible`，直连 Idealab OpenAI endpoint
   `https://idealab.alibaba-inc.com/api/openai/v1`。当前模型列表：
   - `Qwen3.7-Max-DogFooding`（base，不设 `limit`，由上游 1M 窗口控制，opencode 不主动 compact）
@@ -55,7 +57,8 @@ OpenCode 托管 provider id 包括：
 - `anthropic-idealab-cached`：走 `@ai-sdk/anthropic`，用于 Idealab 提供的
   Anthropic Messages API 形态 Opus provider，base URL 指向本地 proxy 的
   `/apps/anthropic/v1`，上游 URL 与 Claude-compatible upstream user-agent 固定写在
-  provider header 中。
+  provider header 中。模型列表：`claude-opus-4-6`（base，200k context）、
+  `claude-opus-4-6-200k`、`claude-opus-4-6-1m`。
 
 旧 id `bailian-cache` / `bailian-custom-cached` / `anthropic-cached` 视为 legacy，
 配置入口会清理迁移；旧 `anthropic-cached` 的稳定 `metadata.user_id` 会迁移到
@@ -83,15 +86,15 @@ provider 再挂多套配置。
 被绑定到非本机接口，远端客户端不能通过该 header 改写上游 URL。
 
 Qwen Code 通过 `settings.json` 的 `modelProviders.openai` 增加托管 provider，
-默认维护 `qwen3.6-plus` 与 `qwen3.7-max`，并用 SessionStart hook 确保本地
+默认维护 `qwen3.7-plus` 与 `qwen3.7-max`，并用 SessionStart hook 确保本地
 proxy 单例已启动。SessionEnd hook 可以继续调用 stop，但 stop 当前是 no-op，
 因为 proxy 生命周期在 OpenCode 与 Qwen Code 之间共享。
 
-OpenCode 侧的 Qwen `qwen3.7-max-512k` 与 `qwen3.7-max-1m` 是
-context-size aliases，只用于 OpenCode 本地模型选择和上下文管理；proxy 转发前必须
-把它们改写回真实上游模型 `qwen3.7-max`。OpenCode 1.15.13 的 model `limit`
+OpenCode 侧的 Qwen `qwen3.7-max-256k` 是
+context-size alias，只用于 OpenCode 本地模型选择和上下文管理；proxy 转发前必须
+把它改写回真实上游模型 `qwen3.7-max`。OpenCode 1.15.13 的 model `limit`
 schema 要求 `context` 与 `output` 同时存在，不能只写 `limit.context`。Qwen3.7
-Max aliases 应写 `limit: { context: 512000|1000000, output: 65536 }`，否则
+Max aliases 应写 `limit: { context: 256000, output: 32768 }`，否则
 `opencode.json` 配置校验会报 `Missing key ... limit.output` 并导致 TUI bootstrap
 失败。
 
@@ -198,7 +201,7 @@ git -C vendor/opencode-cache-proxy diff --check
   `options.headers["x-cache-proxy-upstream-base-url"]`；
 - `openai-idealab.options.baseURL` 固定为
   `https://idealab.alibaba-inc.com/api/openai/v1`，且没有 `options.headers`；
-- `openai-idealab.models` 只包含 `Qwen3.7-Max-DogFooding`；
+- `openai-idealab.models` 包含 `Qwen3.7-Max-DogFooding` 和 `Qwen3.7-Max-DogFooding-256k`；
 - `anthropic-idealab-cached.options.headers["x-cache-proxy-upstream-base-url"]`
   固定为 `https://idealab.alibaba-inc.com/api/anthropic`；
 - `anthropic-idealab-cached.options.headers["x-cache-proxy-upstream-user-agent"]`
