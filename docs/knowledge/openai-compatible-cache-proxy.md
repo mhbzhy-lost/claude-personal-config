@@ -6,8 +6,8 @@ applies_to:
   - init_opencode.sh
   - init_qwen.sh
   - vendor/opencode-cache-proxy/
-last_verified: 2026-06-05
-source: OpenCode provider-driven proxy config migration; cache proxy lifecycle fix
+last_verified: 2026-06-11
+source: OpenCode provider-driven proxy config migration; cache proxy lifecycle fix; Idealab OpenAI direct provider
 ---
 
 # OpenCode 和 Qwen Code 共用子仓提供的 OpenAI-compatible 缓存代理
@@ -41,6 +41,11 @@ OpenCode 托管 provider id 包括：
   compatible-mode。
 - `openai-bailian-token-plan`：走 `@ai-sdk/openai-compatible`，上游为百炼
   token-plan compatible-mode。
+- `openai-idealab`：走 `@ai-sdk/openai-compatible`，直连 Idealab OpenAI endpoint
+  `https://idealab.alibaba-inc.com/api/openai/v1`，当前只暴露
+  `Qwen3.7-Max-DogFooding`。该模型名来自 token-hub 的 `name` 字段；不要改成裸
+  `qwen3.7-max`，dogfooding AK 对裸模型会返回“该模型需要授权”。先不走 cache proxy，
+  待使用一段时间并观察缓存数据后再决定是否接入缓存。
 - `anthropic-idealab-cached`：走 `@ai-sdk/anthropic`，用于 Idealab 提供的
   Anthropic Messages API 形态 Opus provider，base URL 指向本地 proxy 的
   `/apps/anthropic/v1`，上游 URL 与 Claude-compatible upstream user-agent 固定写在
@@ -61,11 +66,13 @@ node vendor/opencode-cache-proxy/proxy/bin/opencode-cache-proxy-auth.mjs
 使用多个 provider 时重复执行。当前 OpenCode CLI 的 `auth login -p <custom-id>`
 可能不识别 custom provider，不能把它当成可靠的 headless 录入路径。
 
-key 存在 `~/.local/share/opencode/auth.json`。上游 URL、marker strategy、
+key 存在 `~/.local/share/opencode/auth.json`。cached provider 的上游 URL、marker strategy、
 Anthropic cache strategy、上游 user-agent 和 `metadata.user_id` 由子仓配置器写入 provider
 `options.headers` 的 `x-cache-proxy-*` 控制头；proxy 消费这些头后必须剥离，不能
-转发给真实上游。Anthropic upstream 不走 `.env` 或 init 脚本参数；需要支持另一个
-Anthropic-compatible 平台时新增独立 provider，而不是给一个 provider 再挂多套配置。
+转发给真实上游。直连 provider（当前为 `openai-idealab`）把上游 URL 写在
+`options.baseURL`，不写 `x-cache-proxy-*` header。Anthropic upstream 不走 `.env` 或 init
+脚本参数；需要支持另一个 Anthropic-compatible 平台时新增独立 provider，而不是给一个
+provider 再挂多套配置。
 其中 `x-cache-proxy-upstream-base-url` 只允许 loopback 客户端生效；如果 proxy
 被绑定到非本机接口，远端客户端不能通过该 header 改写上游 URL。
 
@@ -179,9 +186,13 @@ git -C vendor/opencode-cache-proxy diff --check
 - `~/.config/opencode/plugins/bailian-cache-proxy.js` 指向子仓 plugin；
 - 主仓 `opencode/plugins/bailian-cache-proxy.js` 不存在；
 - `~/.config/opencode/opencode.json` 里有 `openai-bailiab-api`、
-  `openai-bailian-token-plan` 与 `anthropic-idealab-cached`，且默认都没有
+  `openai-bailian-token-plan`、`openai-idealab` 与 `anthropic-idealab-cached`，且默认都没有
   `options.apiKey`；
-- 两个 cached provider 都带 `options.headers["x-cache-proxy-upstream-base-url"]`；
+- 两个 OpenAI-compatible cached provider 都带
+  `options.headers["x-cache-proxy-upstream-base-url"]`；
+- `openai-idealab.options.baseURL` 固定为
+  `https://idealab.alibaba-inc.com/api/openai/v1`，且没有 `options.headers`；
+- `openai-idealab.models` 只包含 `Qwen3.7-Max-DogFooding`；
 - `anthropic-idealab-cached.options.headers["x-cache-proxy-upstream-base-url"]`
   固定为 `https://idealab.alibaba-inc.com/api/anthropic`；
 - `anthropic-idealab-cached.options.headers["x-cache-proxy-upstream-user-agent"]`
