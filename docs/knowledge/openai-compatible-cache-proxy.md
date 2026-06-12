@@ -43,16 +43,14 @@ OpenCode 托管 provider id 包括：
   `qwen3.7-plus`、`qwen3.7-plus-nothink`。裸 `-max` 与 `-plus` 不设 `limit`。
 - `openai-bailian-token-plan`：走 `@ai-sdk/openai-compatible`，上游为百炼
   token-plan compatible-mode。模型列表与 `openai-bailiab-api` 一致。
-- `openai-idealab`：走 `@ai-sdk/openai-compatible`，直连 Idealab OpenAI endpoint
+- `openai-idealab`：走 `@ai-sdk/openai-compatible`，**经过本地 cache proxy**
+  （用于把 `-256k` context-size alias 改写成真实上游 model id），但 `x-cache-proxy-marker-strategy` 固定为 `none`，让 proxy 不注入 `cache_control` markers——缓存由 Idealab 上游自行处理。上游为 Idealab OpenAI endpoint
   `https://idealab.alibaba-inc.com/api/openai/v1`。当前模型列表：
   - `Qwen3.7-Max-DogFooding`（base，不设 `limit`，由上游 1M 窗口控制，opencode 不主动 compact）
-  - `Qwen3.7-Max-DogFooding-256k`（context-size alias，`limit: { context: 256000, output: 32768 }`，用于短对话较早触发 compact）
+  - `Qwen3.7-Max-DogFooding-256k`（context-size alias，`limit: { context: 256000, output: 32768 }`，用于短对话较早触发 compact；proxy 层把 model id 改写成 `Qwen3.7-Max-DogFooding` 再转发）
 
   模型名来自 token-hub 的 `name` 字段；不要改成裸 `qwen3.7-max`，dogfooding AK 对
-  裸模型会返回"该模型需要授权"。先不走 cache proxy；Idealab DashScope-compatible
-  upstream 本身会 honor `cache_control` markers，model 定义中配置 `variants` 可让
-  opencode SDK 发送 markers，使上游自行缓存 system prompt + 历史 turns（验证数据：
-  7.87M cache_read tokens / session）。TUI 自动追加 "Default" variant 条目，所以
+  裸模型会返回"该模型需要授权"。TUI 自动追加 "Default" variant 条目，所以
   `variants` map 中不能显式写 `default` key，否则会出现重复条目。
 - `anthropic-idealab`：走 `@ai-sdk/anthropic`，用于 Idealab 提供的
   Anthropic Messages API 形态 Opus provider，base URL 指向本地 proxy 的
@@ -79,8 +77,9 @@ node vendor/opencode-cache-proxy/proxy/bin/opencode-cache-proxy-auth.mjs
 key 存在 `~/.local/share/opencode/auth.json`。cached provider 的上游 URL、marker strategy、
 Anthropic cache strategy、上游 user-agent 和 `metadata.user_id` 由子仓配置器写入 provider
 `options.headers` 的 `x-cache-proxy-*` 控制头；proxy 消费这些头后必须剥离，不能
-转发给真实上游。直连 provider（当前为 `openai-idealab`）把上游 URL 写在
-`options.baseURL`，不写 `x-cache-proxy-*` header。Anthropic upstream 不走 `.env` 或 init
+转发给真实上游。所有 provider 都通过本地 proxy 转发，`x-cache-proxy-marker-strategy: none`
+  可让 proxy 跳过 `cache_control` marker 注入（当前只有 `openai-idealab` 使用，因为
+  Idealab 上游自行管理缓存）。Anthropic upstream 不走 `.env` 或 init
 脚本参数；需要支持另一个 Anthropic-compatible 平台时新增独立 provider，而不是给一个
 provider 再挂多套配置。
 其中 `x-cache-proxy-upstream-base-url` 只允许 loopback 客户端生效；如果 proxy
@@ -198,10 +197,10 @@ git -C vendor/opencode-cache-proxy diff --check
 - `~/.config/opencode/opencode.json` 里有 `openai-bailiab-api`、
   `openai-bailian-token-plan`、`openai-idealab` 与 `anthropic-idealab`，且默认都没有
   `options.apiKey`；
-- 两个 OpenAI-compatible cached provider 都带
+- 所有三个 OpenAI-compatible provider 都带
   `options.headers["x-cache-proxy-upstream-base-url"]`；
-- `openai-idealab.options.baseURL` 固定为
-  `https://idealab.alibaba-inc.com/api/openai/v1`，且没有 `options.headers`；
+- `openai-idealab.options.headers["x-cache-proxy-marker-strategy"]` 固定为 `none`，
+  `options.baseURL` 指向本地 proxy；
 - `openai-idealab.models` 包含 `Qwen3.7-Max-DogFooding` 和 `Qwen3.7-Max-DogFooding-256k`；
 - `anthropic-idealab.options.headers["x-cache-proxy-upstream-base-url"]`
   固定为 `https://idealab.alibaba-inc.com/api/anthropic`；

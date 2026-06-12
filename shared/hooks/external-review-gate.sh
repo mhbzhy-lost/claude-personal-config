@@ -432,34 +432,68 @@ if action == "deny_fix_first":
 # action == "run"
 log(f"executing review round {review_round}...")
 
-# --- Run reviewer.py ---
+# --- Run reviewer.py (try anthropic first, fall back to api on failure) ---
 head_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-reviewer_cmd = [
-    "uv", "run", "--no-project",
-    "--with", "openai>=1.50", "--with", "python-dotenv",
-    "python", REVIEWER_PY,
-    base_ref, "HEAD",
-    "--backend", "api",
-    "--review-depth", "exhaustive",
-    "--review-round", str(review_round),
-    "--max-issues", "25",
-]
 
-try:
-    result = subprocess.run(
-        reviewer_cmd,
-        capture_output=True, text=True, timeout=540,
-        cwd=os.getcwd(),
-    )
-except subprocess.TimeoutExpired:
-    log("reviewer.py timed out, degraded allow")
-    allow()
-except Exception as exc:
-    log(f"reviewer.py failed to start: {exc}, degraded allow")
-    allow()
 
-if result.returncode != 0:
-    log(f"reviewer.py exit={result.returncode}, degraded allow")
+def run_reviewer(backend: str) -> "subprocess.CompletedProcess[str] | None":
+    try:
+        timeout_s = int(os.environ.get("EXTERNAL_REVIEW_TIMEOUT_SECONDS", "540"))
+    except ValueError:
+        timeout_s = 540
+    cmd = [
+        "uv",
+        "run",
+        "--no-project",
+        "--with",
+        "httpx",
+        "--with",
+        "python-dotenv",
+        "python",
+        REVIEWER_PY,
+        base_ref,
+        "HEAD",
+        "--backend",
+        backend,
+        "--review-depth",
+        "exhaustive",
+        "--review-round",
+        str(review_round),
+        "--max-issues",
+        "25",
+    ]
+    try:
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired:
+        log(f"{backend} backend timed out after {timeout_s}s")
+        return None
+    except Exception as exc:
+        log(f"{backend} backend failed to start: {exc}")
+        return None
+
+
+# Try anthropic first, fall back to api on failure/timeout/exception
+result = run_reviewer("anthropic")
+
+if result is None:
+    log("anthropic backend timed out or crashed, falling back to api")
+    result = run_reviewer("api")
+elif result.returncode != 0:
+    log(f"anthropic backend failed (rc={result.returncode}), falling back to api")
+    if result.stderr:
+        log(result.stderr[:500])
+    result = run_reviewer("api")
+
+if result is None:
+    log("degraded allow (both backends timed out or crashed)")
+    allow()
+elif result.returncode != 0:
+    log(f"api backend failed (rc={result.returncode}), degraded allow")
     if result.stderr:
         log(result.stderr[:500])
     allow()

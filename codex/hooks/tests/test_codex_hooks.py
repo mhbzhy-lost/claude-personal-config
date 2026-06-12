@@ -2348,5 +2348,150 @@ sync_codex_skills
             self.assertFalse(curl_log.exists(), "curl installer must not run when OPENCODE_BIN is executable")
 
 
+    def test_external_review_gate_falls_back_to_api_when_anthropic_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo, _remote = self._setup_repo_with_pending_push(tmp_path)
+            config_home = tmp_path / "config"
+            review_dir = config_home / "claude-skills" / "external-llm-review"
+            review_dir.mkdir(parents=True)
+            (review_dir / ".env").write_text("OPENAI_API_KEY=test\n")
+
+            fake_bin = tmp_path / "bin"
+            fake_bin.mkdir()
+            fake_uv = fake_bin / "uv"
+            fake_uv.write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ \"$*\" == *'--backend anthropic'* ]]; then\n"
+                "  echo 'anthropic backend failed' >&2\n"
+                "  exit 1\n"
+                "fi\n"
+                "cat <<'EOF'\n"
+                "#### Critical (Must Fix)\n"
+                "*无*\n\n"
+                "#### Important (Should Fix)\n"
+                "*无*\n\n"
+                "### Assessment\n"
+                "Ready to merge? Yes\n"
+                "EOF\n"
+                "exit 0\n"
+            )
+            fake_uv.chmod(0o755)
+
+            proc = subprocess.run(
+                ["bash", str(SHARED_EXTERNAL_REVIEW_GATE)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {
+                            "command": f"git -C {shlex.quote(str(repo))} push",
+                        },
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                check=True,
+                env={
+                    **os.environ,
+                    "CLAUDE_CONFIG_HOME": str(config_home),
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                },
+            )
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("anthropic backend failed", proc.stderr)
+            self.assertIn("falling back to api", proc.stderr)
+            self.assertIn("[external-review-gate] allow", proc.stderr)
+
+    def test_external_review_gate_allows_when_both_backends_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo, _remote = self._setup_repo_with_pending_push(tmp_path)
+            config_home = tmp_path / "config"
+            review_dir = config_home / "claude-skills" / "external-llm-review"
+            review_dir.mkdir(parents=True)
+            (review_dir / ".env").write_text("OPENAI_API_KEY=test\n")
+
+            fake_bin = tmp_path / "bin"
+            fake_bin.mkdir()
+            fake_uv = fake_bin / "uv"
+            fake_uv.write_text(
+                "#!/usr/bin/env bash\n"
+                "echo 'backend failed' >&2\n"
+                "exit 1\n"
+            )
+            fake_uv.chmod(0o755)
+
+            proc = subprocess.run(
+                ["bash", str(SHARED_EXTERNAL_REVIEW_GATE)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {
+                            "command": f"git -C {shlex.quote(str(repo))} push",
+                        },
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                check=True,
+                env={
+                    **os.environ,
+                    "CLAUDE_CONFIG_HOME": str(config_home),
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                },
+            )
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("anthropic backend failed", proc.stderr)
+            self.assertIn("falling back to api", proc.stderr)
+            self.assertIn("api backend failed", proc.stderr)
+            self.assertIn("[external-review-gate] allow", proc.stderr)
+
+
+    def test_external_review_gate_falls_back_on_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo, _remote = self._setup_repo_with_pending_push(tmp_path)
+            config_home = tmp_path / "config"
+            review_dir = config_home / "claude-skills" / "external-llm-review"
+            review_dir.mkdir(parents=True)
+            (review_dir / ".env").write_text("OPENAI_API_KEY=test\n")
+
+            fake_bin = tmp_path / "bin"
+            fake_bin.mkdir()
+            fake_uv = fake_bin / "uv"
+            fake_uv.write_text(
+                "#!/usr/bin/env bash\n"
+                "sleep 10\n"
+            )
+            fake_uv.chmod(0o755)
+
+            proc = subprocess.run(
+                ["bash", str(SHARED_EXTERNAL_REVIEW_GATE)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {
+                            "command": f"git -C {shlex.quote(str(repo))} push",
+                        },
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                check=True,
+                env={
+                    **os.environ,
+                    "CLAUDE_CONFIG_HOME": str(config_home),
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                    "EXTERNAL_REVIEW_TIMEOUT_SECONDS": "1",
+                },
+                timeout=30,
+            )
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("anthropic backend timed out", proc.stderr)
+            self.assertIn("anthropic backend timed out or crashed, falling back to api", proc.stderr)
+            self.assertIn("api backend timed out", proc.stderr)
+            self.assertIn("[external-review-gate] allow", proc.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
