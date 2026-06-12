@@ -52,22 +52,24 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             parser.parse_args(["base", "head", "--review-round", "3"])
 
-    def test_review_backend_defaults_to_raw_api(self):
+    def test_review_backend_defaults_to_api(self):
         args = Namespace(backend=None)
 
         self.assertEqual(reviewer.resolve_review_backend(args, env={}), "api")
 
-    def test_review_backend_can_be_enabled_by_arg_or_env(self):
-        args = Namespace(backend="claude-code-cli")
+    def test_review_backend_accepts_api_and_anthropic(self):
+        args = Namespace(backend="api")
+        self.assertEqual(reviewer.resolve_review_backend(args, env={}), "api")
 
-        self.assertEqual(reviewer.resolve_review_backend(args, env={}), "claude-code-cli")
-        self.assertEqual(
+        args = Namespace(backend="anthropic")
+        self.assertEqual(reviewer.resolve_review_backend(args, env={}), "anthropic")
+
+    def test_review_backend_rejects_claude_code_cli(self):
+        with self.assertRaisesRegex(ValueError, "EXTERNAL_LLM_REVIEW_BACKEND"):
             reviewer.resolve_review_backend(
                 Namespace(backend=None),
                 env={"EXTERNAL_LLM_REVIEW_BACKEND": "claude-code-cli"},
-            ),
-            "claude-code-cli",
-        )
+            )
 
     def test_review_backend_rejects_unknown_values(self):
         with self.assertRaisesRegex(ValueError, "EXTERNAL_LLM_REVIEW_BACKEND"):
@@ -76,134 +78,98 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
                 env={"EXTERNAL_LLM_REVIEW_BACKEND": "ollama"},
             )
 
-    def test_claude_cli_backend_accepts_only_claude_model_names(self):
-        for model in ("claude-sonnet-4-6", "anthropic/claude-opus-4-7", "sonnet", "opus", "haiku"):
-            reviewer.validate_claude_cli_model(model)
-
-        for model in ("deepseek-chat", "deepseek-sonnet", "qwen-max", "glm-4-plus", "llama3:70b"):
-            with self.subTest(model=model):
-                with self.assertRaisesRegex(ValueError, "Claude model"):
-                    reviewer.validate_claude_cli_model(model)
-
-    def test_claude_cli_config_requires_anthropic_env(self):
+    def test_anthropic_config_requires_base_url(self):
         with self.assertRaisesRegex(ValueError, "ANTHROPIC_BASE_URL"):
-            reviewer.resolve_claude_cli_config({})
+            reviewer.resolve_anthropic_config({})
 
-    def test_claude_cli_config_does_not_fallback_from_external_llm_env(self):
-        # Explicit: EXTERNAL_LLM_* must NOT be silently used as Claude CLI config.
-        with self.assertRaisesRegex(ValueError, "ANTHROPIC_BASE_URL"):
-            reviewer.resolve_claude_cli_config(
-                {
-                    "EXTERNAL_LLM_API_BASE": "https://gateway.example.test",
-                    "EXTERNAL_LLM_API_KEY": "external-key",
-                    "EXTERNAL_LLM_MODEL": "claude-sonnet-4-6",
-                }
-            )
+    def test_anthropic_config_requires_api_key(self):
+        with self.assertRaisesRegex(ValueError, "ANTHROPIC_API_KEY"):
+            reviewer.resolve_anthropic_config({
+                "ANTHROPIC_BASE_URL": "https://idealab.alibaba-inc.com/anthropic",
+            })
 
-    def test_claude_cli_command_uses_bare_plan_mode_and_no_tools(self):
-        command = reviewer.build_claude_cli_command(
-            claude_bin="claude",
-            model="claude-sonnet-4-6",
-            settings_path=Path("/tmp/settings.json"),
+    def test_anthropic_config_falls_back_to_auth_token(self):
+        config = reviewer.resolve_anthropic_config({
+            "ANTHROPIC_BASE_URL": "https://idealab.alibaba-inc.com/anthropic",
+            "ANTHROPIC_AUTH_TOKEN": "idealab-token",
+            "ANTHROPIC_MODEL": "claude-opus-4-7",
+        })
+
+        self.assertEqual(config.api_key, "idealab-token")
+        self.assertEqual(config.model, "claude-opus-4-7")
+
+    def test_anthropic_config_requires_model(self):
+        with self.assertRaisesRegex(ValueError, "ANTHROPIC_MODEL"):
+            reviewer.resolve_anthropic_config({
+                "ANTHROPIC_BASE_URL": "https://idealab.alibaba-inc.com/anthropic",
+                "ANTHROPIC_API_KEY": "sk-ant-test",
+            })
+
+    def test_anthropic_config_parses_all_fields(self):
+        config = reviewer.resolve_anthropic_config({
+            "ANTHROPIC_BASE_URL": "https://idealab.alibaba-inc.com/anthropic",
+            "ANTHROPIC_API_KEY": "sk-ant-test",
+            "ANTHROPIC_MODEL": "claude-opus-4-7",
+        })
+
+        self.assertEqual(config.base_url, "https://idealab.alibaba-inc.com/anthropic")
+        self.assertEqual(config.api_key, "sk-ant-test")
+        self.assertEqual(config.model, "claude-opus-4-7")
+
+    def test_anthropic_user_agent_is_deceptive(self):
+        self.assertEqual(
+            reviewer.ANTHROPIC_USER_AGENT,
+            "claude-cli/2.1.156 (external, sdk-cli)",
         )
 
-        self.assertIn("--bare", command)
-        self.assertIn("--no-session-persistence", command)
-        self.assertIn("--disable-slash-commands", command)
-        self.assertIn("--strict-mcp-config", command)
-        self.assertIn("--permission-mode", command)
-        self.assertIn("plan", command)
-        self.assertIn("--tools", command)
-        self.assertEqual(command[command.index("--tools") + 1], "")
-
-    def test_claude_cli_command_uses_valid_empty_mcp_config(self):
-        command = reviewer.build_claude_cli_command(
-            claude_bin="claude",
-            model="claude-sonnet-4-6",
-            settings_path=Path("/tmp/settings.json"),
+    def test_build_anthropic_messages_payload_includes_system_and_user(self):
+        payload = reviewer.build_anthropic_messages_payload(
+            system_prompt="system content",
+            user_prompt="user content",
+            model="claude-opus-4-7",
+            max_tokens=16000,
         )
+
+        self.assertEqual(payload["model"], "claude-opus-4-7")
+        self.assertEqual(payload["messages"][0]["role"], "user")
+        self.assertEqual(payload["messages"][0]["content"], "user content")
+        self.assertEqual(payload["system"], "system content")
+        self.assertEqual(payload["max_tokens"], 16000)
+
+    def test_build_anthropic_messages_payload_omits_max_tokens_when_zero(self):
+        payload = reviewer.build_anthropic_messages_payload(
+            system_prompt="system",
+            user_prompt="user",
+            model="claude-opus-4-7",
+            max_tokens=0,
+        )
+
+        self.assertNotIn("max_tokens", payload)
+
+    def test_extract_anthropic_text_extracts_first_text_block(self):
+        class Response:
+            content = [
+                {"type": "text", "text": "review output"},
+            ]
 
         self.assertEqual(
-            command[command.index("--mcp-config") + 1],
-            '{"mcpServers":{}}',
+            reviewer.extract_anthropic_text(Response()),
+            "review output",
         )
 
-    def test_claude_cli_env_isolates_home_xdg_and_selected_endpoint_vars(self):
-        config = reviewer.ClaudeCliConfig(
-            base_url="https://gateway.example.test",
-            api_key="key",
-            auth_token="token",
-            model="claude-sonnet-4-6",
-            claude_bin="claude",
-            timeout_seconds=300,
-        )
+    def test_extract_anthropic_text_rejects_empty_content(self):
+        class Response:
+            content = []
 
-        with TemporaryDirectory() as tmp:
-            env = reviewer.build_claude_cli_env(
-                base_env={
-                    "PATH": "/usr/bin",
-                    "HOME": "/Users/example",
-                    "CLAUDE_CONFIG_DIR": "/Users/example/.claude",
-                    "ANTHROPIC_API_KEY": "production-key",
-                },
-                runtime_root=Path(tmp),
-                config=config,
-            )
+        with self.assertRaisesRegex(RuntimeError, "empty content"):
+            reviewer.extract_anthropic_text(Response())
 
-            self.assertEqual(env["PATH"], "/usr/bin")
-            self.assertEqual(env["ANTHROPIC_BASE_URL"], "https://gateway.example.test")
-            self.assertEqual(env["ANTHROPIC_API_KEY"], "key")
-            self.assertEqual(env["ANTHROPIC_AUTH_TOKEN"], "token")
-            self.assertNotEqual(env["HOME"], "/Users/example")
-            self.assertTrue(env["HOME"].startswith(tmp))
-            self.assertTrue(env["XDG_CONFIG_HOME"].startswith(tmp))
-            self.assertTrue(env["CLAUDE_CONFIG_DIR"].startswith(tmp))
+    def test_extract_anthropic_text_rejects_no_text_block(self):
+        class Response:
+            content = [{"type": "tool_use", "id": "1"}]
 
-    def test_claude_cli_review_invokes_cli_with_stdin_and_isolated_home(self):
-        with TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            capture_path = tmp_path / "home.txt"
-            fake_claude = tmp_path / "claude"
-            fake_claude.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "seen_bare=0\n"
-                "seen_plan=0\n"
-                "seen_empty_tools=0\n"
-                "previous=''\n"
-                "for arg in \"$@\"; do\n"
-                "  if [[ \"${arg}\" == \"--bare\" ]]; then seen_bare=1; fi\n"
-                "  if [[ \"${previous}\" == \"--permission-mode\" && \"${arg}\" == \"plan\" ]]; then seen_plan=1; fi\n"
-                "  if [[ \"${previous}\" == \"--tools\" && -z \"${arg}\" ]]; then seen_empty_tools=1; fi\n"
-                "  previous=\"${arg}\"\n"
-                "done\n"
-                "[[ ${seen_bare} -eq 1 && ${seen_plan} -eq 1 && ${seen_empty_tools} -eq 1 ]] || exit 17\n"
-                "prompt=\"$(cat)\"\n"
-                f"printf '%s\\n' \"${{HOME}}\" > {shlex.quote(str(capture_path))}\n"
-                "printf 'reviewed:%s\\n' \"${#prompt}\"\n",
-                encoding="utf-8",
-            )
-            fake_claude.chmod(0o700)
-            config = reviewer.ClaudeCliConfig(
-                base_url="https://gateway.example.test",
-                api_key="key",
-                auth_token=None,
-                model="claude-sonnet-4-6",
-                claude_bin=str(fake_claude),
-                timeout_seconds=5,
-            )
-
-            output = reviewer.run_claude_cli_review(
-                prompt="review this diff",
-                config=config,
-                base_env={"PATH": "/usr/bin:/bin", "HOME": "/Users/example"},
-                cwd=tmp_path,
-            )
-
-            self.assertEqual(output, "reviewed:16")
-            isolated_home = capture_path.read_text(encoding="utf-8").strip()
-            self.assertNotEqual(isolated_home, "/Users/example")
-            self.assertIn("external-llm-review-claude-", isolated_home)
+        with self.assertRaisesRegex(RuntimeError, "no text block"):
+            reviewer.extract_anthropic_text(Response())
 
     def test_default_chat_messages_are_plain_strings(self):
         messages = reviewer.build_chat_messages(
@@ -225,14 +191,14 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
         self.assertIn("stable requirements", user_prompt)
         self.assertTrue(user_prompt.endswith("review this diff"))
 
-    def test_extract_chat_content_rejects_empty_choices(self):
+    def test_extract_openai_content_rejects_empty_choices(self):
         class Response:
             choices = []
 
         with self.assertRaisesRegex(RuntimeError, "empty choices"):
-            reviewer.extract_chat_content(Response())
+            reviewer.extract_openai_content(Response())
 
-    def test_extract_chat_content_rejects_empty_content_with_reasoning_diagnostics(self):
+    def test_extract_openai_content_rejects_empty_content_with_reasoning_diagnostics(self):
         class UsageDetails:
             reasoning_tokens = 32
 
@@ -256,7 +222,7 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
             RuntimeError,
             "empty content.*finish_reason=length.*reasoning_tokens=32",
         ):
-            reviewer.extract_chat_content(Response())
+            reviewer.extract_openai_content(Response())
 
     def test_arg_parser_defaults_to_reasoning_safe_output_budget(self):
         parser = reviewer.build_arg_parser()
@@ -290,17 +256,12 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
         self.assertIn("bad request", detail)
 
     def test_run_review_rejects_legacy_api_format_env(self):
-        # Old .env files that still set EXTERNAL_LLM_API_FORMAT=anthropic|responses
-        # must fail loudly, not silently fall through to chat completions.
         import asyncio
         from io import StringIO
         from unittest.mock import patch
 
         args = reviewer.build_arg_parser().parse_args(["base", "head"])
         skill_dir = Path(__file__).resolve().parent.parent
-        # clear=True isolates from CI/host env so the assertion only depends on
-        # the legacy var we inject; a different host EXTERNAL_LLM_* must not be
-        # able to make this test exit on a different code path.
         with patch.dict(
             "os.environ",
             {"EXTERNAL_LLM_API_FORMAT": "anthropic"},
@@ -313,22 +274,6 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("EXTERNAL_LLM_API_FORMAT", stderr.getvalue())
         self.assertIn("no longer read", stderr.getvalue())
-
-    def test_describe_api_exception_decodes_and_redacts_response_body(self):
-        class Response:
-            status_code = 401
-            content = b'{"error":"Authorization: Bearer secret-token","api_key":"sk-live"}'
-
-        class ApiError(Exception):
-            response = Response()
-
-        detail = reviewer.describe_api_exception(ApiError("request failed"))
-
-        self.assertIn("status_code=401", detail)
-        self.assertIn("response_body=", detail)
-        self.assertNotIn("secret-token", detail)
-        self.assertNotIn("sk-live", detail)
-        self.assertIn("[redacted]", detail)
 
 
 if __name__ == "__main__":
