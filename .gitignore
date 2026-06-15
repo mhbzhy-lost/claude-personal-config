@@ -60,3 +60,4 @@ pnpm-lock.yaml.*
 
 # block component symlink-back-to-dev (created by block frontend dev tooling)
 blocks/*/component/frontend/node_modules
+/.workflow/
