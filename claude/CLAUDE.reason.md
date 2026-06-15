@@ -63,45 +63,14 @@ skill 本身不可修改，原 reason 保留在下方备查：
 
 ---
 
-## 并发
+## 并发与 Subagent
 
-> **原因**：串行浪费独立任务的并行潜力；DAG 显式声明依赖才能安全并发。
-> subagent 让独立任务在隔离上下文中推进，避免主对话串行吞吐受限；
-> worktree 隔离避免并发 subagent 的文件写入冲突。
-> 多 agent 编排推荐 workflow 脚本而非裸 subagent 派发，因为 workflow 脚本
-> 是确定性代码（可测试、可复用、可断点续跑），而裸派发依赖 LLM 记住
-> DAG 拓扑和 worktree 策略，容易遗漏或重复派发。
-
-详细的 worktree 安全契约（目录优先级、gitignore 校验、submodule guard、
-sandbox 降级）已移入 writing-plans skill 的职责范围。原 reason 保留在下方备查：
-
-<details>
-<summary>并发策略原 reason（备查）</summary>
-
-- **目录优先级 `.worktrees/`**：约定俗成的隐藏目录；已存在时复用避免目录爆炸。
-- **`.gitignore` 校验**：worktree 目录未忽略会污染 working tree。
-- **submodule guard**：子模块内 worktree add 会建到子模块独立 .git 里。
-- **sandbox 降级**：权限受限时不应硬卡，降级到串行至少能跑完。
-- **worker 策略**：实现型 subagent 默认交给 Codex 插件，是为了复用 Claude Code
-  内的 `/codex:rescue`、后台 job、status/result/resume 等闭环；OpenCode DeepSeek
-  worker 保留为显式 fallback，避免默认路径在多套 worker 间摇摆。
-
-</details>
-
----
-
-## Subagent
-
-> **原因**：subagent 的价值在于把独立上下文并行推进；如果创建后同步等待，
-> 主对话会退化成串行调度器，既浪费并发窗口，也更容易在长任务中丢失全局协调。
-> 后台模式让主对话继续做 DAG 调度、风险收敛和验证准备，只在真实冲突或需要
-> 用户决策时停下来。
+> **原因**：并发和 subagent 的细节规则已沉淀到 `workflow-usage` skill 的
+> description 和正文中。CLAUDE.md 只保留"查 skill description → 按规则判断
+> → 用 workflow 前加载 skill"的指向，避免规则在两处维护导致不一致。
 >
-> 多 agent 编排推荐 workflow 脚本而非裸 subagent 派发（详见 §并发 reason）。
->
-> 长耗时 bash 命令同样会占住主对话的执行通道，尤其是构建、全量测试、日志跟踪、
-> 扫描和远程诊断这类耗时不稳定的任务。强制转交后台 subagent 是为了保留主对话
-> 的交互窗口，让主对话可以继续拆分任务、响应用户打断，并在回收点做独立校验。
+> skill description 包含：何时直接派发、何时用 workflow、后台模式、worktree
+> 隔离、并行派发等关键规则摘要。完整 API 和模板参数在 skill 正文中。
 
 ---
 
