@@ -202,8 +202,10 @@ sync_opencode_plugins() {
 
   # 退役 plugin：stop-verification 曾在每个 session.idle toast 提醒，噪音过高。
   # 大型任务结束检查统一挪到 git push gate，因此本仓托管的旧软链可自动清理。
+  # dag-dispatch-hint.js 由 workflow-hint.js 替代：只在新插件已就位时才退役旧插件，
+  # 避免 workflow install 失败后两个都不存在。
   local retired_plugin retired_link retired_target
-  for retired_plugin in "stop-verification.js" "dag-dispatch-hint.js"; do
+  for retired_plugin in "stop-verification.js"; do
     retired_link="$dst_path/$retired_plugin"
     if [ -L "$retired_link" ]; then
       retired_target=$(readlink "$retired_link")
@@ -215,6 +217,18 @@ sync_opencode_plugins() {
       esac
     fi
   done
+  # dag-dispatch-hint.js 只在 workflow-hint.js 已安装时退役
+  local dag_link="$dst_path/dag-dispatch-hint.js"
+  local wf_link="$dst_path/workflow-hint.js"
+  if [ -L "$dag_link" ] && { [ -L "$wf_link" ] || [ -f "$wf_link" ]; }; then
+    retired_target=$(readlink "$dag_link")
+    case "$retired_target" in
+      "$src_path/dag-dispatch-hint.js")
+        rm -f "$dag_link"
+        echo "[plugin] 已移除退役 plugin 软链 $dag_link（workflow-hint.js 已就位）"
+        ;;
+    esac
+  fi
 
   # 清理旧版逐文件软链残留（指向已废弃路径）
   local legacy_link="$dst_path/git-commit-hint.js"
@@ -460,9 +474,12 @@ sync_opencode_shared
 sync_opencode_docs
 
 # ── Workflow 子模块配置 ─────────────────────────────────
+# install-opencode.sh 内含 npm install（网络操作），失败不应中断整个 init 流程。
 workflow_install="$SRC/vendor/opencode-dynamic-workflow/install-opencode.sh"
 if [ -f "$workflow_install" ]; then
-  bash "$workflow_install" --no-interactive --plugin-dir "$OPENCODE_CONFIG_DIR/plugins"
+  if ! bash "$workflow_install" --no-interactive --plugin-dir "$OPENCODE_CONFIG_DIR/plugins"; then
+    echo "[warn]  workflow 子模块安装失败，dag-dispatch-hint 插件将保留为 fallback"
+  fi
 else
   echo "[skip]  vendor/opencode-dynamic-workflow 不存在，跳过 workflow 配置"
 fi

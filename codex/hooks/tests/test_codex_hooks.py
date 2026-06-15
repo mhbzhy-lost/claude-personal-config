@@ -40,9 +40,6 @@ OPENCODE_SKILL_PREFLIGHT_PLUGIN = (
 OPENCODE_RM_OUTSIDE_WORKSPACE_GUARD_PLUGIN = (
     REPO_ROOT / "opencode" / "plugins" / "rm-outside-workspace-guard.js"
 )
-OPENCODE_DAG_DISPATCH_HINT_PLUGIN = (
-    REPO_ROOT / "opencode" / "plugins" / "dag-dispatch-hint.js"
-)
 OPENCODE_PERMISSION = REPO_ROOT / "opencode" / "opencode-permission.json"
 KNOWLEDGE_README = REPO_ROOT / "docs" / "knowledge" / "README.md"
 EXTERNAL_REVIEWER = (
