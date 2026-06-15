@@ -85,6 +85,9 @@ ensure_opencode_required_submodules() {
   ensure_opencode_submodule_ready \
     "vendor/superpowers" \
     "$SRC/vendor/superpowers/skills"
+  ensure_opencode_submodule_ready \
+    "vendor/opencode-dynamic-workflow" \
+    "$SRC/vendor/opencode-dynamic-workflow/lib/runner.mjs"
 }
 
 # ── OpenCode binary ─────────────────────────────────────
@@ -200,7 +203,7 @@ sync_opencode_plugins() {
   # 退役 plugin：stop-verification 曾在每个 session.idle toast 提醒，噪音过高。
   # 大型任务结束检查统一挪到 git push gate，因此本仓托管的旧软链可自动清理。
   local retired_plugin retired_link retired_target
-  for retired_plugin in "stop-verification.js"; do
+  for retired_plugin in "stop-verification.js" "dag-dispatch-hint.js"; do
     retired_link="$dst_path/$retired_plugin"
     if [ -L "$retired_link" ]; then
       retired_target=$(readlink "$retired_link")
@@ -455,6 +458,14 @@ configure_opencode_cache_proxy
 sync_opencode_instructions
 sync_opencode_shared
 sync_opencode_docs
+
+# ── Workflow 子模块配置 ─────────────────────────────────
+workflow_install="$SRC/vendor/opencode-dynamic-workflow/install-opencode.sh"
+if [ -f "$workflow_install" ]; then
+  bash "$workflow_install" --no-interactive --plugin-dir "$OPENCODE_CONFIG_DIR/plugins"
+else
+  echo "[skip]  vendor/opencode-dynamic-workflow 不存在，跳过 workflow 配置"
+fi
 
 # ── MCP 变量（与 init_claude.sh 保持一致） ──────────────
 SKILL_CATALOG_DIR="$SRC/mcp/skill-catalog"

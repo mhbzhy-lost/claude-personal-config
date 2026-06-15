@@ -1,4 +1,10 @@
 /**
+ * @deprecated 已被 vendor/opencode-dynamic-workflow/plugins/workflow-hint.js 替代。
+ * 保留文件用于 git revert 回退。不要删除。
+ * 退役日期：2026-06-15
+ */
+
+/**
  * dag-dispatch-hint plugin for OpenCode
  *
  * 拦截 task 工具（subagent 派发），强制 agent 派发前对齐

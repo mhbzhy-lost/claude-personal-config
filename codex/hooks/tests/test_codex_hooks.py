@@ -51,6 +51,9 @@ EXTERNAL_REVIEWER = (
 CODEX_HOOKS_JSON = REPO_ROOT / "codex" / "hooks.json"
 INIT_CODEX = REPO_ROOT / "init_codex.sh"
 INIT_OPENCODE = REPO_ROOT / "init_opencode.sh"
+OPENCODE_WORKFLOW_HINT_PLUGIN = (
+    REPO_ROOT / "vendor" / "opencode-dynamic-workflow" / "plugins" / "workflow-hint.js"
+)
 KNOWLEDGE_GATE = (
     REPO_ROOT / "templates" / "knowledge-gate" / ".agent" / "hooks" / "knowledge-gate.py"
 )
@@ -1705,9 +1708,11 @@ if (!absoluteRmDenied) {{
             self.assertEqual(proc.returncode, 0, f"stderr={proc.stderr}\nstdout={proc.stdout}")
 
     def test_opencode_dag_dispatch_hint_matches_global_concurrency_rules(self) -> None:
+        """验证 CLAUDE.md §并发/§Subagent 包含 workflow 推荐和核心约束。"""
         claude_global = (REPO_ROOT / "claude" / "CLAUDE.md").read_text()
         for snippet in (
-            "可隔离的独立子任务必须优先使用 subagent 按 DAG 并发。",
+            "可隔离的独立子任务必须优先使用 subagent 按 DAG 并发",
+            "workflow 脚本",
             "若为 coding 任务，则必须通过 git worktree 隔离",
             "worktree 合并后必须跑验证",
             "自动合并失败或语义冲突",
@@ -1715,15 +1720,28 @@ if (!absoluteRmDenied) {{
         ):
             self.assertIn(snippet, claude_global)
 
+        # shared policy 包含 workflow 推荐和 DAG 通用约束
         policy = json.loads(SHARED_SUBAGENT_DISPATCH_HINT.read_text())
-        expected_hint = "\n".join(policy["template"])
+        rendered = "\n".join(policy["template"])
+        for snippet in (
+            "workflow 脚本编排",
+            "git worktree 隔离",
+            "worktree 合并后必须跑验证",
+            "自动合并失败或语义冲突",
+            "后台模式",
+            "skip-dag-hint",
+        ):
+            self.assertIn(snippet, rendered)
 
+        # workflow-hint 插件能加载并在关键词命中时抛出提示
+        self.assertTrue(OPENCODE_WORKFLOW_HINT_PLUGIN.is_file())
         script = f"""
-const mod = await import({json.dumps(OPENCODE_DAG_DISPATCH_HINT_PLUGIN.as_uri())});
-const plugin = await mod.DagDispatchHintPlugin({{}});
+const mod = await import({json.dumps(OPENCODE_WORKFLOW_HINT_PLUGIN.as_uri())});
+const plugin = await mod.WorkflowHintPlugin({{}});
 const before = plugin["tool.execute.before"];
 try {{
-  await before({{tool: "task"}}, {{args: {{description: "implement slice", prompt: "do work"}}}});
+  await before({{tool: "task"}}, {{args: {{description: "并行实现三个模块", prompt: "同时做"}}}});
+  console.log("NO_THROW");
 }} catch (err) {{
   console.log(err.message);
 }}
@@ -1735,36 +1753,31 @@ try {{
             check=True,
         )
         hint = proc.stdout
-        self.assertEqual(hint.rstrip("\n"), expected_hint)
-        for snippet in (
-            "DAG 拓扑分析",
-            "git worktree 隔离",
-            "worktree 合并后必须跑验证",
-            "自动合并失败或语义冲突",
-            "后台模式",
-        ):
-            self.assertIn(snippet, hint)
-        self.assertNotIn("CLAUDE.md §2", hint)
-        self.assertNotIn("CLAUDE.md §3", hint)
+        self.assertIn("workflow", hint.lower())
+        self.assertNotIn("NO_THROW", hint)
 
     def test_subagent_dispatch_hint_policy_is_four_host_single_source(self) -> None:
+        """验证四端共享 policy 包含 workflow 推荐，不含已退役的知识检索流程。"""
         policy = json.loads(SHARED_SUBAGENT_DISPATCH_HINT.read_text())
         rendered = "\n".join(policy["template"])
-        self.assertIn("DAG 拓扑分析", rendered)
+        self.assertIn("workflow 脚本编排", rendered)
         self.assertIn("git worktree 隔离", rendered)
         self.assertIn("后台模式", rendered)
         self.assertNotIn("知识检索", rendered)
         self.assertNotIn("skill-catalog", rendered)
         self.assertNotIn("mcp__skill-catalog", rendered)
 
+        # 四端仍引用 subagent-dispatch-hint（Claude/Codex/Qwen hook）
         for text in (
             INIT_CODEX.read_text(),
             (REPO_ROOT / "codex" / "hooks.json").read_text(),
             (REPO_ROOT / "init_claude.sh").read_text(),
             (REPO_ROOT / "init_qwen.sh").read_text(),
-            OPENCODE_DAG_DISPATCH_HINT_PLUGIN.read_text(),
         ):
             self.assertIn("subagent-dispatch-hint", text)
+
+        # OpenCode 端由 workflow-hint 插件承载
+        self.assertTrue(OPENCODE_WORKFLOW_HINT_PLUGIN.is_file())
 
         self.assertNotIn("coding-expert-rules-inject", (REPO_ROOT / "init_qwen.sh").read_text())
         self.assertNotIn("coding-expert-rules-inject", (REPO_ROOT / "codex" / "hooks.json").read_text())

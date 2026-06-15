@@ -28,6 +28,8 @@ memory 内容在支持 SessionStart 的环境已自动注入。
 ## 并发
 
 可隔离的独立子任务必须优先使用 subagent 按 DAG 并发。
+多 agent 编排场景（≥3 个 agent 或有 DAG 依赖）推荐使用 workflow 脚本
+（`vendor/opencode-dynamic-workflow/`），确定性更高、可复用、支持实时干预。
 若为 coding 任务，则必须通过 git worktree 隔离，若为探索等只读任务可不必。
 worktree 合并后必须跑验证；自动合并失败或语义冲突 → 停止并请求用户决策。
 
@@ -35,8 +37,9 @@ worktree 合并后必须跑验证；自动合并失败或语义冲突 → 停止
 
 ## Subagent
 
-任何 subagent 创建都必须采用后台模式：派发后不阻塞主 agent
+任何 subagent 创建都必须采用后台模式：派发后不阻塞主 agent。
 长耗时或耗时不确定的 bash 命令调用必须交给后台 subagent 执行。
+多 agent 编排推荐使用 workflow 脚本（详见 §并发）。
 
 禁止：同步调用 subagent，使得用户在 subagent 结束前无法与主 agent 对话。
 
