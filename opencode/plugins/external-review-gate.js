@@ -56,7 +56,7 @@ export const ExternalReviewGatePlugin = async () => {
           encoding: "utf-8",
           timeout: 600_000,
           maxBuffer: 10 * 1024 * 1024,
-          stdio: ["pipe", "pipe", "inherit"],
+          stdio: ["pipe", "pipe", "pipe"],
         })
       } catch {
         // Fail-open: script failure, timeout → allow
