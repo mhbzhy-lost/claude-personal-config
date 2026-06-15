@@ -28,7 +28,7 @@ workflow 系统替换 DAG 插件后，如果出现问题需要回退到旧方案
 
 | 文件 | 第二期做了什么 | revert 后恢复到什么 |
 |------|---------------|-------------------|
-| `opencode/plugins/dag-dispatch-hint.js` | 标记废弃或删除 | 恢复为活跃插件 |
+| `opencode/plugins/dag-dispatch-hint.js` | 已删除 | 从 git 历史恢复为活跃插件 |
 | `shared/policies/subagent-dispatch-hint.json` | 替换为 workflow 提示文本 | 恢复为 DAG 拦截文本 |
 | `shared/hooks/subagent-dispatch-hint.sh` | 跟随 policy 更新 | 恢复原文（仅读 JSON，无逻辑变化） |
 | `claude/CLAUDE.md` §并发、§Subagent | 规则切换为 workflow 优先 | 恢复为 DAG 拦截优先 |

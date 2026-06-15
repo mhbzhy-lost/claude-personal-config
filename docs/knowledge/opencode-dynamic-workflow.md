@@ -32,7 +32,7 @@ source: opencode-dynamic-workflow phase 1+2
 `init_opencode.sh` 通过 `install-opencode.sh` 将 `workflow-hint.js` 软链到
 `~/.config/opencode/plugins/`。
 
-旧的 `opencode/plugins/dag-dispatch-hint.js` 已废弃（保留用于 git revert 回退）。
+旧的 `opencode/plugins/dag-dispatch-hint.js` 已删除，需要时可从 git 历史恢复。
 
 ## 原因
 
@@ -50,7 +50,7 @@ source: opencode-dynamic-workflow phase 1+2
 - 修改 `install-opencode.sh` 时，确认 `init_opencode.sh` 的调用参数仍匹配
 - 子模块有独立 git 仓库，修改后需要在子模块内 commit + push，然后在主仓
   更新子模块引用
-- `dag-dispatch-hint.js` 已废弃，保留用于回退。不要修改、不要删除、不要恢复软链
+- `dag-dispatch-hint.js` 已删除。需要回退时从 git 历史恢复
 
 ## 验证方式
 

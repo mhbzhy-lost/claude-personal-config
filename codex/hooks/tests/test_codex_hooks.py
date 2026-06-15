@@ -1726,7 +1726,7 @@ if (!absoluteRmDenied) {{
             "worktree 合并后必须跑验证",
             "自动合并失败或语义冲突",
             "后台模式",
-            "skip-dag-hint",
+            "skip-workflow-hint",
         ):
             self.assertIn(snippet, rendered)
 

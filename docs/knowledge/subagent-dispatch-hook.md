@@ -34,13 +34,13 @@ Claude、Qwen、Codex 的 `SubagentStart` hook 与 OpenCode 的 `workflow-hint.j
 
 **OpenCode 端**：`vendor/opencode-dynamic-workflow/plugins/workflow-hint.js`
 在 `task` 工具执行前检测多 agent 编排意图，命中时抛出提示建议使用 workflow
-脚本编排。旧的 `opencode/plugins/dag-dispatch-hint.js` 已废弃（保留用于回退）。
+脚本编排。旧的 `opencode/plugins/dag-dispatch-hint.js` 已删除，需要时可从 git 历史恢复。
 
 提示内容涵盖：
 - 多 agent 编排推荐 workflow 脚本（确定性、可复用、实时干预）
 - 直接派发 subagent 允许的场景（单个、只读探索、2 个以内独立）
 - 通用约束（并行派发、后台模式、worktree 隔离、合并验证）
-- 逃生路径（`skip-dag-hint` 字面值放行）
+- 逃生路径（`skip-workflow-hint` 字面值放行）
 
 旧 `claude/hooks/coding-expert-rules-inject.sh` 已退役。不要重新按
 `coding-expert` / `coding-expert-light` / `coding-expert-heavy` 三个 matcher 注入
@@ -66,8 +66,7 @@ Claude、Qwen、Codex 的 `SubagentStart` hook 与 OpenCode 的 `workflow-hint.j
 - 改 OpenCode workflow 插件时，确认它在
   `vendor/opencode-dynamic-workflow/plugins/workflow-hint.js`，且
   `init_opencode.sh` 通过子模块 `install-opencode.sh` 安装。
-- `opencode/plugins/dag-dispatch-hint.js` 已废弃，保留用于 git revert 回退。
-  不要修改、不要删除、不要恢复软链。
+- `opencode/plugins/dag-dispatch-hint.js` 已删除。需要回退时从 git 历史恢复。
 - 不要把 `knowledge-retrieval`、`skill-catalog`、`mcp__skill-catalog` 或 tag 闭集
   获取流程放回 SubagentStart hook。
 
