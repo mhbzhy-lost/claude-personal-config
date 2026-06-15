@@ -21,8 +21,8 @@ source: opencode-dynamic-workflow phase 1+2
 
 `vendor/opencode-dynamic-workflow/` 是独立 git 子模块，提供：
 
-- `lib/runner.mjs`：双后端（SDK + CLI）workflow 运行时，支持并发调度、
-  暂停/恢复、快照断点续跑
+- `lib/runner.mjs`：SDK backend workflow 运行时，无 baseUrl 时自动
+  createOpencodeServer，支持并发调度、model 透传、暂停/恢复、快照断点续跑
 - `lib/ipc.mjs`：文件系统 IPC（`.workflow/` 目录）
 - `lib/dashboard.mjs`：静态 HTML 实时面板
 - `plugins/workflow-hint.js`：OpenCode 插件，检测多 agent 编排意图时建议
@@ -43,6 +43,10 @@ source: opencode-dynamic-workflow phase 1+2
 
 - 修改 `workflow-hint.js` 时，确认它与 `shared/policies/subagent-dispatch-hint.json`
   的措辞一致（两处都提到 workflow 推荐）
+- `workflow-hint.js` 只能导出真正的 OpenCode plugin 入口函数。OpenCode 1.17.7
+  legacy loader 会把模块里每个导出的函数都当作 server plugin 执行；helper 函数
+  必须保持模块内私有，否则返回 `null` 会污染 hooks 列表并导致 `Provider.list`
+  访问 `null.provider` 崩溃
 - 修改 `install-opencode.sh` 时，确认 `init_opencode.sh` 的调用参数仍匹配
 - 子模块有独立 git 仓库，修改后需要在子模块内 commit + push，然后在主仓
   更新子模块引用
@@ -51,8 +55,11 @@ source: opencode-dynamic-workflow phase 1+2
 ## 验证方式
 
 ```bash
-# 子模块单元测试（在子模块目录下）
-cd vendor/opencode-dynamic-workflow && npm test
+# 先确保子模块已初始化且指向最新 commit
+git submodule update --init vendor/opencode-dynamic-workflow
+
+# 子模块测试（在子模块目录下；该仓目前没有 npm test 脚本）
+cd vendor/opencode-dynamic-workflow && node --test tests/*.test.mjs
 
 # 主仓回归测试
 python3 -m unittest \
