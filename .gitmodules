@@ -4,3 +4,6 @@
 [submodule "vendor/opencode-cache-proxy"]
 	path = vendor/opencode-cache-proxy
 	url = git@github.com:mhbzhy-lost/opencode-cache-proxy.git
+[submodule "vendor/opencode-dynamic-workflow"]
+	path = vendor/opencode-dynamic-workflow
+	url = git@github.com:mhbzhy-lost/opencode-dynamic-workflow.git
