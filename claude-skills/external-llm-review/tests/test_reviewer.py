@@ -1,5 +1,6 @@
 import unittest
 import shlex
+import asyncio
 from argparse import Namespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -198,7 +199,22 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "empty choices"):
             reviewer.extract_openai_content(Response())
 
-    def test_extract_openai_content_rejects_empty_content_with_reasoning_diagnostics(self):
+    def test_extract_openai_content_falls_back_to_reasoning_content(self):
+        class Message:
+            content = ""
+            reasoning_content = "thinking result..."
+
+        class Choice:
+            message = Message()
+            finish_reason = "length"
+
+        class Response:
+            choices = [Choice()]
+
+        result = reviewer.extract_openai_content(Response())
+        self.assertEqual(result, "thinking result...")
+
+    def test_extract_openai_content_rejects_empty_content_and_no_reasoning(self):
         class UsageDetails:
             reasoning_tokens = 32
 
@@ -208,7 +224,7 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
 
         class Message:
             content = ""
-            reasoning_content = "thinking..."
+            reasoning_content = ""
 
         class Choice:
             message = Message()
@@ -224,11 +240,159 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
         ):
             reviewer.extract_openai_content(Response())
 
+    def test_extract_openai_stream_content_concatenates_content_chunks(self):
+        chunks = [
+            {"choices": [{"delta": {"role": "assistant"}, "index": 0}]},
+            {"choices": [{"delta": {"reasoning_content": "thinking "}, "index": 0}]},
+            {"choices": [{"delta": {"reasoning_content": "done"}, "index": 0}]},
+            {"choices": [{"delta": {"content": "Hello "}, "index": 0}]},
+            {"choices": [{"delta": {"content": "world."}, "index": 0}]},
+            {
+                "choices": [{"delta": {}, "finish_reason": "stop", "index": 0}],
+                "usage": {"completion_tokens": 5},
+            },
+        ]
+
+        async def run():
+            return await reviewer.extract_openai_stream_content(iter(chunks))
+
+        result = asyncio.run(run())
+
+        self.assertEqual(result["content"], "Hello world.")
+        self.assertEqual(result["reasoning_content"], "thinking done")
+        self.assertEqual(result["finish_reason"], "stop")
+        self.assertEqual(result["usage"]["completion_tokens"], 5)
+
+    def test_extract_openai_stream_content_falls_back_to_reasoning_when_content_empty(self):
+        chunks = [
+            {"choices": [{"delta": {"reasoning_content": "actual answer"}, "finish_reason": "stop", "index": 0}]},
+        ]
+
+        async def run():
+            return await reviewer.extract_openai_stream_content(iter(chunks))
+
+        result = asyncio.run(run())
+
+        self.assertEqual(result["content"], "")
+        self.assertEqual(result["reasoning_content"], "actual answer")
+
+    def test_extract_openai_stream_content_raises_on_empty_chunks(self):
+        async def run():
+            return await reviewer.extract_openai_stream_content(iter([]))
+
+        with self.assertRaises(RuntimeError):
+            asyncio.run(run())
+
+    def test_parse_sse_lines_yields_data_objects_and_skips_done(self):
+        lines = [
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}",
+            "",
+            "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}",
+            "",
+            "data: [DONE]",
+            "",
+        ]
+
+        async def run():
+            return [chunk async for chunk in reviewer.parse_sse_lines(iter(lines))]
+
+        result = asyncio.run(run())
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["choices"][0]["delta"]["content"], "Hello")
+        self.assertEqual(result[1]["choices"][0]["delta"]["content"], " world")
+
+    def test_parse_sse_lines_ignores_non_data_prefixes(self):
+        lines = [
+            ":comment line",
+            "event: message",
+            "id: 1",
+            "data: {\"ok\":true}",
+            "",
+        ]
+
+        async def run():
+            return [chunk async for chunk in reviewer.parse_sse_lines(iter(lines))]
+
+        result = asyncio.run(run())
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0], {"ok": True})
+
+    def test_parse_sse_lines_concatenates_multiline_data_in_single_event(self):
+        lines = [
+            "data: {\"choices\":",
+            "data: [{\"delta\":{\"content\":\"hi\"}}]}",
+            "",
+            "data: [DONE]",
+        ]
+
+        async def run():
+            return [c async for c in reviewer.parse_sse_lines(iter(lines))]
+
+        result = asyncio.run(run())
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["choices"][0]["delta"]["content"], "hi")
+
+    def test_parse_sse_lines_skips_malformed_json_and_continues(self):
+        lines = [
+            "data: {\"ok\":true}",
+            "",
+            "data: {not valid json",
+            "",
+            "data: {\"after\":\"good\"}",
+            "",
+            "data: [DONE]",
+        ]
+
+        async def run():
+            return [c async for c in reviewer.parse_sse_lines(iter(lines))]
+
+        result = asyncio.run(run())
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0], {"ok": True})
+        self.assertEqual(result[1], {"after": "good"})
+
+    def test_extract_openai_stream_content_processes_chunks_incrementally(self):
+        seen = []
+
+        async def gen():
+            for i in range(3):
+                seen.append(i)
+                yield {"choices": [{"delta": {"content": f"x{i}"}, "index": 0}]}
+            yield {"choices": [{"delta": {}, "finish_reason": "stop", "index": 0}]}
+
+        async def run():
+            return await reviewer.extract_openai_stream_content(gen())
+
+        result = asyncio.run(run())
+
+        self.assertEqual(result["content"], "x0x1x2")
+        self.assertEqual(result["finish_reason"], "stop")
+
+    def test_extract_openai_stream_content_tolerates_malformed_chunk(self):
+        chunks = [
+            {"choices": [{"delta": {"content": "good"}, "index": 0}]},
+            "not a dict at all",
+            {"choices": []},
+            {"choices": [{"delta": {"content": " also good"}, "finish_reason": "stop", "index": 0}]},
+        ]
+
+        async def run():
+            return await reviewer.extract_openai_stream_content(iter(chunks))
+
+        result = asyncio.run(run())
+
+        self.assertEqual(result["content"], "good also good")
+        self.assertEqual(result["finish_reason"], "stop")
+
     def test_arg_parser_defaults_to_reasoning_safe_output_budget(self):
         parser = reviewer.build_arg_parser()
         args = parser.parse_args(["base", "head"])
 
-        self.assertEqual(args.max_output_tokens, 16000)
+        self.assertEqual(args.max_output_tokens, 32768)
 
     def test_read_text_block_rejects_paths_outside_allowed_roots(self):
         with TemporaryDirectory() as root, TemporaryDirectory() as outside:

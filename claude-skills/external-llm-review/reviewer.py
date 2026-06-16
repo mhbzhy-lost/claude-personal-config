@@ -254,12 +254,18 @@ def extract_openai_content(resp: object) -> str:
     if content:
         return content
 
+    # Qwen reasoning model: thinking budget consumed → reasoning_content has
+    # the actual output, content is empty. Fall back to reasoning_content.
+    reasoning_content = getattr(message, "reasoning_content", None) or ""
+    if reasoning_content:
+        return reasoning_content
+
     finish_reason = getattr(choice, "finish_reason", None)
     usage = getattr(resp, "usage", None)
     completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
     details = getattr(usage, "completion_tokens_details", None) if usage else None
     reasoning_tokens = _usage_detail(details, "reasoning_tokens")
-    reasoning_len = len(getattr(message, "reasoning_content", "") or "")
+    reasoning_len = len(reasoning_content)
     raise RuntimeError(
         "chat completion returned empty content"
         f" finish_reason={finish_reason}"
@@ -267,6 +273,110 @@ def extract_openai_content(resp: object) -> str:
         f" reasoning_tokens={reasoning_tokens}"
         f" reasoning_content_len={reasoning_len}"
     )
+
+
+async def extract_openai_stream_content(chunks) -> dict:
+    """Parse a stream of OpenAI SSE chunk dicts into {content, reasoning_content, finish_reason, usage}.
+
+    Incrementally accumulates delta.content and delta.reasoning_content
+    as each chunk arrives (no upfront buffering). A chunk that is not a
+    dict is tolerated with a stderr warning instead of terminating the
+    stream, so a transient bad chunk doesn't abort a long review.
+
+    The final usage is only trusted when finish_reason is set, guarding
+    against mid-stream usage fields that may be incomplete.
+
+    Bailian's non-streaming API has a 300s hard timeout, so streaming
+    is mandatory for long-running requests (e.g. large diff reviews).
+
+    Accepts either an async or sync iterable of chunk dicts.
+    """
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    finish_reason = None
+    usage = None
+    saw_any = False
+
+    async for chunk in _ensure_async_iter(chunks):
+        saw_any = True
+        if not isinstance(chunk, dict):
+            print(
+                f"[external-llm-review] WARN: dropping malformed SSE chunk: {chunk!r}",
+                file=sys.stderr,
+            )
+            continue
+        chunk_choices = chunk.get("choices") or []
+        if not chunk_choices:
+            if "usage" in chunk:
+                usage = chunk["usage"]
+            continue
+        choice = chunk_choices[0]
+        delta = choice.get("delta") or {}
+        if delta.get("content"):
+            content_parts.append(delta["content"])
+        if delta.get("reasoning_content"):
+            reasoning_parts.append(delta["reasoning_content"])
+        if choice.get("finish_reason"):
+            finish_reason = choice["finish_reason"]
+        if "usage" in chunk and chunk["usage"] and finish_reason is not None:
+            usage = chunk["usage"]
+
+    if not saw_any:
+        raise RuntimeError("stream returned no chunks")
+
+    return {
+        "content": "".join(content_parts),
+        "reasoning_content": "".join(reasoning_parts),
+        "finish_reason": finish_reason,
+        "usage": usage,
+    }
+
+
+async def _ensure_async_iter(obj):
+    """Wrap a sync iterable as async so the caller can always use async for."""
+    try:
+        obj.__aiter__
+        async for item in obj:
+            yield item
+    except AttributeError:
+        for item in obj:
+            yield item
+
+
+async def parse_sse_lines(lines):
+    """Yield parsed JSON objects from Server-Sent Events text lines (async).
+
+    Implements the SSE state machine per spec:
+    - `data:` lines accumulate into the current event buffer (joined with \\n).
+    - A blank line terminates the event and flushes the buffer.
+    - The sentinel `data: [DONE]` ends the stream immediately.
+    - Other SSE fields (event/id/retry/comment `:`) are ignored.
+    - A malformed JSON payload (after blank-line flush) is logged and skipped,
+      so transient line-break errors don't abort the whole review.
+
+    Accepts either an async or sync iterable of text lines.
+    """
+    buffer: list[str] = []
+    async for raw in _ensure_async_iter(lines):
+        line = raw.rstrip("\r\n")
+        if line == "":
+            if not buffer:
+                continue
+            payload = "\n".join(b[5:].lstrip(" ") for b in buffer)
+            buffer = []
+            if payload == "[DONE]":
+                return
+            if not payload:
+                continue
+            try:
+                yield json.loads(payload)
+            except json.JSONDecodeError as exc:
+                print(
+                    f"[external-llm-review] WARN: skipping malformed SSE payload: {exc}; {payload[:80]!r}",
+                    file=sys.stderr,
+                )
+        elif line.startswith("data:"):
+            buffer.append(line)
 
 
 def _usage_detail(details: object, name: str) -> object:
@@ -454,8 +564,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-output-tokens",
         type=int,
-        default=16000,
-        help="maximum model output tokens (default 16000; set <=0 to omit)",
+        default=32768,
+        help="maximum model output tokens (default 32768; set <=0 to omit)",
     )
     parser.add_argument(
         "--api-timeout-seconds",
@@ -659,13 +769,27 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
                         spec_block=spec_block,
                     ),
                     "temperature": 0.2,
+                    "enable_thinking": False,
+                    "stream": True,
+                    "stream_options": {"include_usage": True},
                 }
                 if args.max_output_tokens > 0:
                     payload_body["max_tokens"] = args.max_output_tokens
-                r = await client.post("/chat/completions", json=payload_body)
-                r.raise_for_status()
-                data = r.json()
-                content = extract_openai_content(_AttrDict.from_chat(data))
+                async with client.stream(
+                    "POST", "/chat/completions", json=payload_body
+                ) as r:
+                    r.raise_for_status()
+                    streamed = await extract_openai_stream_content(
+                        parse_sse_lines(r.aiter_lines())
+                    )
+                content = streamed["content"] or streamed["reasoning_content"] or ""
+                if not content:
+                    raise RuntimeError(
+                        "chat stream returned empty content"
+                        f" finish_reason={streamed['finish_reason']}"
+                        f" usage={streamed.get('usage')}"
+                        f" reasoning_len={len(streamed['reasoning_content'])}"
+                    )
     except TimeoutError:
         print(
             f"ERROR: chat.create exceeded api_timeout_seconds={args.api_timeout_seconds}",
