@@ -99,6 +99,98 @@ class PlanTrackerTests(unittest.TestCase):
             self.assertIn("plan1 task", r.stdout)
             self.assertIn("plan2 task", r.stdout)
 
+    def test_unreadable_file_skipped(self):
+        """Test that unreadable files don't crash the whole scan."""
+        with tempfile.TemporaryDirectory() as d:
+            # Create a valid plan with pending TODO
+            plan_file = Path(d) / "plan.md"
+            plan_file.write_text(
+                "---\nstatus: active\n---\n- TODO: valid task\n"
+            )
+            
+            # Create a binary file that can't be decoded as UTF-8
+            binary_file = Path(d) / "binary.bin"
+            binary_file.write_bytes(b"\xff\xfe\x00\x01\x89\x50")
+            
+            # Should still find the pending TODO and exit 1
+            r = run_tracker(d)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("valid task", r.stdout)
+
+    def test_corrupted_utf8_file_skipped(self):
+        """Test that corrupted UTF-8 files don't crash the whole scan."""
+        with tempfile.TemporaryDirectory() as d:
+            # Create a valid plan
+            plan_file = Path(d) / "plan.md"
+            plan_file.write_text(
+                "---\nstatus: active\n---\n- TODO: valid task\n"
+            )
+            
+            # Create a file with invalid UTF-8 sequences
+            corrupted_file = Path(d) / "corrupted.md"
+            corrupted_file.write_bytes(
+                b"---\nstatus: active\n---\n- TODO: \xff\xfe task\n"
+            )
+            
+            # Should still process the valid plan
+            r = run_tracker(d)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("valid task", r.stdout)
+
+    def test_permission_error_skipped(self):
+        """Test that permission errors don't crash the whole scan."""
+        with tempfile.TemporaryDirectory() as d:
+            # Create a valid plan
+            plan_file = Path(d) / "plan.md"
+            plan_file.write_text(
+                "---\nstatus: active\n---\n- TODO: valid task\n"
+            )
+            
+            # Create an unreadable file (if not running as root)
+            unreadable_file = Path(d) / "unreadable.md"
+            unreadable_file.write_text("---\nstatus: active\n---\n- TODO: hidden\n")
+            try:
+                unreadable_file.chmod(0o000)
+                
+                # Should still process the valid plan
+                r = run_tracker(d)
+                self.assertEqual(r.returncode, 1)
+                self.assertIn("valid task", r.stdout)
+            finally:
+                # Restore permissions for cleanup
+                try:
+                    unreadable_file.chmod(0o644)
+                except:
+                    pass
+
+    def test_yaml_quoted_status(self):
+        """Test that YAML quoted status values are parsed correctly."""
+        test_cases = [
+            ('status: "active"', True),   # Double quotes should work
+            ("status: 'active'", True),   # Single quotes should work
+            ('status: "completed"', False),  # Completed should not block
+            ('status: "paused"', False),  # Paused should not block
+        ]
+        
+        for status_line, should_block in test_cases:
+            with tempfile.TemporaryDirectory() as d:
+                plan_file = Path(d) / "plan.md"
+                plan_file.write_text(
+                    f"---\n{status_line}\n---\n- TODO: task\n"
+                )
+                
+                r = run_tracker(d)
+                if should_block:
+                    self.assertEqual(
+                        r.returncode, 1,
+                        f"Failed for {status_line}: expected exit 1, got {r.returncode}"
+                    )
+                else:
+                    self.assertEqual(
+                        r.returncode, 0,
+                        f"Failed for {status_line}: expected exit 0, got {r.returncode}"
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()

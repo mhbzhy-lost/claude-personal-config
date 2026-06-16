@@ -59,16 +59,17 @@ total_tasks: 5
 - TODO: 未完成任务 3
 ```
 
+**注意：**
+- `status` 字段支持带引号或不带引号的 YAML 格式（如 `status: "active"` 或 `status: active`）
+- TODO/DONE 标记必须使用大写
+- 支持可选的 `-` 前缀（如 `- TODO:` 或 `TODO:`）
+
 **拦截行为（exit code 1 时输出）：**
 
 ```
-[plan-tracker] Plan not complete
-  docs/plans/my-plan.md:12  TODO: 未完成任务 1
-  docs/plans/my-plan.md:24  TODO: 未完成任务 3
-
-Progress: 1/3 (33%)
-
-To push anyway, mark as DONE or update plan status.
+Active plan has pending TODO items:
+  docs/plans/my-plan.md: TODO: 未完成任务 1
+  docs/plans/my-plan.md: TODO: 未完成任务 3
 ```
 
 ## 原因

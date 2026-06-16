@@ -6,7 +6,11 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export const PlanTrackerGate = async (ctx) => {
   const hooks = {
@@ -22,8 +26,13 @@ export const PlanTrackerGate = async (ctx) => {
         return;
       }
 
-      // Only intercept git push commands
-      if (!/^git\s+push(\s|$)/.test(command)) {
+      // Only intercept real git push commands (exclude dry-run, mirror, etc.)
+      if (!/^git(?:(\s+[\w-]+)*)\s+push(\s|$)/.test(command)) {
+        return;
+      }
+
+      // Skip if this is a dry-run, mirror, or no-op push
+      if (/(?:--dry-run|--mirror|-n)\b/.test(command)) {
         return;
       }
 
@@ -49,9 +58,8 @@ export const PlanTrackerGate = async (ctx) => {
 function runPlanTracker() {
   return new Promise((resolve, reject) => {
     // Find plan-tracker.py relative to the plugin
-    const pluginDir = new URL(".", import.meta.url).pathname;
-    const planTrackerPath = join(pluginDir, "..", "..", "shared", "hooks", "plan-tracker.py");
-    const repoRoot = join(pluginDir, "..", "..");
+    const planTrackerPath = join(__dirname, "..", "..", "shared", "hooks", "plan-tracker.py");
+    const repoRoot = join(__dirname, "..", "..");
 
     if (!existsSync(planTrackerPath)) {
       // Script not found, allow push (fail open)

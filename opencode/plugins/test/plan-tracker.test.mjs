@@ -95,6 +95,42 @@ describe("PlanTrackerGate plugin", () => {
     }
   });
 
+  it("should NOT intercept git push --dry-run", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash", args: { command: "git push --dry-run" } };
+    const output = {};
+
+    // Should NOT be intercepted (not a real push)
+    await hooks.before(input, output);
+  });
+
+  it("should NOT intercept git push --mirror", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash", args: { command: "git push --mirror" } };
+    const output = {};
+
+    // Should NOT be intercepted (not a real push)
+    await hooks.before(input, output);
+  });
+
+  it("should NOT intercept git push -n", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash", args: { command: "git push -n" } };
+    const output = {};
+
+    // Should NOT be intercepted (not a real push)
+    await hooks.before(input, output);
+  });
+
+  it("should NOT intercept git push-url (not a subcommand)", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash", args: { command: "git push-url https://example.com" } };
+    const output = {};
+
+    // Should NOT be intercepted (not git push)
+    await hooks.before(input, output);
+  });
+
   it("should handle missing command gracefully", async () => {
     const hooks = await loadPlugin();
     const input = { tool: "bash", args: {} };

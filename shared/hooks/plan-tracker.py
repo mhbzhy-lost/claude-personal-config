@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---", re.DOTALL)
-STATUS_PATTERN = re.compile(r"^status:\s*(\S+)", re.MULTILINE)
+STATUS_PATTERN = re.compile(r'^status:\s*["\']?(\w+)["\']?', re.MULTILINE)
 TODO_PATTERN = re.compile(r"^-?\s*TODO:\s*(.+)", re.MULTILINE)
 DONE_PATTERN = re.compile(r"^-?\s*(DONE|COMPLETED|COMPLETE):\s*(.+)", re.MULTILINE | re.IGNORECASE)
 
@@ -34,7 +34,11 @@ def scan_plan(root):
     for p in root.rglob("*.md"):
         if ".workflow/" in p.parts or "node_modules/" in p.parts:
             continue
-        text = p.read_text(encoding="utf-8")
+        try:
+            text = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            print(f"Warning: cannot read {p}: {e}", file=sys.stderr)
+            continue
         fm = parse_frontmatter(text)
         if fm is None:
             continue
