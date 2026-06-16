@@ -48,8 +48,8 @@ EXTERNAL_REVIEWER = (
 CODEX_HOOKS_JSON = REPO_ROOT / "codex" / "hooks.json"
 INIT_CODEX = REPO_ROOT / "init_codex.sh"
 INIT_OPENCODE = REPO_ROOT / "init_opencode.sh"
-OPENCODE_WORKFLOW_HINT_PLUGIN = (
-    REPO_ROOT / "vendor" / "opencode-dynamic-workflow" / "plugins" / "workflow-hint.js"
+OPENCODE_SUBAGENT_HINT_PLUGIN = (
+     REPO_ROOT / "opencode" / "plugins" / "subagent-hint.js"
 )
 KNOWLEDGE_GATE = (
     REPO_ROOT / "templates" / "knowledge-gate" / ".agent" / "hooks" / "knowledge-gate.py"
@@ -1725,11 +1725,11 @@ if (!absoluteRmDenied) {{
         self.assertNotIn("workflow 脚本编排", rendered)
         self.assertNotIn("skip-workflow-hint", rendered)
 
-        # workflow-hint 插件精简为只检查 background:true
-        self.assertTrue(OPENCODE_WORKFLOW_HINT_PLUGIN.is_file())
+        # subagent-hint 插件精简为只检查 background:true
+        self.assertTrue(OPENCODE_SUBAGENT_HINT_PLUGIN.is_file())
         script = f"""
-const mod = await import({json.dumps(OPENCODE_WORKFLOW_HINT_PLUGIN.as_uri())});
-const plugin = await mod.WorkflowHintPlugin({{}});
+const mod = await import({json.dumps(OPENCODE_SUBAGENT_HINT_PLUGIN.as_uri())});
+const plugin = await mod.SubagentHintPlugin({{}});
 const before = plugin["tool.execute.before"];
 try {{
   await before({{tool: "task"}}, {{args: {{description: "并行实现三个模块", prompt: "同时做"}}}});
@@ -1768,8 +1768,8 @@ try {{
         ):
             self.assertIn("subagent-dispatch-hint", text)
 
-        # OpenCode 端由 workflow-hint 插件承载
-        self.assertTrue(OPENCODE_WORKFLOW_HINT_PLUGIN.is_file())
+        # OpenCode 端由 subagent-hint 插件承载
+        self.assertTrue(OPENCODE_SUBAGENT_HINT_PLUGIN.is_file())
 
         self.assertNotIn("coding-expert-rules-inject", (REPO_ROOT / "init_qwen.sh").read_text())
         self.assertNotIn("coding-expert-rules-inject", (REPO_ROOT / "codex" / "hooks.json").read_text())

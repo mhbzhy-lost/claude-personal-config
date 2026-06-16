@@ -26,12 +26,14 @@ Subagent）。
   createOpencodeServer，支持并发调度、model 透传、暂停/恢复、快照断点续跑
 - `lib/ipc.mjs`：文件系统 IPC（`.workflow/` 目录）
 - `lib/dashboard.mjs`：静态 HTML 实时面板
-- `plugins/workflow-hint.js`：OpenCode 插件，只检查 `background: true`
+- `plugins/workflow-hint.js` 已移至主仓并更名为 `opencode/plugins/subagent-hint.js`，
+  职责仅为强制 subagent 使用后台模式。
   （编排决策由 `claude/CLAUDE.md` 管辖，不在插件中推荐 workflow）
 - `workflows/*.mjs`：预定义 workflow 模板（parallel-research）
 
-`init_opencode.sh` 通过 `install-opencode.sh` 将 `workflow-hint.js` 软链到
-`~/.config/opencode/plugins/`。
+`init_opencode.sh` 通过 `install-opencode.sh` 将 `workflow-usage` skill 软链到
+`~/.config/opencode/skills/workflow-usage/`。subagent-hint 插件由主仓
+`opencode/plugins/` 直接同步。
 
 旧的 `opencode/plugins/dag-dispatch-hint.js` 已删除，需要时可从 git 历史恢复。
 
@@ -42,10 +44,10 @@ Subagent）。
 
 ## 修改时注意
 
-- `workflow-hint.js` 已精简为只检查 `background: true`，编排决策从插件层移到
+- subagent-hint（原 workflow-hint）已精简为只检查 `background: true`，编排决策从插件层移到
   `claude/CLAUDE.md` 的 `## 并发与 Subagent`。修改 CLAUDE.md 的决策树时，
   必须同步维护 `claude/CLAUDE.reason.md`
-- `workflow-hint.js` 只能导出真正的 OpenCode plugin 入口函数。OpenCode 1.17.7
+- subagent-hint.js 只能导出真正的 OpenCode plugin 入口函数。OpenCode 1.17.7
   legacy loader 会把模块里每个导出的函数都当作 server plugin 执行；helper 函数
   必须保持模块内私有，否则返回 `null` 会污染 hooks 列表并导致 `Provider.list`
   访问 `null.provider` 崩溃

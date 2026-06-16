@@ -4,7 +4,7 @@ kind: runbook
 status: active
 applies_to:
   - vendor/opencode-dynamic-workflow/
-  - vendor/opencode-dynamic-workflow/plugins/workflow-hint.js
+   - opencode/plugins/subagent-hint.js
   - shared/policies/subagent-dispatch-hint.json
   - claude/CLAUDE.md
   - claude/CLAUDE.reason.md
@@ -37,7 +37,7 @@ workflow 系统替换 DAG 插件后，如果出现问题需要回退到旧方案
 | `codex/hooks/tests/test_codex_hooks.py` | 断言更新为 workflow 关键词 | 恢复为 DAG 关键词断言 |
 | `docs/knowledge/subagent-dispatch-hook.md` | 更新为 workflow 架构描述 | 恢复为 DAG 架构描述 |
 | `docs/knowledge/opencode-dynamic-workflow.md` | 新增 | 删除 |
-| `~/.config/opencode/plugins/workflow-hint.js` | install 脚本创建的软链 | 手动删除 |
+| `~/.config/opencode/plugins/subagent-hint.js` | init 脚本创建的软链 | 手动删除 |
 
 ### 操作步骤
 
@@ -57,7 +57,7 @@ git diff --cached --stat
 # 确认只影响上述文件清单
 
 # 4. 删除 workflow 插件软链
-rm -f ~/.config/opencode/plugins/workflow-hint.js
+rm -f ~/.config/opencode/plugins/subagent-hint.js
 
 # 5. 验证 DAG 系统恢复正常
 python3 -m unittest \
@@ -157,7 +157,7 @@ rm -f docs/knowledge/opencode-dynamic-workflow.md
 
 ```bash
 # 删除 workflow 插件软链
-rm -f ~/.config/opencode/plugins/workflow-hint.js
+rm -f ~/.config/opencode/plugins/subagent-hint.js
 
 # 重新运行 init 同步 DAG 插件
 bash init_opencode.sh
