@@ -440,5 +440,343 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
         self.assertIn("no longer read", stderr.getvalue())
 
 
+class BailianProviderTest(unittest.TestCase):
+    def test_payload_includes_streaming_and_thinking_defaults(self):
+        from _provider import BailianProvider
+        provider = BailianProvider(
+            base_url="https://example.test",
+            api_key="sk-test",
+            model="test-model",
+            max_tokens=100,
+        )
+        payload = provider.build_payload(
+            messages=[{"role": "user", "content": "hi"}],
+            spec={"temperature": 0.2},
+        )
+        self.assertEqual(payload["model"], "test-model")
+        self.assertTrue(payload["stream"])
+        self.assertEqual(payload["stream_options"], {"include_usage": True})
+        self.assertFalse(payload["enable_thinking"])
+        self.assertEqual(payload["max_tokens"], 100)
+        self.assertNotIn("thinking_budget", payload)
+
+    def test_payload_includes_thinking_budget_when_set(self):
+        from _provider import BailianProvider
+        provider = BailianProvider(
+            base_url="https://example.test",
+            api_key="sk-test",
+            model="test-model",
+            enable_thinking=True,
+            thinking_budget=4096,
+        )
+        payload = provider.build_payload(
+            messages=[{"role": "user", "content": "hi"}],
+            spec={},
+        )
+        self.assertEqual(payload["thinking_budget"], 4096)
+        self.assertTrue(payload["enable_thinking"])
+
+    def test_stream_response_returns_content(self):
+        from _provider import BailianProvider
+        provider = BailianProvider(
+            base_url="x", api_key="k", model="m"
+        )
+
+        async def gen():
+            yield {"choices": [{"delta": {"content": "Hello "}, "index": 0}]}
+            yield {"choices": [{"delta": {"content": "world"}, "index": 0}]}
+            yield {"choices": [{"delta": {}, "finish_reason": "stop", "index": 0}]}
+
+        async def run():
+            return await provider.extract_stream_content(gen())
+
+        result = asyncio.run(run())
+        self.assertEqual(result, "Hello world")
+
+    def test_stream_response_falls_back_to_reasoning_content(self):
+        from _provider import BailianProvider
+        provider = BailianProvider(
+            base_url="x", api_key="k", model="m"
+        )
+
+        async def gen():
+            yield {"choices": [{"delta": {"reasoning_content": "thinking..."}}]}
+            yield {"choices": [{"delta": {}, "finish_reason": "stop", "index": 0}]}
+
+        async def run():
+            return await provider.extract_stream_content(gen())
+
+        result = asyncio.run(run())
+        self.assertEqual(result, "thinking...")
+
+    def test_stream_response_raises_on_empty_content(self):
+        from _provider import BailianProvider
+        provider = BailianProvider(
+            base_url="x", api_key="k", model="m"
+        )
+
+        async def gen():
+            yield {"choices": [{"delta": {}, "finish_reason": "stop", "index": 0}]}
+
+        async def run():
+            return await provider.extract_stream_content(gen())
+
+        with self.assertRaisesRegex(RuntimeError, "empty content"):
+            asyncio.run(run())
+
+    def test_stream_response_tolerates_non_dict_chunks(self):
+        from _provider import BailianProvider
+        provider = BailianProvider(
+            base_url="x", api_key="k", model="m"
+        )
+
+        async def gen():
+            yield {"choices": [{"delta": {"content": "good"}, "index": 0}]}
+            yield "not a dict"
+            yield {"choices": [{"delta": {"content": " also"}, "finish_reason": "stop", "index": 0}]}
+
+        async def run():
+            return await provider.extract_stream_content(gen())
+
+        result = asyncio.run(run())
+        self.assertEqual(result, "good also")
+
+
+class IdealabAnthropicProviderTest(unittest.TestCase):
+    def test_payload_includes_system_and_messages(self):
+        from _provider import IdealabAnthropicProvider
+        provider = IdealabAnthropicProvider(
+            base_url="https://anthropic.example.test",
+            api_key="sk-ant-test",
+            model="claude-opus-4-6",
+            max_tokens=16000,
+        )
+        messages = [
+            {"role": "system", "content": "You are a critic."},
+            {"role": "user", "content": "Review this code."},
+        ]
+        payload = provider.build_payload(messages=messages, spec={"temperature": 0.3})
+
+        self.assertEqual(payload["model"], "claude-opus-4-6")
+        self.assertEqual(payload["max_tokens"], 16000)
+        self.assertEqual(payload["temperature"], 0.3)
+        self.assertEqual(payload["system"], "You are a critic.")
+        self.assertEqual(len(payload["messages"]), 1)
+        self.assertEqual(payload["messages"][0]["role"], "user")
+
+    def test_extract_content_returns_text_block(self):
+        from _provider import IdealabAnthropicProvider
+        provider = IdealabAnthropicProvider(
+            base_url="https://x", api_key="k", model="m"
+        )
+        response = {
+            "content": [
+                {"type": "text", "text": "review result"},
+            ]
+        }
+        self.assertEqual(provider.extract_content(response), "review result")
+
+    def test_extract_content_raises_on_empty(self):
+        from _provider import IdealabAnthropicProvider
+        provider = IdealabAnthropicProvider(
+            base_url="https://x", api_key="k", model="m"
+        )
+        with self.assertRaisesRegex(RuntimeError, "idealab-anthropic response has no content"):
+            provider.extract_content({})
+
+    def test_headers_include_claude_user_agent(self):
+        from _provider import IdealabAnthropicProvider
+        provider = IdealabAnthropicProvider(
+            base_url="https://x", api_key="my-key", model="m"
+        )
+        headers = provider.build_headers()
+        self.assertEqual(headers["x-api-key"], "my-key")
+        self.assertIn("claude-cli", headers["user-agent"])
+        self.assertEqual(headers["anthropic-version"], "2023-06-01")
+
+
+class IdealabOpenAIProviderTest(unittest.TestCase):
+    def test_payload_is_plain_openai_format(self):
+        from _provider import IdealabOpenAIProvider
+        provider = IdealabOpenAIProvider(
+            base_url="https://openai.example.test",
+            api_key="sk-oa-test",
+            model="gpt-4o",
+            max_tokens=8000,
+        )
+        messages = [
+            {"role": "system", "content": "system msg"},
+            {"role": "user", "content": "hi"},
+        ]
+        payload = provider.build_payload(messages=messages, spec={})
+
+        self.assertEqual(payload["model"], "gpt-4o")
+        self.assertEqual(payload["max_tokens"], 8000)
+        # Both system and user messages are preserved (not extracted out)
+        self.assertEqual(len(payload["messages"]), 2)
+        self.assertNotIn("stream", payload)
+
+    def test_extract_content_returns_message_content(self):
+        from _provider import IdealabOpenAIProvider
+        provider = IdealabOpenAIProvider(
+            base_url="https://x", api_key="k", model="m"
+        )
+        response = {
+            "choices": [{"message": {"content": "gpt review"}}]
+        }
+        self.assertEqual(provider.extract_content(response), "gpt review")
+
+    def test_extract_content_raises_on_empty(self):
+        from _provider import IdealabOpenAIProvider
+        provider = IdealabOpenAIProvider(
+            base_url="https://x", api_key="k", model="m"
+        )
+        response = {"choices": [{"message": {"content": ""}, "finish_reason": "stop"}]}
+        with self.assertRaisesRegex(RuntimeError, "idealab-openai response returned empty content"):
+            provider.extract_content(response)
+
+    def test_headers_use_bearer_token(self):
+        from _provider import IdealabOpenAIProvider
+        provider = IdealabOpenAIProvider(
+            base_url="https://x", api_key="bearer-token", model="m"
+        )
+        headers = provider.build_headers()
+        self.assertEqual(headers["Authorization"], "Bearer bearer-token")
+
+
+class BuildProviderFactoryTest(unittest.TestCase):
+    def test_build_provider_returns_bailian_when_endpoint_is_bailian(self):
+        from _provider import build_provider, BailianProvider
+        provider = build_provider(
+            base_url="https://example.bailian.com",
+            api_key="sk",
+            model="qwen3.7-max",
+            max_tokens=1000,
+        )
+        self.assertIsInstance(provider, BailianProvider)
+
+    def test_build_provider_returns_idealab_anthropic_when_endpoint_is_idealab_anthropic(self):
+        from _provider import build_provider, IdealabAnthropicProvider
+        provider = build_provider(
+            base_url="https://idealab.alibaba-inc.com/anthropic",
+            api_key="sk",
+            model="claude-opus-4-6",
+            max_tokens=1000,
+        )
+        self.assertIsInstance(provider, IdealabAnthropicProvider)
+
+    def test_build_provider_returns_idealab_openai_when_endpoint_is_idealab_openai(self):
+        from _provider import build_provider, IdealabOpenAIProvider
+        provider = build_provider(
+            base_url="https://idealab.alibaba-inc.com/openai",
+            api_key="sk",
+            model="gpt-4o",
+            max_tokens=1000,
+        )
+        self.assertIsInstance(provider, IdealabOpenAIProvider)
+
+
+class ProviderSendChatTest(unittest.TestCase):
+    def test_idealab_anthropic_send_chat_makes_request_and_extracts_content(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from _provider import IdealabAnthropicProvider
+        provider = IdealabAnthropicProvider(
+            base_url="https://anthropic.test",
+            api_key="sk-ant",
+            model="claude-opus-4-6",
+            max_tokens=16000,
+        )
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "content": [{"type": "text", "text": "Review result from Anthropic"}]
+        }
+        mock_client.post.return_value = mock_response
+
+        async def run():
+            return await provider.send_chat(
+                mock_client,
+                messages=[{"role": "user", "content": "Review this"}],
+                spec={"temperature": 0.3},
+            )
+
+        result = asyncio.run(run())
+        self.assertEqual(result, "Review result from Anthropic")
+        mock_client.post.assert_called_once()
+
+    def test_idealab_openai_send_chat_extracts_choice_content(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from _provider import IdealabOpenAIProvider
+        provider = IdealabOpenAIProvider(
+            base_url="https://openai.test",
+            api_key="sk-oa",
+            model="gpt-4o",
+            max_tokens=8000,
+        )
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "GPT review output"}}]
+        }
+        mock_client.post.return_value = mock_response
+
+        async def run():
+            return await provider.send_chat(
+                mock_client,
+                messages=[{"role": "user", "content": "Hi"}],
+                spec={},
+            )
+
+        result = asyncio.run(run())
+        self.assertEqual(result, "GPT review output")
+
+    def test_bailian_send_chat_uses_streaming_endpoint(self):
+        from unittest.mock import ANY, MagicMock
+        from _provider import BailianProvider
+        provider = BailianProvider(
+            base_url="https://bailian.test",
+            api_key="sk-bai",
+            model="qwen3.7-max",
+            max_tokens=4000,
+        )
+        mock_client = MagicMock()
+
+        async def mock_sse_lines():
+            yield 'data: {"choices":[{"delta":{"content":"Hello "}}]}'
+            yield 'data: {"choices":[{"delta":{"content":"world"},"finish_reason":"stop"}]}'
+            yield 'data: [DONE]'
+
+        class MockStreamResponse:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                pass
+            def raise_for_status(self):
+                pass
+            def aiter_lines(self):
+                return mock_sse_lines()
+
+        mock_client.stream.return_value = MockStreamResponse()
+
+        async def run():
+            return await provider.send_chat(
+                mock_client,
+                messages=[{"role": "user", "content": "Review"}],
+                spec={},
+            )
+
+        result = asyncio.run(run())
+        self.assertEqual(result, "Hello world")
+        mock_client.stream.assert_called_once_with(
+            "POST",
+            "https://bailian.test/chat/completions",
+            json=ANY,
+            headers=ANY,
+            timeout=120.0,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
