@@ -1,7 +1,7 @@
 // Test-first: verify sanitizeStderr redacts secrets before they hit log files
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import { sanitizeStderr } from "../external-review-gate.js"
+import { sanitizeStderr, extractSkipLine } from "../external-review-gate.js"
 
 test("redacts Bearer tokens (case-insensitive prefix)", () => {
   const input = "error: Authorization: Bearer sk-abc123-xyz failed"
@@ -49,4 +49,30 @@ test("handles empty / non-string input", () => {
   assert.equal(sanitizeStderr(undefined), "")
   assert.equal(sanitizeStderr(null), "")
   assert.equal(sanitizeStderr(123), "123")
+})
+
+test("extractSkipLine: returns null for empty/missing stderr", () => {
+  assert.equal(extractSkipLine(""), null)
+  assert.equal(extractSkipLine(null), null)
+  assert.equal(extractSkipLine(undefined), null)
+})
+
+test("extractSkipLine: extracts skip reason and strips prefix", () => {
+  const stderr = "[external-review-gate] skip: not git push\n"
+  assert.equal(extractSkipLine(stderr), "skip: not git push")
+})
+
+test("extractSkipLine: extracts allow message", () => {
+  const stderr = "[external-review-gate] allow\n"
+  assert.equal(extractSkipLine(stderr), "allow")
+})
+
+test("extractSkipLine: extracts exempt reason", () => {
+  const stderr = "[external-review-gate] exempt: diff only 8 lines\n"
+  assert.equal(extractSkipLine(stderr), "exempt: diff only 8 lines")
+})
+
+test("extractSkipLine: returns null when no skip/allow/exempt present", () => {
+  const stderr = "[external-review-gate] detected submodule push\n[external-review-gate] running review\n"
+  assert.equal(extractSkipLine(stderr), null)
 })

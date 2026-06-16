@@ -26,9 +26,17 @@ const SKIP_ENV = "EXTERNAL_REVIEW_SKIP"
 const SKIP_VALUES = new Set(["1", "true", "yes", "on"])
 const isTruthy = (v) => SKIP_VALUES.has(String(v ?? "").trim().toLowerCase())
 
-// Scrub secrets from stderr/subprocess output before writing to log files.
-// Patterns: Bearer tokens, x-api-key headers, query-string/env `key=value`,
-// JSON-style `"api_key":"<value>"`. Redacted to "[REDACTED]".
+export const extractSkipLine = (stderr) => {
+  if (!stderr) return null
+  for (const line of stderr.split("\n")) {
+    const t = line.trim()
+    if (/\bskip:|\ballow\b|\bexempt:/.test(t)) {
+      return t.replace(/^\[external-review-gate\]\s*/, "")
+    }
+  }
+  return null
+}
+
 export const sanitizeStderr = (input) => {
   if (input == null) return ""
   const s = String(input)
@@ -114,9 +122,10 @@ export const ExternalReviewGatePlugin = async () => {
 
       if (stderr.trim()) {
         appendLog(`RUN (git push: ${command.slice(0, 80)})`, sanitizeStderr(stderr))
+        const reason = extractSkipLine(stderr)
+        if (reason) console.log(reason)
       }
 
-      // Parse response — empty stdout = silent pass-through (non-push, exempt, etc.)
       const trimmed = stdout.trim()
       if (!trimmed) return
 
