@@ -475,11 +475,10 @@ sync_opencode_docs
 
 # ── Workflow 子模块配置 ─────────────────────────────────
 # install-opencode.sh 内含 npm install（网络操作），失败不应中断整个 init 流程。
+# 路径通过 OPENCODE_CONFIG_DIR 环境变量传递；脚本无参数。
 workflow_install="$SRC/vendor/opencode-dynamic-workflow/install-opencode.sh"
 if [ -f "$workflow_install" ]; then
-  if ! bash "$workflow_install" --no-interactive \
-    --plugin-dir "$OPENCODE_CONFIG_DIR/plugins" \
-    --skill-dir "$OPENCODE_CONFIG_DIR/skills"; then
+  if ! OPENCODE_CONFIG_DIR="$OPENCODE_CONFIG_DIR" bash "$workflow_install"; then
     echo "[warn]  workflow 子模块安装失败，workflow-hint 插件将保留为 fallback"
   fi
 else

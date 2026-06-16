@@ -126,11 +126,9 @@ git diff <pre-phase2-commit> <phase2-commit> -- claude/CLAUDE.md
 ```bash
 # 删除这段（通常在 ensure_opencode_required_submodules 或 main flow 中）：
 # vendor/opencode-dynamic-workflow
-# local workflow_install="$SRC/vendor/opencode-dynamic-workflow/install-opencode.sh"
+# local workflow_install="$CLAUDE_CONFIG_HOME/vendor/opencode-dynamic-workflow/install-opencode.sh"
 # if [ -f "$workflow_install" ]; then
-#   bash "$workflow_install" --no-interactive \
-#     --plugin-dir "$OPENCODE_CONFIG_DIR/plugins" \
-#     --skill-dir "$OPENCODE_CONFIG_DIR/skills"
+#   OPENCODE_CONFIG_DIR="$OPENCODE_CONFIG_DIR" bash "$workflow_install"
 # fi
 ```
 
