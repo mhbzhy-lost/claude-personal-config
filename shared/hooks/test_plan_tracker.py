@@ -32,7 +32,7 @@ class PlanTrackerTests(unittest.TestCase):
     def test_active_plan_with_all_done_exits_0(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "plan.md").write_text(
-                "---\nplan: active\n---\n# Plan\n\n- DONE: first\n- DONE: second\n"
+                "---\nstatus: active\n---\n# Plan\n\n- DONE: first\n- DONE: second\n"
             )
             r = run_tracker(d)
             self.assertEqual(r.returncode, 0, r.stdout)
@@ -40,7 +40,7 @@ class PlanTrackerTests(unittest.TestCase):
     def test_active_plan_with_todo_exits_1(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "plan.md").write_text(
-                "---\nplan: active\n---\n# Plan\n\n- TODO: pending task\n- DONE: done\n"
+                "---\nstatus: active\n---\n# Plan\n\n- TODO: pending task\n- DONE: done\n"
             )
             r = run_tracker(d)
             self.assertEqual(r.returncode, 1)
@@ -50,7 +50,7 @@ class PlanTrackerTests(unittest.TestCase):
     def test_paused_plan_skips_todo_check(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "plan.md").write_text(
-                "---\nplan: paused\n---\n# Plan\n\n- TODO: allow push anyway\n"
+                "---\nstatus: paused\n---\n# Plan\n\n- TODO: allow push anyway\n"
             )
             r = run_tracker(d)
             self.assertEqual(r.returncode, 0, r.stdout)
@@ -58,7 +58,7 @@ class PlanTrackerTests(unittest.TestCase):
     def test_completed_plan_skips_todo_check(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "plan.md").write_text(
-                "---\nplan: completed\n---\n- TODO: this should be ignored\n"
+                "---\nstatus: completed\n---\n- TODO: this should be ignored\n"
             )
             r = run_tracker(d)
             self.assertEqual(r.returncode, 0)
@@ -66,7 +66,7 @@ class PlanTrackerTests(unittest.TestCase):
     def test_lists_all_pending_todos(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "plan.md").write_text(
-                "---\nplan: active\n---\n"
+                "---\nstatus: active\n---\n"
                 "- TODO: task A\n- DONE: task B\n- TODO: task C\n"
             )
             r = run_tracker(d)
@@ -80,7 +80,7 @@ class PlanTrackerTests(unittest.TestCase):
             sub = Path(d) / "docs" / "plans"
             sub.mkdir(parents=True)
             (sub / "plan.md").write_text(
-                "---\nplan: active\n---\n- TODO: nested task\n"
+                "---\nstatus: active\n---\n- TODO: nested task\n"
             )
             r = run_tracker(d)
             self.assertEqual(r.returncode, 1)
@@ -89,10 +89,10 @@ class PlanTrackerTests(unittest.TestCase):
     def test_multiple_plans_each_checked(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "plan1.md").write_text(
-                "---\nplan: active\n---\n- TODO: plan1 task\n"
+                "---\nstatus: active\n---\n- TODO: plan1 task\n"
             )
             (Path(d) / "plan2.md").write_text(
-                "---\nplan: active\n---\n- TODO: plan2 task\n"
+                "---\nstatus: active\n---\n- TODO: plan2 task\n"
             )
             r = run_tracker(d)
             self.assertEqual(r.returncode, 1)

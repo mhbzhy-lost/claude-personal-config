@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---", re.DOTALL)
-STATUS_PATTERN = re.compile(r"^plan:\s*(\S+)", re.MULTILINE)
+STATUS_PATTERN = re.compile(r"^status:\s*(\S+)", re.MULTILINE)
 TODO_PATTERN = re.compile(r"^-?\s*TODO:\s*(.+)", re.MULTILINE)
 DONE_PATTERN = re.compile(r"^-?\s*(DONE|COMPLETED|COMPLETE):\s*(.+)", re.MULTILINE | re.IGNORECASE)
 
