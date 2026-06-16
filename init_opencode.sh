@@ -477,8 +477,10 @@ sync_opencode_docs
 # install-opencode.sh 内含 npm install（网络操作），失败不应中断整个 init 流程。
 workflow_install="$SRC/vendor/opencode-dynamic-workflow/install-opencode.sh"
 if [ -f "$workflow_install" ]; then
-  if ! bash "$workflow_install" --no-interactive --plugin-dir "$OPENCODE_CONFIG_DIR/plugins"; then
-    echo "[warn]  workflow 子模块安装失败，dag-dispatch-hint 插件将保留为 fallback"
+  if ! bash "$workflow_install" --no-interactive \
+    --plugin-dir "$OPENCODE_CONFIG_DIR/plugins" \
+    --skill-dir "$OPENCODE_CONFIG_DIR/skills"; then
+    echo "[warn]  workflow 子模块安装失败，workflow-hint 插件将保留为 fallback"
   fi
 else
   echo "[skip]  vendor/opencode-dynamic-workflow 不存在，跳过 workflow 配置"

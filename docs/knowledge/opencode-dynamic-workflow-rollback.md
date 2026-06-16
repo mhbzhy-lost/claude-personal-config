@@ -4,7 +4,7 @@ kind: runbook
 status: active
 applies_to:
   - vendor/opencode-dynamic-workflow/
-  - opencode/plugins/dag-dispatch-hint.js
+  - vendor/opencode-dynamic-workflow/plugins/workflow-hint.js
   - shared/policies/subagent-dispatch-hint.json
   - claude/CLAUDE.md
   - claude/CLAUDE.reason.md
@@ -128,7 +128,9 @@ git diff <pre-phase2-commit> <phase2-commit> -- claude/CLAUDE.md
 # vendor/opencode-dynamic-workflow
 # local workflow_install="$SRC/vendor/opencode-dynamic-workflow/install-opencode.sh"
 # if [ -f "$workflow_install" ]; then
-#   bash "$workflow_install" --no-interactive --plugin-dir "$OPENCODE_PLUGIN_DIR"
+#   bash "$workflow_install" --no-interactive \
+#     --plugin-dir "$OPENCODE_CONFIG_DIR/plugins" \
+#     --skill-dir "$OPENCODE_CONFIG_DIR/skills"
 # fi
 ```
 
