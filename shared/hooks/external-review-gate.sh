@@ -66,7 +66,8 @@ def deny(reason: str):
     sys.exit(0)
 
 
-def silent():
+def silent(reason: str = "unknown"):
+    log(f"skip: {reason}")
     sys.exit(0)
 
 
@@ -79,10 +80,10 @@ raw = sys.stdin.read()
 try:
     payload = json.loads(raw)
 except Exception:
-    silent()
+    silent("json parse error")
 
 if payload.get("tool_name") not in ("Bash", "run_shell_command", "exec_command", "functions.exec_command"):
-    silent()
+    silent("not a bash tool")
 
 tool_input = payload.get("tool_input") or {}
 params = tool_input.get("parameters") or tool_input
@@ -100,7 +101,7 @@ cmd = (
 _cmd_stripped = re.sub(r"([\x22\x27]).*?\1", "", cmd)  # strip quoted strings
 _cmd_stripped = re.sub(r"#.*$", "", _cmd_stripped, flags=re.MULTILINE)
 if not re.search(r"(^|[;&|]\s*)(\S+=\S+\s+)*git\s+(?:-\S+\s+\S+\s+)*push(\s|$)", _cmd_stripped):
-    silent()
+    silent("not git push")
 
 # --- Escape hatch ---
 for key in ("env", "environment"):
@@ -254,9 +255,9 @@ try:
         text=True, stderr=subprocess.DEVNULL
     ).strip()
     if ahead == "0":
-        silent()  # nothing to push, let git handle it
+        silent("nothing to push")  # nothing to push, let git handle it
 except Exception:
-    silent()
+    silent("git error")
 
 # --- Check recent test failure marker ---
 # This used to be surfaced by a turn-level Stop hook. That fires too often for
