@@ -27,10 +27,17 @@ memory 内容在支持 SessionStart 的环境已自动注入。
 
 ## 并发与 Subagent
 
-派发 subagent 前必须先查看 `workflow-usage` skill 的 description，
-按其中的规则判断编排方式。使用 workflow 前必须加载该 skill。
+**subagent 优先**：用并发数量决定编排方式。
+- 并发 < 3 → 用 subagent
+- 并发 ≥ 3 → 用 Dynamic Workflow
+- 串行多步操作也用 subagent，节省主对话上下文，避免 tool call 堆积
 
-禁止：不加载 workflow-usage skill 就凭记忆使用 workflow API 或模板参数。
+派发规则：
+- 任何 subagent 必须后台模式（background: true）
+- 使用 Dynamic Workflow 前必须加载 `workflow-usage` skill
+- coding 类 Dynamic Workflow 必须启用 `worktree.enable: true`，脚本自动创建 git worktree；workflow 结束后由主 agent 执行合并与清理
+
+禁止：前台模式派发 subagent
 
 ## 决策报告
 

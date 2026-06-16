@@ -1,30 +1,6 @@
 {
   "template": [
-    "[subagent-dispatch 提示] 准备派发 subagent，请先评估编排方式。",
-    "",
-    "1) 多 agent 编排场景（≥3 个 agent 或有 DAG 依赖）",
-    "   推荐使用 workflow 脚本编排（确定性更高、可复用、支持实时干预）。",
-    "   详见全局规则 CLAUDE.md / AGENTS.md 的 §并发。",
-    "",
-    "2) 直接派发 subagent 允许的场景",
-    "   a. 单个 subagent（无编排需求）",
-    "   b. explore/scout 只读探索",
-    "   c. 2 个以内独立 subagent，写入范围不重叠",
-    "",
-    "3) 通用约束（无论走 workflow 还是直接派发）",
-    "   - 无相互依赖的 task 必须并行派发（同一 message 内多个 tool call）",
-    "   - 任何 subagent 创建都必须采用后台模式，不阻塞主对话",
-    "   - coding 任务必须通过 git worktree 隔离",
-    "   - worktree 合并后必须跑验证",
-    "   - 自动合并失败或语义冲突 → 停止并请求用户决策",
-    "",
-    "4) 逃生路径（满足任一时，在 description 或 prompt 中",
-    "   加入字面值 \"skip-workflow-hint\" 即可放行）：",
-    "   a. 当前实际只有 1 个 task，无并发/编排空间",
-    "   b. 已完成分析，本次是并发集合内全部 task 之一",
-    "   c. 当前 task 依赖未完成的前驱，必须串行等待",
-    "   d. 只读探索任务，无需 worktree",
-    "",
-    "不满足放行条件请重新组织派发方式后再次发起。"
+    "[subagent-dispatch] subagent 必须使用后台模式派发（background: true）。",
+    "前台模式会阻塞主对话，请设置 background: true 后重试。"
   ]
 }

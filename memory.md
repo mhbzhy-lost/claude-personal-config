@@ -477,3 +477,39 @@ server plugin 入口执行。插件文件不要导出 helper 函数；helper 必
 hooks 列表，随后 `Provider.list` 访问 `hook.provider` 崩成
 `TypeError: null is not an object (evaluating 'n.provider')`。回归测试应断言插件模块
 只有真正的 plugin 入口函数导出。
+
+2026-06-16 简化：删除 `getWorkflowHint` helper，只保留 `WorkflowHintPlugin`。插件
+逻辑精简为只检查 `background: true`，编排决策从插件层移到 `claude/CLAUDE.md`。
+
+## 并发编排决策框架（2026-06-16 定稿）
+
+**阈值规则**：并发 < 3 走 subagent，≥ 3 走 Dynamic Workflow。串行多步也用
+subagent 以隔离主对话上下文。
+
+**关键事实（2026-06-16 确认）**：opencode 的 subagent 默认已有完整工具集（bash、
+webfetch、playwright 等），机制如下：
+- `task` 工具创建 subagent session 时，继承父 session 的 `permission: allow *`
+- 默认 deny `todowrite`（避免污染父 session todo）和 `task`（禁止递归派发）
+- 默认 deny 任何列入 `experimental.primary_tools` 的工具（未设置则不受影响）
+- 实测后台模式的 general subagent 可执行 bash 命令
+
+**演进历程**：
+- 早期：hook/plugin 嵌入完整编排推荐（workflow vs subagent 决策树 + 逃生舱）
+  → 实测 agent 几乎总走逃生舱，直接派发 subagent
+- 2026-06-16 v1：把决策树移入 CLAUDE.md（硬约束），hook/plugin 只检查
+  background:true；当时假设"subagent 工具集被硬编码限制为只读子集"，
+  因此决策树按"工具可用性"写
+- 2026-06-16 v2（修正）：通过分析 `TaskTool` 源码（minified 二进制中的
+  subtask 执行逻辑）+ 实测 subagent bash 调用，确认默认工具集完整。
+  v2 的"plan B（plugin 替换 task 工具）"从未实际实施，不需要——
+  限制本来就只针对 todowrite/task/primary_tools 三项。
+- CLAUDE.md 改为纯并发阈值 + subagent 优先。不再提及工具限制或 worktree，
+  worktree 隔离只在 Dynamic Workflow 内部强制（workflow-usage skill 管辖）。
+- 2026-06-16 v4（worktree 内置化）：Dynamic Workflow 现已内置 git worktree
+  支持。`createWorkflow({ worktree: { enable, repoDir, branch, baseBranch } })`
+  会在启动 server 前自动 `git worktree add` 并 `process.chdir()` 到新目录。
+  脚本不自动合并/删除 worktree（冲突需 LLM 判断），在 IPC result 中报告
+  worktree 信息让主 agent 执行合并。AGENTS.md 新增规则：coding 类 Dynamic
+  Workflow 必须启用 `worktree.enable: true`。
+
+

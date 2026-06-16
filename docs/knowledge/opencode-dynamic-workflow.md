@@ -10,12 +10,13 @@ last_verified: 2026-06-15
 source: opencode-dynamic-workflow phase 1+2
 ---
 
-# 多 agent 编排推荐使用 workflow 脚本
+# Dynamic Workflow 编排系统
 
 ## 适用场景
 
-需要 ≥3 个 agent 协作、有 DAG 依赖关系、或需要实时干预（暂停/恢复/追加）
-的多 agent 编排场景。
+并发 ≥ 3 个 agent、有 DAG 依赖关系、或需要实时干预（暂停/恢复/断点续跑）
+的多 agent 编排场景。并发 < 3 优先用 subagent 直接派发（CLAUDE.md §并发与
+Subagent）。
 
 ## 项目事实 / 约定
 
@@ -25,9 +26,9 @@ source: opencode-dynamic-workflow phase 1+2
   createOpencodeServer，支持并发调度、model 透传、暂停/恢复、快照断点续跑
 - `lib/ipc.mjs`：文件系统 IPC（`.workflow/` 目录）
 - `lib/dashboard.mjs`：静态 HTML 实时面板
-- `plugins/workflow-hint.js`：OpenCode 插件，检测多 agent 编排意图时建议
-  使用 workflow 脚本
-- `workflows/*.mjs`：预定义 workflow 模板（codebase-audit、parallel-research）
+- `plugins/workflow-hint.js`：OpenCode 插件，只检查 `background: true`
+  （编排决策由 `claude/CLAUDE.md` 管辖，不在插件中推荐 workflow）
+- `workflows/*.mjs`：预定义 workflow 模板（parallel-research）
 
 `init_opencode.sh` 通过 `install-opencode.sh` 将 `workflow-hint.js` 软链到
 `~/.config/opencode/plugins/`。
@@ -41,8 +42,9 @@ source: opencode-dynamic-workflow phase 1+2
 
 ## 修改时注意
 
-- 修改 `workflow-hint.js` 时，确认它与 `shared/policies/subagent-dispatch-hint.json`
-  的措辞一致（两处都提到 workflow 推荐）
+- `workflow-hint.js` 已精简为只检查 `background: true`，编排决策从插件层移到
+  `claude/CLAUDE.md` 的 `## 并发与 Subagent`。修改 CLAUDE.md 的决策树时，
+  必须同步维护 `claude/CLAUDE.reason.md`
 - `workflow-hint.js` 只能导出真正的 OpenCode plugin 入口函数。OpenCode 1.17.7
   legacy loader 会把模块里每个导出的函数都当作 server plugin 执行；helper 函数
   必须保持模块内私有，否则返回 `null` 会污染 hooks 列表并导致 `Provider.list`
@@ -69,6 +71,27 @@ python3 -m unittest \
 # init 脚本语法
 bash -n init_opencode.sh
 ```
+
+## R1 + R3 架构变更
+
+### Worktree 生命周期（R1）
+
+`worktree.accumulator: true` — coding 类 workflow 的中间 phase 结果在 worktree 间累加：
+每个 phase 的 subagent 在同一 worktree 分支上工作，phase 间通过 git commit 累加变更。
+最终 phase 完成后由主 agent 执行 `git merge` 回到主分支，再 `git worktree remove` 清理。
+只有最终合并回到主 worktree；中间结果不回主分支。
+
+### 双向通信协议（R3）
+
+workflow 脚本通过 `events/` 目录发出 `[workflow:need_agent]` 事件；
+主 agent 在 `commands/` 目录写入 `agent_prompt_<id>.json` 提供 prompt；
+workflow 收到 prompt 后创建 subagent。**prompt 由主 agent 控制**，workflow 不自动构造 prompt，
+确保每个 subagent 的任务意图与主 agent 的当前上下文一致。
+
+### DAG 编排
+
+多 phase workflow 使用拓扑排序确定 layer 顺序，同 layer 内 agent 可并发执行，
+跨 layer 依赖通过 accumulator worktree + IPC result 文件传递中间结果。
 
 ## 相关资料
 

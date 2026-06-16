@@ -65,12 +65,19 @@ skill 本身不可修改，原 reason 保留在下方备查：
 
 ## 并发与 Subagent
 
-> **原因**：并发和 subagent 的细节规则已沉淀到 `workflow-usage` skill 的
-> description 和正文中。CLAUDE.md 只保留"查 skill description → 按规则判断
-> → 用 workflow 前加载 skill"的指向，避免规则在两处维护导致不一致。
+> **原因**：并发阈值（<3 用 subagent，≥3 用 Dynamic Workflow）是经验性分界线——
+> 3 个以下并发在 LLM 单 turn 内可管理，再多则 LLM 容易遗漏 DAG 依赖或重复派发，
+> 脚本编排比 turn-by-turn 更可靠。
 >
-> skill description 包含：何时直接派发、何时用 workflow、后台模式、worktree
-> 隔离、并行派发等关键规则摘要。完整 API 和模板参数在 skill 正文中。
+> "串行多步也用 subagent" 是为了保护主对话上下文。主对话的每一轮 tool call 和
+> 文件内容都会累积进 context window，串行长任务的中间产物会把主对话挤到
+> compaction，丢失用户意图和方案讨论。subagent 是上下文隔离的边界。
+>
+> Worktree 隔离对 coding 类 Dynamic Workflow 是强制的。脚本在启动 opencode server
+> 前自动 `git worktree add` 到独立目录并 `process.chdir` 过去，保证多个 coding agent
+> 不会互相覆盖。脚本不自动合并/删除 worktree（冲突需要 LLM 判断），而是在报告里
+> 输出 merge 指引让主 agent 执行。
+
 
 ---
 

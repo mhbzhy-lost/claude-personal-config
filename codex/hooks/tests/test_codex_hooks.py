@@ -1705,32 +1705,27 @@ if (!absoluteRmDenied) {{
             self.assertEqual(proc.returncode, 0, f"stderr={proc.stderr}\nstdout={proc.stdout}")
 
     def test_opencode_dag_dispatch_hint_matches_global_concurrency_rules(self) -> None:
-        """验证 CLAUDE.md §并发/§Subagent 包含 workflow 推荐和核心约束。"""
+        """验证 CLAUDE.md §并发/§Subagent 包含并发阈值决策和 subagent 优先原则。"""
         claude_global = (REPO_ROOT / "claude" / "CLAUDE.md").read_text()
         for snippet in (
-            "可隔离的独立子任务必须优先使用 subagent 按 DAG 并发",
-            "workflow 脚本",
-            "若为 coding 任务，则必须通过 git worktree 隔离",
-            "worktree 合并后必须跑验证",
-            "自动合并失败或语义冲突",
-            "任何 subagent 创建都必须采用后台模式",
+            "subagent 优先",
+            "并发 < 3",
+            "Dynamic Workflow",
+            "串行多步操作也用 subagent",
+            "background: true",
+            "workflow-usage",
         ):
             self.assertIn(snippet, claude_global)
 
-        # shared policy 包含 workflow 推荐和 DAG 通用约束
+        # shared policy 精简为后台模式约束（编排决策由 AGENTS.md 管辖）
         policy = json.loads(SHARED_SUBAGENT_DISPATCH_HINT.read_text())
         rendered = "\n".join(policy["template"])
-        for snippet in (
-            "workflow 脚本编排",
-            "git worktree 隔离",
-            "worktree 合并后必须跑验证",
-            "自动合并失败或语义冲突",
-            "后台模式",
-            "skip-workflow-hint",
-        ):
-            self.assertIn(snippet, rendered)
+        self.assertIn("后台模式", rendered)
+        self.assertIn("background", rendered)
+        self.assertNotIn("workflow 脚本编排", rendered)
+        self.assertNotIn("skip-workflow-hint", rendered)
 
-        # workflow-hint 插件能加载并在关键词命中时抛出提示
+        # workflow-hint 插件精简为只检查 background:true
         self.assertTrue(OPENCODE_WORKFLOW_HINT_PLUGIN.is_file())
         script = f"""
 const mod = await import({json.dumps(OPENCODE_WORKFLOW_HINT_PLUGIN.as_uri())});
@@ -1750,16 +1745,16 @@ try {{
             check=True,
         )
         hint = proc.stdout
-        self.assertIn("workflow", hint.lower())
+        self.assertIn("background", hint.lower())
         self.assertNotIn("NO_THROW", hint)
 
     def test_subagent_dispatch_hint_policy_is_four_host_single_source(self) -> None:
-        """验证四端共享 policy 包含 workflow 推荐，不含已退役的知识检索流程。"""
+        """验证四端共享 policy 精简为后台模式约束，编排决策已由 AGENTS.md 管辖。"""
         policy = json.loads(SHARED_SUBAGENT_DISPATCH_HINT.read_text())
         rendered = "\n".join(policy["template"])
-        self.assertIn("workflow 脚本编排", rendered)
-        self.assertIn("git worktree 隔离", rendered)
         self.assertIn("后台模式", rendered)
+        self.assertNotIn("workflow 脚本编排", rendered)
+        self.assertNotIn("git worktree 隔离", rendered)
         self.assertNotIn("知识检索", rendered)
         self.assertNotIn("skill-catalog", rendered)
         self.assertNotIn("mcp__skill-catalog", rendered)
