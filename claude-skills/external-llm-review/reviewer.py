@@ -15,7 +15,7 @@ For backend=anthropic set ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY / ANTHROPIC_MOD
 
 Usage:
     python reviewer.py <BASE_SHA> <HEAD_SHA> \
-        [--backend api|anthropic] [--worktree PATH] [--spec FILE]
+        [--provider idealab-anthropic|idealab-openai|bailian] [--worktree PATH] [--spec FILE]
         [--max-diff N] [--review-depth standard|exhaustive] [--review-round 1|2]
         [--max-issues N] [--max-output-tokens N] [--api-timeout-seconds N]
 
@@ -43,7 +43,6 @@ from dotenv import load_dotenv
 
 _REVIEW_DEPTHS = ("standard", "exhaustive")
 _REVIEW_ROUNDS = (1, 2)
-_REVIEW_BACKENDS = ("api", "anthropic")
 _REDACTED = "[redacted]"
 ANTHROPIC_USER_AGENT = "claude-cli/2.1.156 (external, sdk-cli)"
 _SENSITIVE_BODY_PATTERNS = (
@@ -51,13 +50,6 @@ _SENSITIVE_BODY_PATTERNS = (
     re.compile(r"(?i)(bearer\s+)[^\s\"',}]+"),
     re.compile(r"(?i)(\"(?:api[_-]?key|token|access[_-]?token|secret)\"\s*:\s*\")[^\"]+(\")"),
 )
-
-
-@dataclass(frozen=True)
-class AnthropicConfig:
-    base_url: str
-    api_key: str
-    model: str
 
 
 _REVIEW_SYSTEM_PROMPT = """你是一名资深代码评审者。被评审代码可能涉及多种语言、框架与外部依赖。
@@ -186,29 +178,6 @@ def resolve_provider(args: argparse.Namespace, *, env: Mapping[str, str]) -> str
             f"('idealab-anthropic', 'idealab-openai', 'bailian'), got {provider!r}"
         )
     return provider
-
-
-def _env_value(env: Mapping[str, str], name: str) -> str:
-    return env.get(name, "").strip()
-
-
-def resolve_anthropic_config(env: Mapping[str, str]) -> AnthropicConfig:
-    base_url = _env_value(env, "ANTHROPIC_BASE_URL")
-    api_key = _env_value(env, "ANTHROPIC_API_KEY") or _env_value(env, "ANTHROPIC_AUTH_TOKEN")
-    model = _env_value(env, "ANTHROPIC_MODEL")
-
-    if not base_url:
-        raise ValueError("ANTHROPIC_BASE_URL is required for --backend anthropic")
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is required for --backend anthropic")
-    if not model:
-        raise ValueError("ANTHROPIC_MODEL is required for --backend anthropic")
-
-    return AnthropicConfig(
-        base_url=base_url.rstrip("/"),
-        api_key=api_key,
-        model=model,
-    )
 
 
 def endpoint_host(endpoint: str) -> str:
@@ -591,11 +560,10 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
     if legacy_format and legacy_format.lower() != "chat":
         print(
             f"ERROR: EXTERNAL_LLM_API_FORMAT={legacy_format!r} is no longer read by "
-            "reviewer.py. Only OpenAI Chat Completions (backend=api) and the local "
-            "Claude CLI (backend=claude-code-cli) remain. Please remove this "
-            "variable from your .env file. If you previously used 'anthropic' "
-            "format, set EXTERNAL_LLM_REVIEW_BACKEND=claude-code-cli with "
-            "ANTHROPIC_BASE_URL instead (see .env.example).",
+            "reviewer.py. Provider selection is now done via --provider or "
+            "EXTERNAL_LLM_REVIEW_PROVIDER (one of: idealab-anthropic, idealab-openai, bailian). "
+            "Please remove EXTERNAL_LLM_API_FORMAT from your .env file. "
+            "See .env.example and providers/<name>.yaml.",
             file=sys.stderr,
         )
         return 1
