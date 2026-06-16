@@ -1,0 +1,110 @@
+---
+title: Plan tracker git push gate
+kind: convention
+status: planned
+applies_to:
+  - shared/hooks/plan-tracker.py
+  - shared/hooks/test_plan_tracker.py
+  - opencode/plugins/plan-tracker.js
+  - opencode/plugins/test/plan-tracker.test.mjs
+last_verified: 2026-06-16
+source: plan-completeness-enforcement
+---
+
+# Plan completion 通过 plan-tracker.py + push gate 强制校验
+
+写计划时必须包含 `TODO:` 标记，commit 时 `git-commit-hook.sh` 自动更新进度，
+push 时 `plan-tracker.py` 检查是否存在未完成的 TODO，有则拦截并列出差额。
+
+## 适用场景
+
+- 修改 plan-tracker.py（核心逻辑）
+- 修改 plan-tracker.js OpenCode plugin
+- 修改 git-commit-hook.sh 的 plan 更新逻辑
+- 调整 plan 文件格式要求（frontmatter、TODO/DONE 标记）
+- 排查 "git push 被拦截" 问题时
+
+## 项目事实 / 约定
+
+**三层防线：**
+
+1. **写 plan 时**：必须包含 frontmatter（`---` 包裹的 YAML 块，含 `status: active`）
+   和 `TODO:` / `DONE:` 标记（格式约束，通过 AGENTS.md 约定）
+
+2. **commit hook**：`shared/hooks/git-commit-hook.sh` 检查本次提交是否修改了
+   `.md` 文件（在 `docs/` 或 `plans/` 目录下），如果是，自动扫描 `TODO:` 行
+   并根据 commit message 中的关键词（如"完成"、"implement"）将 `TODO:` 转为 `DONE:`
+   并更新 frontmatter 的 `completed_tasks` 计数
+
+3. **push gate**：`shared/hooks/plan-tracker.py` 扫描所有 active plan，检查是否
+   存在 `TODO:` 标记。如果有，列出文件名、行号、TODO 内容、frontmatter 完成度
+   统计，并返回 exit code 1。OpenCode plugin `plan-tracker.js` 在 `git push` 前
+   调用此脚本，exit code != 0 则 throw error 拦截 push。
+
+**Plan 文件格式：**
+
+```markdown
+---
+title: 计划标题
+status: active
+created: 2026-06-16
+completed_tasks: 3
+total_tasks: 5
+---
+
+# 计划正文
+
+- TODO: 未完成任务 1
+- DONE: 已完成任务 2
+- TODO: 未完成任务 3
+```
+
+**拦截行为（exit code 1 时输出）：**
+
+```
+[plan-tracker] Plan not complete
+  docs/plans/my-plan.md:12  TODO: 未完成任务 1
+  docs/plans/my-plan.md:24  TODO: 未完成任务 3
+
+Progress: 1/3 (33%)
+
+To push anyway, mark as DONE or update plan status.
+```
+
+## 原因
+
+- **AGENTS.md 约定不可靠**：纯靠文档约束写 plan 格式容易遗漏，agent 可能忘记
+  frontmatter 或用错标记格式
+- **commit 时自动更新**：减少手动维护进度的负担，commit message 暗示完成时
+  自动转换 TODO → DONE
+- **push 前最终校验**：即使 commit hook 漏了，push gate 仍能拦截未完成的 plan，
+  确保不会出现"计划写了但没做完就推了"的情况
+
+## 修改时注意
+
+- `plan-tracker.py` 解析 frontmatter 和 TODO/DONE 行时使用正则表达式，修改 pattern
+  时同步更新 `shared/hooks/git-commit-hook.sh` 中的对应 pattern
+- OpenCode plugin 在 `git push` 前触发，如果 script 执行失败（如 Python 环境缺失），
+  plugin 应 fail-open 并记录 warning 日志，不能 block 所有 push
+- Plan 状态为 `completed` / `paused` / `archived` 时，`plan-tracker.py` 应跳过不拦截
+
+## 验证方式
+
+```bash
+# 测试 plan-tracker.py 核心逻辑
+cd shared/hooks && python3 test_plan_tracker.py
+
+# 测试 OpenCode plugin
+cd opencode/plugins && npm test test/plan-tracker.test.mjs
+
+# 端到端测试：创建一个含 TODO 的 plan，尝试 push 应被拦截
+echo -e "---\ntitle: Test\nstatus: active\n---\n- TODO: Test task" > /tmp/test-plan.md
+# 在 OpenCode 中执行 git push，观察是否被拦截
+```
+
+## 相关资料
+
+- 实现文件：`shared/hooks/plan-tracker.py`、`opencode/plugins/plan-tracker.js`
+- 测试文件：`shared/hooks/test_plan_tracker.py`、`opencode/plugins/test/plan-tracker.test.mjs`
+- Commit hook：`shared/hooks/git-commit-hook.sh`（自动更新 TODO → DONE）
+- 相关讨论：计划完整性校验机制设计
