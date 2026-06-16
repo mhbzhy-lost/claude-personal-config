@@ -8,18 +8,44 @@
 // throw-to-block mechanism.
 //
 // Fail-open: script failure / timeout → allow (consistent with Claude Code end).
+// All failures are logged to ${CLAUDE_CONFIG_HOME}/logs/external-review-gate.log.
 
 import { execFileSync } from "node:child_process"
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const repoRoot = process.env.CLAUDE_CONFIG_HOME || join(__dirname, "..")
 const HOOK_SCRIPT = join(repoRoot, "shared", "hooks", "external-review-gate.sh")
+const LOG_DIR = join(repoRoot, "logs")
+const LOG_FILE = join(LOG_DIR, "external-review-gate.log")
+const LOG_ROTATE_SIZE = 1 * 1024 * 1024
 
 const SKIP_ENV = "EXTERNAL_REVIEW_SKIP"
 const SKIP_VALUES = new Set(["1", "true", "yes", "on"])
 const isTruthy = (v) => SKIP_VALUES.has(String(v ?? "").trim().toLowerCase())
+
+const appendLog = (label, text) => {
+  try {
+    if (!text || !text.trim()) return
+    mkdirSync(LOG_DIR, { recursive: true })
+    try {
+      if (statSync(LOG_FILE).size > LOG_ROTATE_SIZE) {
+        writeFileSync(LOG_FILE, "")
+      }
+    } catch { /* first write */ }
+    const ts = new Date().toISOString()
+    writeFileSync(
+      LOG_FILE,
+      `[${ts}] ${label}\n${text}\n`,
+      { flag: "a" },
+    )
+  } catch {
+    // Last-resort: surface on stderr if file write fails
+    process.stderr.write(`[external-review-gate] ${label}\n${text}\n`)
+  }
+}
 
 export const ExternalReviewGatePlugin = async () => {
   return {
@@ -48,8 +74,9 @@ export const ExternalReviewGatePlugin = async () => {
         },
       })
 
-      // Run the hook script (it handles all logic: env check, diff, review, marker)
-      let stdout
+      // Capture stdout (hook response) AND stderr (diagnostic logs)
+      let stdout = ""
+      let stderr = ""
       try {
         stdout = execFileSync("bash", [HOOK_SCRIPT], {
           input: payload,
@@ -57,10 +84,16 @@ export const ExternalReviewGatePlugin = async () => {
           timeout: 600_000,
           maxBuffer: 10 * 1024 * 1024,
           stdio: ["pipe", "pipe", "pipe"],
-        })
-      } catch {
-        // Fail-open: script failure, timeout → allow
+        }) ?? ""
+        stderr = ""
+      } catch (err) {
+        stderr = err?.stderr?.toString?.() ?? String(err)
+        appendLog(`FAIL (git push: ${command.slice(0, 80)})`, stderr)
         return
+      }
+
+      if (stderr.trim()) {
+        appendLog(`RUN (git push: ${command.slice(0, 80)})`, stderr)
       }
 
       // Parse response — empty stdout = silent pass-through (non-push, exempt, etc.)
@@ -70,7 +103,8 @@ export const ExternalReviewGatePlugin = async () => {
       let response
       try {
         response = JSON.parse(trimmed)
-      } catch {
+      } catch (err) {
+        appendLog("PARSE_ERROR", `stdout: ${trimmed.slice(0, 500)}\nerr: ${err.message}`)
         return
       }
 

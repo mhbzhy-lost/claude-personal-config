@@ -7,7 +7,10 @@ set -uo pipefail
 export CLAUDE_CONFIG_HOME="${CLAUDE_CONFIG_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 # Marker 存目标仓库 .git/ 下，不污染 claude-config 仓
 GIT_TOP="$(git rev-parse --show-toplevel 2>/dev/null)" || GIT_TOP="$(pwd)"
-export MARKER_DIR="${GIT_TOP}/.git/review-markers"
+GIT_DIR="$(git rev-parse --git-dir 2>/dev/null)" || GIT_DIR=".git"
+# Resolve relative --git-dir against GIT_TOP (needed for submodules where --git-dir returns relative path)
+case "$GIT_DIR" in /*) ;; *) GIT_DIR="${GIT_TOP}/${GIT_DIR}" ;; esac
+export MARKER_DIR="${GIT_DIR}/review-markers"
 export REVIEWER_PY="${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py"
 export REVIEWER_ENV="${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/.env"
 
@@ -190,7 +193,17 @@ else:
 _eff_top = subprocess.check_output(
     _git_prefix + ["rev-parse", "--show-toplevel"],
     text=True, stderr=subprocess.DEVNULL).strip() if _git_prefix != ["git"] else _hook_git_top
-MARKER_DIR = Path(_eff_top) / ".git" / "review-markers"
+# Use --git-dir for submodule compatibility (.git may be a file, not a directory)
+try:
+    _eff_git_dir = subprocess.check_output(
+        _git_prefix + ["rev-parse", "--git-dir"],
+        text=True, stderr=subprocess.DEVNULL).strip() if _git_prefix != ["git"] else os.path.join(_hook_git_top, ".git")
+    # --git-dir returns path relative to CWD; resolve against _eff_top for absolute path
+    if not os.path.isabs(_eff_git_dir):
+        _eff_git_dir = os.path.normpath(os.path.join(_eff_top, _eff_git_dir))
+except Exception:
+    _eff_git_dir = os.path.join(_eff_top, ".git")
+MARKER_DIR = Path(_eff_git_dir) / "review-markers"
 
 # --- Determine base ref ---
 try:
@@ -436,7 +449,7 @@ log(f"executing review round {review_round}...")
 head_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 
 
-def run_reviewer(backend: str) -> "subprocess.CompletedProcess[str] | None":
+def run_reviewer(provider: str) -> "subprocess.CompletedProcess[str] | None":
     try:
         timeout_s = int(os.environ.get("EXTERNAL_REVIEW_TIMEOUT_SECONDS", "540"))
     except ValueError:
@@ -449,12 +462,14 @@ def run_reviewer(backend: str) -> "subprocess.CompletedProcess[str] | None":
         "httpx",
         "--with",
         "python-dotenv",
+        "--with",
+        "pyyaml",
         "python",
         REVIEWER_PY,
         base_ref,
         "HEAD",
-        "--backend",
-        backend,
+        "--provider",
+        provider,
         "--review-depth",
         "exhaustive",
         "--review-round",
@@ -470,38 +485,41 @@ def run_reviewer(backend: str) -> "subprocess.CompletedProcess[str] | None":
             timeout=timeout_s,
         )
     except subprocess.TimeoutExpired:
-        log(f"{backend} backend timed out after {timeout_s}s")
+        log(f"{provider} provider timed out after {timeout_s}s")
         return None
     except Exception as exc:
-        log(f"{backend} backend failed to start: {exc}")
+        log(f"{provider} provider failed to start: {exc}")
         return None
 
 
-# Try anthropic first, fall back to api on failure/timeout/exception
-result = run_reviewer("anthropic")
+# Try providers in order: idealab-anthropic → bailian → idealab-openai
+# Fall through on timeout/failure/exception
+_PROVIDER_CHAIN = ["idealab-anthropic", "bailian", "idealab-openai"]
+result = None
+used_provider = None
+for _p in _PROVIDER_CHAIN:
+    _r = run_reviewer(_p)
+    if _r is None:
+        log(f"{_p} provider timed out or crashed, trying next")
+        continue
+    if _r.returncode != 0:
+        log(f"{_p} provider failed (rc={_r.returncode}), trying next")
+        if _r.stderr:
+            log(_r.stderr[:500])
+        continue
+    result = _r
+    used_provider = _p
+    break
 
 if result is None:
-    log("anthropic backend timed out or crashed, falling back to api")
-    result = run_reviewer("api")
-elif result.returncode != 0:
-    log(f"anthropic backend failed (rc={result.returncode}), falling back to api")
-    if result.stderr:
-        log(result.stderr[:500])
-    result = run_reviewer("api")
-
-if result is None:
-    log("degraded allow (both backends timed out or crashed)")
-    allow()
-elif result.returncode != 0:
-    log(f"api backend failed (rc={result.returncode}), degraded allow")
-    if result.stderr:
-        log(result.stderr[:500])
+    log("degraded allow (all providers timed out or crashed)")
     allow()
 
 review_output = result.stdout.strip()
 if not review_output:
-    log("reviewer.py produced empty output, degraded allow")
+    log(f"{used_provider or 'unknown'} provider produced empty output, degraded allow")
     allow()
+log(f"review completed via {used_provider}")
 
 # --- Parse review sections deterministically ---
 has_critical = parse_section(review_output, "Critical")
