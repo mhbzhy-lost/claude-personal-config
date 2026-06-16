@@ -206,10 +206,31 @@ try:
     # --git-dir returns path relative to CWD when invoked outside repo; anchor to _eff_top
     if not os.path.isabs(_eff_git_dir):
         _eff_git_dir = os.path.normpath(os.path.join(_eff_top, _eff_git_dir))
+    MARKER_DIR = Path(_eff_git_dir) / "review-markers"
 except Exception as _exc:
-    log(f"WARN: falling back to {_eff_top}/.git after git-dir lookup failed ({_exc})")
-    _eff_git_dir = os.path.join(_eff_top, ".git")
-MARKER_DIR = Path(_eff_git_dir) / "review-markers"
+    # Fallback: .git may be a gitlink file (submodule) — read its `gitdir: ...` line
+    _eff_git = os.path.join(_eff_top, ".git")
+    if os.path.isfile(_eff_git):
+        try:
+            with open(_eff_git, encoding="utf-8") as _f:
+                _content = _f.read().strip()
+            if _content.startswith("gitdir:"):
+                _rel = _content[len("gitdir:"):].strip()
+                _eff_git_dir = (
+                    _rel if os.path.isabs(_rel)
+                    else os.path.normpath(os.path.join(_eff_top, _rel))
+                )
+                MARKER_DIR = Path(_eff_git_dir) / "review-markers"
+                log(f"WARN: git-dir lookup failed ({_exc}); used gitlink -> {MARKER_DIR}")
+            else:
+                log(f"WARN: git-dir failed + .git gitlink unreadable ({_exc}); marker write disabled")
+                MARKER_DIR = None
+        except OSError as _read_exc:
+            log(f"WARN: git-dir + gitlink read failed ({_read_exc}); marker write disabled")
+            MARKER_DIR = None
+    else:
+        log(f"WARN: git-dir failed ({_exc}) and .git not found; marker write disabled")
+        MARKER_DIR = None
 
 # --- Determine base ref ---
 try:
@@ -327,11 +348,17 @@ try:
 except Exception:
     slug = "unknown"
 
-# --- Read marker ---
-MARKER_DIR.mkdir(parents=True, exist_ok=True)
-marker_path = MARKER_DIR / f"{slug}.json"
+# --- Read marker (skip if MARKER_DIR could not be resolved) ---
+if MARKER_DIR is not None:
+    try:
+        MARKER_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as _exc:
+        log(f"WARN: cannot create MARKER_DIR {MARKER_DIR}: {_exc}; marker write disabled")
+        MARKER_DIR = None
+marker_path = (MARKER_DIR / f"{slug}.json") if MARKER_DIR is not None else None
 marker = None
-if marker_path.is_file():
+marker = None
+if marker_path is not None and marker_path.is_file():
     try:
         marker = json.loads(marker_path.read_text())
         # Check TTL
@@ -368,6 +395,9 @@ def _marker_round(m):
 
 
 def _delete_marker_after_budget():
+    if marker_path is None:
+        log("no marker to delete (MARKER_DIR could not be resolved)")
+        return
     try:
         marker_path.unlink()
         log(f"review budget exhausted; removed marker {marker_path}")
@@ -500,25 +530,38 @@ def run_reviewer(provider: str) -> "subprocess.CompletedProcess[str] | None":
 
 # Try providers in order: idealab-anthropic → bailian → idealab-openai
 # Fall through on timeout/failure/exception
+# Collect ALL failures (stderr) for final diagnostic if all providers fail
 _PROVIDER_CHAIN = ["idealab-anthropic", "bailian", "idealab-openai"]
 result = None
 used_provider = None
+_collected_failures = []  # list of (provider_name, reason, stderr_snippet)
 for _p in _PROVIDER_CHAIN:
     _r = run_reviewer(_p)
     if _r is None:
         log(f"{_p} provider timed out or crashed, trying next")
+        _collected_failures.append((_p, "timeout/crash", ""))
         continue
     if _r.returncode != 0:
         log(f"{_p} provider failed (rc={_r.returncode}), trying next")
-        if _r.stderr:
-            log(_r.stderr[:500])
+        _collected_failures.append((_p, f"rc={_r.returncode}", (_r.stderr or "")[:500]))
         continue
     result = _r
     used_provider = _p
     break
 
 if result is None:
-    log("degraded allow (all providers timed out or crashed)")
+    # All providers failed: emit collected stderr (capped) so user can diagnose
+    log("degraded allow (all providers failed). Collected stderr:")
+    _total = 0
+    for _pn, _reason, _se in _collected_failures:
+        _snip = (_se or "").strip()[:800]
+        log(f"  [{_pn}] reason={_reason}")
+        if _snip:
+            log(f"  [{_pn}] {_snip}")
+        _total += len(_snip)
+        if _total > 4000:
+            log("  [... truncated ...]")
+            break
     allow()
 
 review_output = result.stdout.strip()
@@ -533,24 +576,27 @@ has_important = parse_section(review_output, "Important")
 has_minor = parse_section(review_output, "Minor")
 should_deny = has_critical or has_important
 
-# --- Write marker ---
-new_marker = {
-    "round": review_round,
-    "diff_hash": diff_hash,
-    "has_critical": has_critical,
-    "has_important": has_important,
-    "has_minor": has_minor,
-    "base_ref": base_ref,
-    "head_sha": head_sha,
-    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-}
-try:
-    marker_path.write_text(json.dumps(new_marker, indent=2, ensure_ascii=False) + "\n")
-    decision_str = "deny" if should_deny else "pass"
-    log(f"marker written: round={review_round} decision={decision_str} "
-        f"critical={has_critical} important={has_important} minor={has_minor}")
-except Exception as exc:
-    log(f"failed to write marker: {exc}")
+# --- Write marker (skip if marker_path is None) ---
+if marker_path is None:
+    log("skipping marker write (MARKER_DIR could not be resolved earlier)")
+else:
+    new_marker = {
+        "round": review_round,
+        "diff_hash": diff_hash,
+        "has_critical": has_critical,
+        "has_important": has_important,
+        "has_minor": has_minor,
+        "base_ref": base_ref,
+        "head_sha": head_sha,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    try:
+        marker_path.write_text(json.dumps(new_marker, indent=2, ensure_ascii=False) + "\n")
+        decision_str = "deny" if should_deny else "pass"
+        log(f"marker written: round={review_round} decision={decision_str} "
+            f"critical={has_critical} important={has_important} minor={has_minor}")
+    except Exception as exc:
+        log(f"failed to write marker: {exc}")
 
 # --- Decision ---
 if not should_deny:
