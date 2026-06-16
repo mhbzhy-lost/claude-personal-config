@@ -195,13 +195,19 @@ _eff_top = subprocess.check_output(
     text=True, stderr=subprocess.DEVNULL).strip() if _git_prefix != ["git"] else _hook_git_top
 # Use --git-dir for submodule compatibility (.git may be a file, not a directory)
 try:
-    _eff_git_dir = subprocess.check_output(
+    _gitdir_proc = subprocess.run(
         _git_prefix + ["rev-parse", "--git-dir"],
-        text=True, stderr=subprocess.DEVNULL).strip() if _git_prefix != ["git"] else os.path.join(_hook_git_top, ".git")
-    # --git-dir returns path relative to CWD; resolve against _eff_top for absolute path
+        text=True, capture_output=True,
+    )
+    if _gitdir_proc.returncode != 0:
+        log(f"WARN: git rev-parse --git-dir exited {_gitdir_proc.returncode}: {_gitdir_proc.stderr.strip()}")
+        raise RuntimeError("git-dir failed")
+    _eff_git_dir = _gitdir_proc.stdout.strip()
+    # --git-dir returns path relative to CWD when invoked outside repo; anchor to _eff_top
     if not os.path.isabs(_eff_git_dir):
         _eff_git_dir = os.path.normpath(os.path.join(_eff_top, _eff_git_dir))
-except Exception:
+except Exception as _exc:
+    log(f"WARN: falling back to {_eff_top}/.git after git-dir lookup failed ({_exc})")
     _eff_git_dir = os.path.join(_eff_top, ".git")
 MARKER_DIR = Path(_eff_git_dir) / "review-markers"
 

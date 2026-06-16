@@ -26,6 +26,26 @@ const SKIP_ENV = "EXTERNAL_REVIEW_SKIP"
 const SKIP_VALUES = new Set(["1", "true", "yes", "on"])
 const isTruthy = (v) => SKIP_VALUES.has(String(v ?? "").trim().toLowerCase())
 
+// Scrub secrets from stderr/subprocess output before writing to log files.
+// Patterns: Bearer tokens, x-api-key headers, query-string/env `key=value`,
+// JSON-style `"api_key":"<value>"`. Redacted to "[REDACTED]".
+export const sanitizeStderr = (input) => {
+  if (input == null) return ""
+  const s = String(input)
+  if (!s) return s
+  return s
+    .replace(/Bearer\s+[^\s;,\)]+/gi, "Bearer [REDACTED]")
+    .replace(/x-api-key:\s*[^\s,;]+/gi, "x-api-key: [REDACTED]")
+    .replace(
+      /(api[_-]?key|token|secret|access[_-]?token|auth[_-]?token)([=:])([^\s&;,'"`]+|\{[^}]*\})/gi,
+      "$1$2[REDACTED]",
+    )
+    .replace(
+      /"(api[_-]?key|token|secret|access[_-]?token|auth[_-]?token)"\s*:\s*"[^"]*"/gi,
+      '"$1":"[REDACTED]"',
+    )
+}
+
 const appendLog = (label, text) => {
   try {
     if (!text || !text.trim()) return
@@ -88,12 +108,12 @@ export const ExternalReviewGatePlugin = async () => {
         stderr = ""
       } catch (err) {
         stderr = err?.stderr?.toString?.() ?? String(err)
-        appendLog(`FAIL (git push: ${command.slice(0, 80)})`, stderr)
+        appendLog(`FAIL (git push: ${command.slice(0, 80)})`, sanitizeStderr(stderr))
         return
       }
 
       if (stderr.trim()) {
-        appendLog(`RUN (git push: ${command.slice(0, 80)})`, stderr)
+        appendLog(`RUN (git push: ${command.slice(0, 80)})`, sanitizeStderr(stderr))
       }
 
       // Parse response — empty stdout = silent pass-through (non-push, exempt, etc.)
