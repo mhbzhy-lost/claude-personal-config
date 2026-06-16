@@ -170,19 +170,10 @@ export const RmOutsideWorkspaceGuardPlugin = async () => {
         return
       }
 
-      if (/[|$`()]/.test(command)) {
-        throw new Error(
-          "workspace 外 rm 已被阻断。\n" +
-          "rm 命令包含 pipe、变量、命令替换或 subshell 等 shell 展开，OpenCode 不能安全判断目标；" +
-          "如确需删除，请用户手动执行：\n\n" +
-          command,
-        )
-      }
-
-      const cwd = normalizeExistingOrLexical(
-        output.args?.cwd || output.args?.workdir || process.cwd(),
-      )
-      const workspaceRoot = normalizeExistingOrLexical(output.args?.workspaceRoot || cwd)
+    const cwd = normalizeExistingOrLexical(
+      output.args?.cwd || output.args?.workdir || process.cwd(),
+    )
+    const workspaceRoot = normalizeExistingOrLexical(output.args?.workspaceRoot || cwd)
       const blocked = checkedRmTargets(command, workspaceRoot, cwd)
 
       if (blocked.length === 0) return

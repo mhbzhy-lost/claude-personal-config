@@ -53,69 +53,33 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             parser.parse_args(["base", "head", "--review-round", "3"])
 
-    def test_review_backend_defaults_to_api(self):
-        args = Namespace(backend=None)
+    def test_review_provider_defaults_to_idealab_anthropic(self):
+        args = Namespace(provider=None)
+        self.assertEqual(reviewer.resolve_provider(args, env={}), "idealab-anthropic")
 
-        self.assertEqual(reviewer.resolve_review_backend(args, env={}), "api")
+    def test_review_provider_accepts_known_providers(self):
+        args = Namespace(provider="idealab-anthropic")
+        self.assertEqual(reviewer.resolve_provider(args, env={}), "idealab-anthropic")
 
-    def test_review_backend_accepts_api_and_anthropic(self):
-        args = Namespace(backend="api")
-        self.assertEqual(reviewer.resolve_review_backend(args, env={}), "api")
+        args = Namespace(provider="bailian")
+        self.assertEqual(reviewer.resolve_provider(args, env={}), "bailian")
 
-        args = Namespace(backend="anthropic")
-        self.assertEqual(reviewer.resolve_review_backend(args, env={}), "anthropic")
+        args = Namespace(provider="idealab-openai")
+        self.assertEqual(reviewer.resolve_provider(args, env={}), "idealab-openai")
 
-    def test_review_backend_rejects_claude_code_cli(self):
-        with self.assertRaisesRegex(ValueError, "EXTERNAL_LLM_REVIEW_BACKEND"):
-            reviewer.resolve_review_backend(
-                Namespace(backend=None),
-                env={"EXTERNAL_LLM_REVIEW_BACKEND": "claude-code-cli"},
+    def test_review_provider_reads_env(self):
+        args = Namespace(provider=None)
+        self.assertEqual(
+            reviewer.resolve_provider(args, env={"EXTERNAL_LLM_REVIEW_PROVIDER": "bailian"}),
+            "bailian"
+        )
+
+    def test_review_provider_rejects_unknown_values(self):
+        with self.assertRaisesRegex(ValueError, "EXTERNAL_LLM_REVIEW_PROVIDER"):
+            reviewer.resolve_provider(
+                Namespace(provider=None),
+                env={"EXTERNAL_LLM_REVIEW_PROVIDER": "ollama"},
             )
-
-    def test_review_backend_rejects_unknown_values(self):
-        with self.assertRaisesRegex(ValueError, "EXTERNAL_LLM_REVIEW_BACKEND"):
-            reviewer.resolve_review_backend(
-                Namespace(backend=None),
-                env={"EXTERNAL_LLM_REVIEW_BACKEND": "ollama"},
-            )
-
-    def test_anthropic_config_requires_base_url(self):
-        with self.assertRaisesRegex(ValueError, "ANTHROPIC_BASE_URL"):
-            reviewer.resolve_anthropic_config({})
-
-    def test_anthropic_config_requires_api_key(self):
-        with self.assertRaisesRegex(ValueError, "ANTHROPIC_API_KEY"):
-            reviewer.resolve_anthropic_config({
-                "ANTHROPIC_BASE_URL": "https://idealab.alibaba-inc.com/anthropic",
-            })
-
-    def test_anthropic_config_falls_back_to_auth_token(self):
-        config = reviewer.resolve_anthropic_config({
-            "ANTHROPIC_BASE_URL": "https://idealab.alibaba-inc.com/anthropic",
-            "ANTHROPIC_AUTH_TOKEN": "idealab-token",
-            "ANTHROPIC_MODEL": "claude-opus-4-7",
-        })
-
-        self.assertEqual(config.api_key, "idealab-token")
-        self.assertEqual(config.model, "claude-opus-4-7")
-
-    def test_anthropic_config_requires_model(self):
-        with self.assertRaisesRegex(ValueError, "ANTHROPIC_MODEL"):
-            reviewer.resolve_anthropic_config({
-                "ANTHROPIC_BASE_URL": "https://idealab.alibaba-inc.com/anthropic",
-                "ANTHROPIC_API_KEY": "sk-ant-test",
-            })
-
-    def test_anthropic_config_parses_all_fields(self):
-        config = reviewer.resolve_anthropic_config({
-            "ANTHROPIC_BASE_URL": "https://idealab.alibaba-inc.com/anthropic",
-            "ANTHROPIC_API_KEY": "sk-ant-test",
-            "ANTHROPIC_MODEL": "claude-opus-4-7",
-        })
-
-        self.assertEqual(config.base_url, "https://idealab.alibaba-inc.com/anthropic")
-        self.assertEqual(config.api_key, "sk-ant-test")
-        self.assertEqual(config.model, "claude-opus-4-7")
 
     def test_anthropic_user_agent_is_deceptive(self):
         self.assertEqual(
@@ -541,6 +505,59 @@ class BailianProviderTest(unittest.TestCase):
         result = asyncio.run(run())
         self.assertEqual(result, "good also")
 
+    def test_stream_error_response_body_readable(self):
+        """BUG: streaming send must aread() before raise on 4xx so caller sees body."""
+        from _provider import BailianProvider
+
+        provider = BailianProvider(
+            base_url="https://api.example.com", api_key="bad-key", model="m"
+        )
+
+        async def run():
+            class FakeStreamResponse:
+                status_code = 401
+                _content = b'{"error": "InvalidApiKey"}'
+                _read_called = False
+                _raised = False
+
+                async def aread(self):
+                    self._read_called = True
+                    return self._content
+
+                @property
+                def text(self):
+                    return self._content.decode()
+
+                def raise_for_status(self):
+                    self._raised = True
+                    raise RuntimeError("401 Unauthorized")
+
+                def aiter_lines(self):
+                    async def gen():
+                        return
+                    return gen()
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *a):
+                    pass
+
+            fake = FakeStreamResponse()
+
+            class FakeClient:
+                def stream(self, method, url, **kw):
+                    return fake
+
+            with self.assertRaises(RuntimeError):
+                await provider.send_chat(FakeClient(), [{"role": "user", "content": "hi"}], {})
+
+            self.assertTrue(fake._read_called, "aread() must be called before raise")
+            self.assertTrue(fake._raised, "raise_for_status must have been called")
+            self.assertEqual(fake.text, '{"error": "InvalidApiKey"}')
+
+        asyncio.run(run())
+
 
 class IdealabAnthropicProviderTest(unittest.TestCase):
     def test_payload_includes_system_and_messages(self):
@@ -776,6 +793,207 @@ class ProviderSendChatTest(unittest.TestCase):
             headers=ANY,
             timeout=120.0,
         )
+
+
+from unittest.mock import ANY, AsyncMock, MagicMock
+
+
+class ProviderConfigLoaderTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+        import pathlib
+        self.providers_dir = pathlib.Path(self.tmpdir) / "providers"
+        self.providers_dir.mkdir()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def write_provider(self, name: str, content: str):
+        (self.providers_dir / f"{name}.yaml").write_text(content)
+
+    def test_load_provider_yaml_parses_env_placeholders(self):
+        from _config import load_provider_config
+        self.write_provider(
+            "idealab-anthropic",
+            "provider: idealab-anthropic\n"
+            "base_url: https://idealab.alibaba-inc.com/api/anthropic\n"
+            "api_key: ${ANTHROPIC_API_KEY}\n"
+            "model: claude-opus-4-6\n"
+            "max_tokens: 16000\n",
+        )
+        cfg = load_provider_config(
+            "idealab-anthropic",
+            providers_dir=self.providers_dir,
+            env={"ANTHROPIC_API_KEY": "sk-ant-secret"},
+        )
+        self.assertEqual(cfg["provider"], "idealab-anthropic")
+        self.assertEqual(cfg["api_key"], "sk-ant-secret")
+        self.assertEqual(
+            cfg["base_url"], "https://idealab.alibaba-inc.com/api/anthropic"
+        )
+        self.assertEqual(cfg["model"], "claude-opus-4-6")
+        self.assertEqual(cfg["max_tokens"], 16000)
+
+    def test_load_provider_yaml_raises_on_missing_file(self):
+        from _config import load_provider_config
+        with self.assertRaisesRegex(FileNotFoundError, "not found"):
+            load_provider_config(
+                "ghost",
+                providers_dir=self.providers_dir,
+                env={},
+            )
+
+    def test_load_provider_yaml_raises_on_unresolved_env_var(self):
+        from _config import load_provider_config
+        self.write_provider(
+            "bailian",
+            "provider: bailian\n"
+            "base_url: https://dashscope.test\n"
+            "api_key: ${BAILIAN_API_KEY}\n"
+            "model: qwen3.7-max\n",
+        )
+        with self.assertRaisesRegex(RuntimeError, "unresolved env var"):
+            load_provider_config(
+                "bailian",
+                providers_dir=self.providers_dir,
+                env={},
+            )
+
+    def test_load_provider_yaml_includes_provider_specific_fields(self):
+        from _config import load_provider_config
+        self.write_provider(
+            "bailian",
+            "provider: bailian\n"
+            "base_url: https://dashscope.test\n"
+            "api_key: ${BAILIAN_API_KEY}\n"
+            "model: qwen3.7-max\n"
+            "max_tokens: 4000\n"
+            "enable_thinking: true\n"
+            "thinking_budget: 2048\n",
+        )
+        cfg = load_provider_config(
+            "bailian",
+            providers_dir=self.providers_dir,
+            env={"BAILIAN_API_KEY": "sk-b"},
+        )
+        self.assertTrue(cfg.get("enable_thinking"))
+        self.assertEqual(cfg.get("thinking_budget"), 2048)
+
+    def test_load_provider_yaml_accepts_literal_non_secret_values(self):
+        from _config import load_provider_config
+        self.write_provider(
+            "idealab-openai",
+            "provider: idealab-openai\n"
+            "base_url: https://default.test\n"
+            "api_key: sk-in-yaml\n"
+            "model: gpt-4o\n",
+        )
+        cfg = load_provider_config(
+            "idealab-openai",
+            providers_dir=self.providers_dir,
+            env={},
+        )
+        self.assertEqual(cfg["api_key"], "sk-in-yaml")
+        self.assertEqual(cfg["base_url"], "https://default.test")
+
+
+class GetProviderDispatchTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+        import pathlib
+        self.providers_dir = pathlib.Path(self.tmpdir) / "providers"
+        self.providers_dir.mkdir()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def write_provider(self, name: str, content: str):
+        (self.providers_dir / f"{name}.yaml").write_text(content)
+
+    def test_get_provider_returns_idealab_anthropic(self):
+        from _config import get_provider
+        from _provider import IdealabAnthropicProvider
+        self.write_provider(
+            "idealab-anthropic",
+            "provider: idealab-anthropic\n"
+            "base_url: https://idealab.test/anthropic\n"
+            "api_key: ${ANT_API}\n"
+            "model: claude-opus-4-6\n"
+            "max_tokens: 16000\n",
+        )
+        provider = get_provider(
+            "idealab-anthropic",
+            providers_dir=self.providers_dir,
+            env={"ANT_API": "sk-ant"},
+        )
+        self.assertIsInstance(provider, IdealabAnthropicProvider)
+        self.assertEqual(provider.api_key, "sk-ant")
+        self.assertEqual(provider.model, "claude-opus-4-6")
+
+    def test_get_provider_returns_idealab_openai(self):
+        from _config import get_provider
+        from _provider import IdealabOpenAIProvider
+        self.write_provider(
+            "idealab-openai",
+            "provider: idealab-openai\n"
+            "base_url: https://idealab.test/openai\n"
+            "api_key: ${OA_API}\n"
+            "model: gpt-4o\n"
+            "max_tokens: 8000\n",
+        )
+        provider = get_provider(
+            "idealab-openai",
+            providers_dir=self.providers_dir,
+            env={"OA_API": "sk-oa"},
+        )
+        self.assertIsInstance(provider, IdealabOpenAIProvider)
+        self.assertEqual(provider.api_key, "sk-oa")
+
+    def test_get_provider_returns_bailian_with_thinking_fields(self):
+        from _config import get_provider
+        from _provider import BailianProvider
+        self.write_provider(
+            "bailian",
+            "provider: bailian\n"
+            "base_url: https://dashscope.test\n"
+            "api_key: ${BAIL_API}\n"
+            "model: qwen3.7-max\n"
+            "max_tokens: 4000\n"
+            "enable_thinking: true\n"
+            "thinking_budget: 2048\n",
+        )
+        provider = get_provider(
+            "bailian",
+            providers_dir=self.providers_dir,
+            env={"BAIL_API": "sk-b"},
+        )
+        self.assertIsInstance(provider, BailianProvider)
+        self.assertTrue(provider.enable_thinking)
+        self.assertEqual(provider.thinking_budget, 2048)
+
+    def test_get_provider_raises_on_unknown_provider_type(self):
+        from _config import get_provider
+        self.write_provider(
+            "mystery",
+            "provider: unknown-vendor\n"
+            "base_url: https://x.test\n"
+            "api_key: sk\n"
+            "model: m\n",
+        )
+        with self.assertRaisesRegex(ValueError, "Unknown provider type 'unknown-vendor'"):
+            get_provider(
+                "mystery",
+                providers_dir=self.providers_dir,
+                env={},
+            )
+
+    def test_default_providers_dir_constant(self):
+        from _config import DEFAULT_PROVIDERS_DIR
+        self.assertEqual(DEFAULT_PROVIDERS_DIR.name, "providers")
 
 
 if __name__ == "__main__":

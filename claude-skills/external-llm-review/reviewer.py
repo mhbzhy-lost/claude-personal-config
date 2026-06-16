@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["httpx", "python-dotenv"]
+# dependencies = ["httpx", "python-dotenv", "pyyaml"]
 # ///
 """External LLM cross-model code reviewer.
 
@@ -35,6 +35,8 @@ from dataclasses import dataclass
 from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import urlparse
+
+from _config import get_provider
 
 import httpx
 from dotenv import load_dotenv
@@ -172,14 +174,18 @@ def build_review_user_prompt(
 """
 
 
-def resolve_review_backend(args: argparse.Namespace, *, env: Mapping[str, str]) -> str:
-    backend = (getattr(args, "backend", None) or env.get("EXTERNAL_LLM_REVIEW_BACKEND", "api")).strip().lower()
-    if backend not in _REVIEW_BACKENDS:
+def resolve_provider(args: argparse.Namespace, *, env: Mapping[str, str]) -> str:
+    """Resolve which provider to use from args or env.
+    
+    Returns provider name (e.g. 'idealab-anthropic', 'bailian').
+    """
+    provider = (getattr(args, "provider", None) or env.get("EXTERNAL_LLM_REVIEW_PROVIDER", "idealab-anthropic")).strip().lower()
+    if provider not in ("idealab-anthropic", "idealab-openai", "bailian"):
         raise ValueError(
-            "EXTERNAL_LLM_REVIEW_BACKEND/--backend must be one of "
-            f"{_REVIEW_BACKENDS}, got {backend!r}"
+            f"EXTERNAL_LLM_REVIEW_PROVIDER/--provider must be one of "
+            f"('idealab-anthropic', 'idealab-openai', 'bailian'), got {provider!r}"
         )
-    return backend
+    return provider
 
 
 def _env_value(env: Mapping[str, str], name: str) -> str:
@@ -533,10 +539,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("base_sha", help="git base commit (e.g. main, 76bddc5)")
     parser.add_argument("head_sha", help="git head commit (the changes to review)")
     parser.add_argument(
-        "--backend",
-        choices=_REVIEW_BACKENDS,
+        "--provider",
+        choices=("idealab-anthropic", "idealab-openai", "bailian"),
         default=None,
-        help="review transport backend (default: EXTERNAL_LLM_REVIEW_BACKEND or api)",
+        help="provider to use (default: EXTERNAL_LLM_REVIEW_PROVIDER or idealab-anthropic)",
     )
     parser.add_argument("--worktree", default=".", help="worktree path (default: cwd)")
     parser.add_argument("--spec", help="optional spec/requirements file path")
@@ -604,7 +610,7 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
             )
 
     try:
-        backend = resolve_review_backend(args, env=os.environ)
+        provider_name = resolve_provider(args, env=os.environ)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -625,28 +631,11 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
         print("ERROR: --max-issues must be >= 1", file=sys.stderr)
         return 1
 
-    cli_config: AnthropicConfig | None = None
-    base_url = ""
-    api_key = ""
-    model = ""
-    if backend == "anthropic":
-        try:
-            cli_config = resolve_anthropic_config(os.environ)
-        except ValueError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 1
-    else:
-        base_url = os.environ.get("EXTERNAL_LLM_API_BASE", "").strip().rstrip("/")
-        api_key = os.environ.get("EXTERNAL_LLM_API_KEY", "").strip()
-        model = os.environ.get("EXTERNAL_LLM_MODEL", "").strip()
-
-        if not base_url or not api_key or not model:
-            print(
-                "ERROR: EXTERNAL_LLM_API_BASE / EXTERNAL_LLM_API_KEY / EXTERNAL_LLM_MODEL"
-                f" missing; copy .env.example to .env inside {skill_dir} and fill in values.",
-                file=sys.stderr,
-            )
-            return 1
+    try:
+        provider = get_provider(provider_name)
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
     try:
         diff = subprocess.check_output(
@@ -694,56 +683,14 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
         spec_block=spec_block,
     )
 
-    if backend == "anthropic":
-        try:
-            assert cli_config is not None
-            print(
-                f"[external-llm-review] backend=anthropic model={cli_config.model}"
-                f" endpoint_host={endpoint_host(cli_config.base_url)}"
-                f" user_agent={ANTHROPIC_USER_AGENT!r}"
-                f" diff_chars={len(diff)}{' (truncated)' if truncated else ''}"
-                f" review_depth={review_depth} review_round={args.review_round}"
-                f" max_issues={args.max_issues}"
-                f" api_timeout_seconds={args.api_timeout_seconds}",
-                file=sys.stderr,
-            )
-            hard_timeout = args.api_timeout_seconds if args.api_timeout_seconds > 0 else None
-            async with asyncio.timeout(hard_timeout):
-                async with httpx.AsyncClient(
-                    base_url=cli_config.base_url,
-                    headers={
-                        "x-api-key": cli_config.api_key,
-                        "content-type": "application/json",
-                        "anthropic-version": "2023-06-01",
-                        "user-agent": ANTHROPIC_USER_AGENT,
-                    },
-                    timeout=hard_timeout or 600.0,
-                ) as client:
-                    payload = build_anthropic_messages_payload(
-                        system_prompt=_REVIEW_SYSTEM_PROMPT,
-                        user_prompt=plain_prompt,
-                        model=cli_config.model,
-                        max_tokens=args.max_output_tokens,
-                    )
-                    r = await client.post("/v1/messages", json=payload)
-                    r.raise_for_status()
-                    data = r.json()
-                    content = extract_anthropic_text(_AttrDict.from_messages(data))
-        except TimeoutError:
-            print(
-                f"ERROR: anthropic messages.create exceeded api_timeout_seconds={args.api_timeout_seconds}",
-                file=sys.stderr,
-            )
-            return 4
-        except Exception as exc:
-            print(f"ERROR: anthropic messages API failed: {describe_api_exception(exc)}", file=sys.stderr)
-            return 4
-
-        print(content)
-        return 0
+    messages = build_chat_messages(
+        user_prompt=user_prompt,
+        spec_block=spec_block,
+    )
 
     print(
-        f"[external-llm-review] backend=api model={model} base={base_url}"
+        f"[external-llm-review] provider={provider_name} model={provider.model}"
+        f" endpoint_host={endpoint_host(provider.base_url)}"
         f" diff_chars={len(diff)}{' (truncated)' if truncated else ''}"
         f" review_depth={review_depth} review_round={args.review_round}"
         f" max_issues={args.max_issues}"
@@ -751,57 +698,27 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
         file=sys.stderr,
     )
 
+    hard_timeout = args.api_timeout_seconds if args.api_timeout_seconds > 0 else None
+    spec = {
+        "temperature": 0.2,
+        "max_tokens": args.max_output_tokens,
+        "timeout": args.api_timeout_seconds,
+    }
+
     try:
-        hard_timeout = args.api_timeout_seconds if args.api_timeout_seconds > 0 else None
         async with asyncio.timeout(hard_timeout):
-            async with httpx.AsyncClient(
-                base_url=base_url,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "content-type": "application/json",
-                },
-                timeout=hard_timeout or 600.0,
-            ) as client:
-                payload_body = {
-                    "model": model,
-                    "messages": build_chat_messages(
-                        user_prompt=user_prompt,
-                        spec_block=spec_block,
-                    ),
-                    "temperature": 0.2,
-                    "enable_thinking": False,
-                    "stream": True,
-                    "stream_options": {"include_usage": True},
-                }
-                if args.max_output_tokens > 0:
-                    payload_body["max_tokens"] = args.max_output_tokens
-                async with client.stream(
-                    "POST", "/chat/completions", json=payload_body
-                ) as r:
-                    r.raise_for_status()
-                    streamed = await extract_openai_stream_content(
-                        parse_sse_lines(r.aiter_lines())
-                    )
-                content = streamed["content"] or streamed["reasoning_content"] or ""
-                if not content:
-                    raise RuntimeError(
-                        "chat stream returned empty content"
-                        f" finish_reason={streamed['finish_reason']}"
-                        f" usage={streamed.get('usage')}"
-                        f" reasoning_len={len(streamed['reasoning_content'])}"
-                    )
+            async with httpx.AsyncClient(timeout=hard_timeout or 600.0) as client:
+                content = await provider.send_chat(client, messages, spec)
     except TimeoutError:
         print(
-            f"ERROR: chat.create exceeded api_timeout_seconds={args.api_timeout_seconds}",
+            f"ERROR: API request exceeded api_timeout_seconds={args.api_timeout_seconds}",
             file=sys.stderr,
         )
         return 4
     except Exception as exc:
-        print(
-            f"ERROR: chat.create failed: {describe_api_exception(exc)}",
-            file=sys.stderr,
-        )
+        print(f"ERROR: API request failed: {describe_api_exception(exc)}", file=sys.stderr)
         return 4
+
     print(content)
     return 0
 

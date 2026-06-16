@@ -269,10 +269,6 @@ class BailianProvider(BaseProvider):
         )
 
     async def send_chat(self, client, messages: list, spec: dict) -> str:
-        """Send a streaming chat completion request and return the response content.
-
-        Bailian requires streaming to avoid the 300s non-streaming timeout.
-        """
         url = f"{self.base_url.rstrip('/')}{self.request_path}"
         headers = self.build_headers()
         payload = self.build_payload(messages, spec)
@@ -281,7 +277,9 @@ class BailianProvider(BaseProvider):
         async with client.stream(
             "POST", url, json=payload, headers=headers, timeout=timeout
         ) as response:
-            response.raise_for_status()
+            if response.status_code >= 400:
+                await response.aread()
+                response.raise_for_status()
             chunks = self._parse_stream_response(response.aiter_lines())
             return await self.extract_stream_content(chunks)
 
