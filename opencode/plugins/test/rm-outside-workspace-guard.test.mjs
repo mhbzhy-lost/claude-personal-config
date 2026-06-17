@@ -156,12 +156,12 @@ describe("rm-outside-workspace-guard temp directories", () => {
   })
 
   it("blocks rm of symlink that points outside /tmp (symlink bypass prevention)", async () => {
-    // Scenario: symlink in /tmp points to something outside /tmp
+    // Scenario: symlink in /tmp points to something OUTSIDE /tmp (e.g., /etc)
+    // This should be blocked to prevent symlink bypass attacks
     const symlinkPath = "/tmp/symlink-bypass-test"
-    const targetOutside = "/tmp/real-target-bypass"
+    const targetOutside = "/etc"  // Definitely not in /tmp whitelist
 
     try {
-      mkdirSync(targetOutside, { recursive: true })
       symlinkSync(targetOutside, symlinkPath)
 
       const hooks = await RmOutsideWorkspaceGuardPlugin()
@@ -176,11 +176,13 @@ describe("rm-outside-workspace-guard temp directories", () => {
         }
       }
 
-      // Both symlink and resolved target are under /tmp - should be allowed
-      await before(input, output)
+      // Symlink points to /etc (outside /tmp) - should be blocked
+      await assert.rejects(
+        async () => before(input, output),
+        { message: /workspace 外 rm 已被阻断/ }
+      )
     } finally {
       try { rmSync(symlinkPath, { force: true }) } catch {}
-      try { rmSync(targetOutside, { recursive: true, force: true }) } catch {}
     }
   })
 

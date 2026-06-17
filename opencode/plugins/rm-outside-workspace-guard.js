@@ -6,7 +6,7 @@
  * manually.
  */
 
-import { existsSync, realpathSync } from "node:fs"
+import { existsSync, lstatSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { resolve, sep } from "node:path"
 
@@ -114,14 +114,44 @@ const isInside = (candidate, root) => {
 // Resolve symlinks for path to prevent symlink bypass attacks
 const isSafeTempDir = (candidate) => {
   try {
-    // Resolve symlinks to get the real path
-    const realPath = realpathSync(candidate)
+    // If path is a symlink, we MUST be able to resolve it
+    // Otherwise deny to prevent TOCTOU race conditions
+    if (existsSync(candidate)) {
+      const stats = lstatSync(candidate)
+      if (stats.isSymbolicLink()) {
+        // For symlinks, strictly require successful resolution
+        const realPath = realpathSync(candidate)
+        return TEMP_DIRS.some((dir) => {
+          const normalizedDir = dir.endsWith(sep) ? dir : dir + sep
+          return realPath === dir || realPath.startsWith(normalizedDir)
+        })
+      }
+      // Path exists but is not a symlink, check if it's in temp dir
+      const realPath = realpathSync(candidate)
+      return TEMP_DIRS.some((dir) => {
+        const normalizedDir = dir.endsWith(sep) ? dir : dir + sep
+        return realPath === dir || realPath.startsWith(normalizedDir)
+      })
+    }
+    
+    // Path doesn't exist yet, fall back to string match
+    // This is safe because there's no symlink to exploit
     return TEMP_DIRS.some((dir) => {
       const normalizedDir = dir.endsWith(sep) ? dir : dir + sep
-      return realPath === dir || realPath.startsWith(normalizedDir)
+      return candidate === dir || candidate.startsWith(normalizedDir)
     })
   } catch {
-    // If path doesn't exist yet, can't check symlinks — fall back to string match
+    // If any check fails, default to unsafe for symlinks
+    try {
+      const stats = lstatSync(candidate)
+      if (stats.isSymbolicLink()) {
+        // Symlink exists but we couldn't resolve it - deny
+        return false
+      }
+    } catch {
+      // Path doesn't exist, use string matching
+    }
+    
     return TEMP_DIRS.some((dir) => {
       const normalizedDir = dir.endsWith(sep) ? dir : dir + sep
       return candidate === dir || candidate.startsWith(normalizedDir)
