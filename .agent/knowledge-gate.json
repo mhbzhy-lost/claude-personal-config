@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "mode": "hint",
+  "rules": [
+    {
+      "id": "agent-runtime",
+      "paths": [
+        "init_opencode.sh",
+        "shared/**"
+      ],
+      "satisfy_by": [
+        "docs/knowledge/**"
+      ],
+      "reason": "这些路径通常改变 agent 运行时、初始化流程或配置契约"
+    },
+    {
+      "id": "plugin-behavior",
+      "paths": [
+        "userconf/plugins/**"
+      ],
+      "satisfy_by": [
+        "docs/knowledge/**"
+      ],
+      "reason": "插件行为变更影响全局 opencode 工作流"
+    },
+    {
+      "id": "global-config",
+      "paths": [
+        "userconf/AGENTS.md",
+        "userconf/AGENTS.reason.md"
+      ],
+      "satisfy_by": [
+        "docs/knowledge/**"
+      ],
+      "reason": "全局规则变更影响所有项目下的 opencode 行为"
+    }
+  ]
+}
