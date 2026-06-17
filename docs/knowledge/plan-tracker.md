@@ -87,10 +87,10 @@ Active plan has pending TODO items:
   时同步更新 `shared/hooks/git-commit-hook.sh` 中的对应 pattern
 - OpenCode plugin 在 `git push` 前触发，如果 script 执行失败（如 Python 环境缺失），
   plugin 应 fail-open 并记录 warning 日志，不能 block 所有 push
-- **路径解析**：OpenCode plugin 使用 `findRepoRoot()` 函数从 `import.meta.url`
-  向上查找 `.git` 目录来定位仓库根目录，不使用硬编码路径或 `__dirname` 相对路径
-  （错误示例：`join(__dirname, "..", "..", "shared", ...)` 会解析到
-  `~/.config/opencode/shared/...` 而不是真正的仓库根目录）
+- **路径解析**：OpenCode plugin 使用 `findRepoRoot(__dirname)` 函数从
+  `opencode/plugins/` 向上查找 `.git` 目录来定位仓库根目录，不使用硬编码路径或
+  `__dirname` 相对路径（错误示例：`"/Users/<user>/claude-config"` 会在其他环境
+  完全失效）
 - Plan 状态为 `completed` / `paused` / `archived` 时，`plan-tracker.py` 应跳过不拦截
 
 ## Symlink 安全

@@ -6,12 +6,28 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { join, resolve as resolvePath } from "node:path";
+import { existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const PLUGIN_DIR = join(realpathSync("/"), "Users", "leshi.zhy", "claude-config", "opencode", "plugins");
-const REPO_ROOT = "/Users/leshi.zhy/claude-config";
-const PLAN_TRACKER_PATH = join(REPO_ROOT, "shared", "hooks", "plan-tracker.py");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+function findRepoRoot(startDir) {
+  let current = startDir;
+  for (let i = 0; i < 5; i++) {
+    if (existsSync(join(current, ".git"))) {
+      return current;
+    }
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return null;
+}
+
+const REPO_ROOT = findRepoRoot(__dirname);
+const PLAN_TRACKER_PATH = REPO_ROOT ? join(REPO_ROOT, "shared", "hooks", "plan-tracker.py") : null;
 
 // Split command by &&, respecting quotes
 function splitCommands(command) {
