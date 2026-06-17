@@ -91,6 +91,9 @@ Active plan has pending TODO items:
   `opencode/plugins/` 向上查找 `.git` 目录来定位仓库根目录，不使用硬编码路径或
   `__dirname` 相对路径（错误示例：`"/Users/<user>/claude-config"` 会在其他环境
   完全失效）
+- **`git -C <path>` 支持**：命令中的 `-C <path>` 会被识别为 scan 目标（优先级：
+  `workdir > git -C path > cwd`）。push 检测 regex 也兼容 `git ... push` 形式
+  （中间可插 `-C`、`--no-verify` 等参数）
 - Plan 状态为 `completed` / `paused` / `archived` 时，`plan-tracker.py` 应跳过不拦截
 
 ## Symlink 安全

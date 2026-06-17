@@ -75,6 +75,14 @@ function isGitCommand(segment) {
   return basename(cmd || "") === "git";
 }
 
+function extractGitCPath(command) {
+  const match = command.match(/\bgit\s+-C\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
+  if (match) {
+    return match[1] || match[2] || match[3];
+  }
+  return null;
+}
+
 // Log warning once if script not found
 let warningLogged = false;
 function logScriptWarning() {
@@ -85,8 +93,8 @@ function logScriptWarning() {
 }
 
 export const PlanTrackerGate = async (ctx) => {
-  const hooks = {
-    before: async (input, output) => {
+  return {
+    "tool.execute.before": async (input, output) => {
       if (input.tool !== "bash") return;
 
       const command = output.args?.command;
@@ -110,13 +118,13 @@ export const PlanTrackerGate = async (ctx) => {
       }
 
       // If command doesn't contain 'git push', we're done
-      if (!/\bgit\s+push\b/.test(command)) return;
+      if (!/\bgit\s+(?:\S+\s+)*push\b/.test(command)) return;
 
       // Skip dry-run, mirror, etc.
       if (/(?:--dry-run|--mirror|-n)\b/.test(command)) return;
 
-      // Scan the actual repo (from workdir or cwd)
-      const repoRoot = output.args?.workdir || process.cwd();
+      // Scan the actual repo (from workdir or git -C or cwd)
+      const repoRoot = output.args?.workdir || extractGitCPath(command) || process.cwd();
       
       try {
         await runPlanTracker(repoRoot);
@@ -129,8 +137,6 @@ export const PlanTrackerGate = async (ctx) => {
       }
     },
   };
-
-  return hooks;
 };
 
 function runPlanTracker(repoRoot) {
