@@ -6,9 +6,10 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join, dirname, basename } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { join, dirname, basename, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -27,6 +28,16 @@ function findRepoRoot(startDir) {
 }
 
 const REPO_ROOT = findRepoRoot(__dirname);
+
+// Allow temp dirs (aligned with rm-outside-workspace-guard)
+const ALLOWED_DIRS = Array.from(new Set([
+  REPO_ROOT,
+  tmpdir(),
+  realpathSync(tmpdir()),
+  "/tmp",
+  realpathSync("/tmp"),
+  "/private/tmp",
+].filter(Boolean))).map(d => realpathSync(d));
 const PLAN_TRACKER_PATH = REPO_ROOT ? join(REPO_ROOT, "shared", "hooks", "plan-tracker.py") : null;
 
 // Split command by &&, respecting quotes
@@ -78,7 +89,17 @@ function isGitCommand(segment) {
 function extractGitCPath(command) {
   const match = command.match(/\bgit\s+-C\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
   if (match) {
-    return match[1] || match[2] || match[3];
+    const rawPath = match[1] || match[2] || match[3];
+    // Resolve to absolute path
+    const resolved = resolvePath(rawPath);
+    const realResolved = realpathSync(resolved);
+    // Validate within workspace or temp dirs (aligned with rm guard)
+    const isAllowed = ALLOWED_DIRS.some(d => realResolved.startsWith(d)) || 
+                      realResolved.startsWith(realpathSync(process.cwd()));
+    if (!isAllowed) {
+      throw new Error(`Path ${resolved} is outside workspace (${REPO_ROOT || process.cwd()})`);
+    }
+    return resolved;
   }
   return null;
 }
@@ -118,17 +139,23 @@ export const PlanTrackerGate = async (ctx) => {
       }
 
       // If command doesn't contain 'git push', we're done
-      if (!/\bgit\s+(?:\S+\s+)*push\b/.test(command)) return;
+      // Pattern limits to 5 tokens between git and push to avoid ReDoS
+      if (!/\bgit\s+(?:\S+\s+){0,5}push\b/.test(command)) return;
 
       // Skip dry-run, mirror, etc.
       if (/(?:--dry-run|--mirror|-n)\b/.test(command)) return;
 
       // Scan the actual repo (from workdir or git -C or cwd)
+      // Priority: workdir > git -C path > cwd
+      // workdir is IDE/Agent explicit context (most trusted), git -C is user hint
       const repoRoot = output.args?.workdir || extractGitCPath(command) || process.cwd();
       
       try {
         await runPlanTracker(repoRoot);
       } catch (error) {
+        if (error.message.startsWith("[tool]")) {
+          throw new Error(`[tool] Plan tracker error: ${error.message}`);
+        }
         throw new Error(
           `Git push blocked: Plan has pending TODO items.\n\n` +
           `${error.message}\n\n` +
@@ -177,7 +204,7 @@ function runPlanTracker(repoRoot) {
       } else {
         const errMsg = stderr.trim() || `exit code ${code}`;
         console.error("[PlanTracker] Python script error:", errMsg);
-        reject(new Error(`Plan tracker failed: ${errMsg}`));
+        reject(new Error(`[tool] Plan tracker failed: ${errMsg}`));
       }
     });
 

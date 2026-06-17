@@ -221,6 +221,32 @@ describe("PlanTrackerGate plugin", () => {
     );
   });
 
+  it("should BLOCK git -C with path traversal attack", async () => {
+    const before = await loadPlugin();
+    const input = { tool: "bash" };
+    // Attempting to scan outside workspace
+    const output = { args: { command: "git -C /etc push" } };
+
+    await assert.rejects(
+      async () => before(input, output),
+      /Path .* is outside workspace/
+    );
+  });
+
+  it("should NOT hang on ReDoS attempt with many spaces", async () => {
+    const before = await loadPlugin();
+    const input = { tool: "bash" };
+    // Craft input with many spaces to trigger ReDoS if vulnerable
+    const spaces = " ".repeat(50);
+    const output = { args: { command: `git${spaces}xxx` } };
+
+    // Should resolve quickly (within 100ms), not hang
+    const start = Date.now();
+    await before(input, output);
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 100, `Took ${elapsed}ms, expected <100ms`);
+  });
+
   it("should BLOCK && mixing with exec shell wrapper on git", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
