@@ -11,38 +11,11 @@ __pycache__/
 *.egg-info/
 .venv/
 uv.lock
-
-# skill-distill pipeline 运行产物（每次执行写一份 timestamp 目录）
-distill/runs/
-
-# skill-distill 本地凭据（含 DEEPSEEK_API_KEY / DASHSCOPE_API_KEY），勿提交
-# .env.example 是模板，需要 commit；.env 才是含 secret 的实例
-distill/.env
-
-# Ollama 项目内部署（完全自包含，不干涉用户系统环境）
-# - vendor/ollama/         = 下载的 binary + MLX/GGML 后端（~170MB）
-# - .ollama-models/        = 模型权重存储（qwen3:4b 约 2.5GB）
-# - .ollama-runtime/       = daemon pid / log
-mcp/skill-catalog/vendor/
-mcp/skill-catalog/.ollama-models/
-mcp/skill-catalog/.ollama-runtime/
-mcp/skill-catalog/.embeddings-cache/
-
-# Claude Code provider 凭据（claude/settings/.env 含 ANTHROPIC_AUTH_TOKEN_*，不入 git）
-claude/settings/.env
-
-# OpenCode cache proxy 本机凭据（含 DASHSCOPE_API_KEY / upstream URL），勿提交
-opencode/proxy/.env
-
-# Qwen Code 本机备份文件
-.qwen/*.orig
-
 # 用户自定义清单：覆盖 lists/*.list 默认值，仅本机生效
 lists/*.local.list
-codex/skills.list.local
 
 # skill 私有 .env 凭据（如 external-llm-review/.env）
-claude-skills/*/.env
+userconf/skills/*/.env
 
 # 并发 task 用的 git worktree 临时目录（subagent-driven-development 流程产物，
 # 整批合并后会清理；过程产物不入仓避免污染主分支）

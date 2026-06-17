@@ -606,8 +606,9 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
         return 1
 
     try:
+        # Exclude deletions (D) and renames (R) to avoid bloating diff with mass file removals
         diff = subprocess.check_output(
-            ["git", "-C", args.worktree, "diff", f"{args.base_sha}..{args.head_sha}"],
+            ["git", "-C", args.worktree, "diff", "--diff-filter=ACM", f"{args.base_sha}..{args.head_sha}"],
             text=True,
         )
     except subprocess.CalledProcessError as e:

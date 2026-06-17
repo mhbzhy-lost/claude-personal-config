@@ -1,15 +1,30 @@
 {
-  "description": "OpenCode YOLO permission policy. Destructive rm outside the workspace is enforced by opencode/plugins/rm-outside-workspace-guard.js, not by coarse permission globs.",
+  "description": "OpenCode YOLO permission policy with layered defenses. rm guard plugin + deny rule double-layered; bash restricted to explicit command whitelist; file tools scoped to workspace.",
   "notes": [
     "OpenCode permissions are glob/command gates, not a filesystem sandbox.",
-    "Keep permissions broadly allow for YOLO mode.",
-    "The rm guard plugin hard-blocks rm targets outside the workspace and tells the agent to print the command for the user to run manually."
+    "Last matching rule wins — insertion order matters.",
+    "rm guard plugin (rm-outside-workspace-guard.js) hard-blocks external rm; permission deny rule is second defense line.",
+    "read/edit/glob/grep use $REPO placeholder resolved at runtime to workspace root.",
+    "bash whitelist replaces wildcard '*': only git, npm, node, python3, rg are explicitly allowed.",
+    "To re-enable full YOLO, replace bash allowlist with { \"*\": \"allow\" }."
   ],
   "template": {
-    "glob": "allow",
-    "grep": "allow",
-    "read": "allow",
-    "edit": "allow",
+    "glob": {
+      "$REPO/**": "allow",
+      "*": "deny"
+    },
+    "grep": {
+      "$REPO/**": "allow",
+      "*": "deny"
+    },
+    "read": {
+      "$REPO/**": "allow",
+      "*": "deny"
+    },
+    "edit": {
+      "$REPO/**": "allow",
+      "*": "deny"
+    },
     "webfetch": "allow",
     "websearch": "allow",
     "question": "allow",
@@ -18,7 +33,19 @@
     "external_directory": "allow",
     "skill": "allow",
     "bash": {
-      "*": "allow"
+      "git": "allow",
+      "git *": "allow",
+      "npm": "allow",
+      "npm *": "allow",
+      "node": "allow",
+      "node *": "allow",
+      "python3": "allow",
+      "python3 *": "allow",
+      "rg": "allow",
+      "rg *": "allow",
+      "rm *": "deny",
+      "sudo rm *": "deny",
+      "*": "deny"
     }
   }
 }

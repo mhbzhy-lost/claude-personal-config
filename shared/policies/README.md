@@ -1,63 +1,35 @@
 # shared/policies/
 
-跨 host 的 wrapper hook / plugin 复用同一份业务规则与文案，存放在此目录。
-**不**是把所有 hook 都"统一"过来——仅限于各端确实都支持同一语义的场景。
-harness 能力差异（例如某 host 没有对应 hook 类型）时尊重差异，不强行统一。
+跨场景的 wrapper hook / plugin 复用同一份业务规则与文案，存放在此目录。
+**不**是把所有 hook 都"统一"过来——仅限于各场景确实都支持同一语义的场景。
+harness 能力差异（例如某场景没有对应 hook 类型）时尊重差异，不强行统一。
 
 ## 当前 SSOT 文件
 
-| 文件 | 各端 wrapper | 何以共用 |
+| 文件 | 各场景 wrapper | 何以共用 |
 |---|---|---|
-| `git-commit-hint.json` | `claude/hooks/git-commit-hint.sh`、`codex/hooks/git-commit-hint.sh`、`qwen/hooks/git-commit-hint.sh`、`opencode/plugins/git-commit-hint.js` | 各端都通过 PreToolUse / `tool.execute.before` 拦截 `git commit`，业务流程（verification-before-completion skill + commit-message skill + 项目内 vendored knowledge gate + 按全局指南判断目标仓知识文档）相同；具体路径硬门禁由目标项目复制进仓的 checker 执行，全局提示只做流程提醒；异源 review 由 push hook 单独控制，不在 commit 提示中暴露 |
-| `skill-resolve-preflight.json` | `claude/hooks/skill-resolve-preflight.sh`、`codex/hooks/skill-resolve-preflight.sh`、`qwen/hooks/skill-resolve-preflight.sh`、`opencode/plugins/skill-resolve-preflight.js` | 各端都需要在 `skill-catalog.resolve` 调用前强制 agent 先做意图识别。tool 名按 host 区分（OpenCode `skill-catalog_resolve` 单下划线 vs claude/codex/qwen 的 `mcp__*` 双下划线）；deny reason 文案完全共用 |
-| `subagent-dispatch-hint.json` | `shared/hooks/subagent-dispatch-hint.sh`（Claude / Codex / Qwen 的 `SubagentStart`）、`opencode/plugins/dag-dispatch-hint.js`（OpenCode `task` 派发前） | 各端都要对齐 `claude/CLAUDE.md` 的 `## 并发` 与 `## Subagent` 规则；OpenCode 没有 `SubagentStart`，因此用 task 派发前插件表达同一约束 |
-
-## 故意**不**进 SSOT 的本仓 hook
-
-| Hook | 在 | 为什么不抽 |
-|---|---|---|
-| `external-llm-review-permission.{py,sh}` | Codex only | Codex 自己的 PermissionRequest hook 用于自动授权 review 子进程命令；其他 host 没有这种"命令准入"机制 |
+| `skill-resolve-preflight.json` | `opencode/plugins/skill-resolve-preflight.js` | OpenCode 需要在 `skill-catalog.resolve` 调用前强制 agent 先做意图识别；deny reason 文案完全共用 |
+| `subagent-dispatch-hint.json` | `opencode/plugins/dag-dispatch-hint.js` | 各端都要对齐 `userconf/AGENTS.md` 的 `## 并发` 与 `## Subagent` 规则 |
+| `git-commit-hint.json` | `templates/knowledge-gate/.opencode/plugins/git-commit-hint.js`（源模板）→ 安装时渲染到目标项目 `.opencode/plugins/git-commit-hint.js`（vendored 副本） | knowledge-gate 项目级 plugin 的文案 SSOT；install-knowledge-gate.sh 把 JSON 中的 template 渲染进 JS 文件的 `HINT_TEXT` 占位符并写入目标 workspace |
+| `todo-scan-policy.md` | `scripts/workflow/code-health-review.mjs`（scan-todos prompt） | TODO/FIXME 扫描白名单的 SSOT；workflow prompt 中的排除路径与本文件保持同步 |
 
 ## 各端工具名映射
 
-共享 hook 脚本（如 `shared/hooks/external-review-gate.sh`）需要兼容不同 host 的工具名：
+共享 hook 脚本（如 `shared/hooks/external-review-gate.sh`）需要兼容不同场景的工具名：
 
-| 概念 | Claude Code | Codex | OpenCode | Qwen Code |
-|---|---|---|---|---|
-| Shell 执行 | `Bash` | `Bash` | `bash` | `run_shell_command` |
-| 文件编辑 | `Edit` | `Edit` | `edit` | `edit` |
-| 文件写入 | `Write` | `Write` | `write` | `write_file` |
-| 文件读取 | `Read` | `Read` | `read` | `read_file` |
-| MCP 工具 | `mcp__<srv>__<tool>` | `mcp__<srv>__<tool>` | `<srv>_<tool>` | `mcp__<srv>__<tool>` |
-
-Qwen Code 参数嵌套：`tool_input.parameters.command`（Claude 是 `tool_input.command`）。共享脚本统一用 `params = tool_input.get("parameters") or tool_input` 兼容。
+| 概念 | OpenCode |
+|---|---|
+| Shell 执行 | `bash` |
+| 文件编辑 | `edit` |
+| 文件写入 | `write` |
+| 文件读取 | `read` |
+| MCP 工具 | `<srv>_<tool>` |
 
 PreToolUse 的放行路径必须保持透明：**stdout 为空且 exit 0**。不要输出
-`permissionDecision: "allow"`；Codex 当前不支持这个值，会报
-`unsupported permissionDecision:allow`。只有阻断路径输出结构化
+`permissionDecision: "allow"`；某些 harness 不支持这个值。只有阻断路径输出结构化
 `permissionDecision: "deny"`。
 
-## Qwen Code 事件支持状态（待验证）
-
-| 事件 | 已注册 hook | 状态 |
-|---|---|---|
-| PreToolUse | git-commit-hint, external-review-gate, coding-guard | ✅ 确认支持 |
-| SubagentStart | subagent-dispatch-hint | ✅ 确认支持 |
-| PostToolUse | test-failure-hint | ⚠️ 试探性注册，待验证 |
-| PostToolUseFailure | circuit-breaker | ⚠️ 试探性注册，待验证 |
-| Stop | stop-verification | ⚠️ 试探性注册，待验证 |
-| SessionStart | memory-loader | ⚠️ 试探性注册，待验证 |
-
-验证方法：`bash init_qwen.sh` 部署后，在 Qwen Code 中操作一轮，观察各 hook 是否触发。或启用 `qwen/hooks/event-probe.sh` 记录所有事件到 `/tmp/.qwen-event-probe.log`。
-
 ## 引用约定
-
-### Shell 端 (Claude / Codex / Qwen Code)
-
-```bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-POLICY_PATH="${SCRIPT_DIR}/../../shared/policies/<file>.json"
-```
 
 ### OpenCode plugin (cp 副本场景)
 
@@ -74,9 +46,7 @@ fallback 一层上对仓内布局解析无效。
 
 ## 添加新 SSOT 文件的检查清单
 
-1. 各端**确实**都有对应 hook 类型可拦截同一场景
-2. 业务规则 / 文案内容各端能用同一份（host-specific 字段如 tool 名通过 JSON
+1. 各场景**确实**都有对应 hook 类型可拦截同一场景
+2. 业务规则 / 文案内容各场景能用同一份（host-specific 字段如 tool 名通过 JSON
    的 `tool_names.<host>` 区分即可）
-3. 各端 wrapper 都更新引用，不留 inline 文案副本
-4. 在 `codex/hooks/tests/test_codex_hooks.py` 加 SSOT 一致性测试，确保未来
-   不会有人把文案 inline 回去
+3. 各场景 wrapper 都更新引用，不留 inline 文案副本

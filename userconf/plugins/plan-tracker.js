@@ -40,7 +40,7 @@ const ALLOWED_DIRS = Array.from(new Set([
 ].filter(Boolean))).map(d => realpathSync(d));
 const PLAN_TRACKER_PATH = REPO_ROOT ? join(REPO_ROOT, "shared", "hooks", "plan-tracker.py") : null;
 
-// Split command by &&, respecting quotes
+// Split command by && and ;, respecting quotes
 function splitCommands(command) {
   const segments = [];
   let current = "";
@@ -61,6 +61,10 @@ function splitCommands(command) {
       if (current.trim()) segments.push(current.trim());
       current = "";
       i++; // skip second &
+    } else if (ch === ";") {
+      // Found ;
+      if (current.trim()) segments.push(current.trim());
+      current = "";
     } else {
       current += ch;
     }
@@ -129,11 +133,10 @@ export const PlanTrackerGate = async (ctx) => {
       
       if (hasGit && hasNonGit) {
         throw new Error(
-          "禁止 && 组合 git 与非 git 命令。\n\n" +
-          "- 单个 git 命令（如 git push）：直接用\n" +
-          "- 多个 git 命令（如 git add && git commit）：允许\n" +
-          "- 切换目录：用 bash tool 的 workdir 参数，不要用 cd\n" +
-          "- 测试/构建后再 push：分两次 bash 调用"
+          "禁止 &&/; 组合 git 与非 git 命令。\n" +
+          "- 单个 git 命令：直接用（git push）\n" +
+          "- 多个 git 命令：允许链式调用（git add && git commit && git push）\n" +
+          "- 切换目录：用 bash tool 的 workdir 参数，不要用 cd"
         );
       }
 
@@ -158,7 +161,8 @@ export const PlanTrackerGate = async (ctx) => {
         throw new Error(
           `Git push blocked: Plan has pending TODO items.\n\n` +
           `${error.message}\n\n` +
-          `Please complete all TODOs or mark them as DONE before pushing.`
+          `Please complete all TODOs or mark them as DONE before pushing.\n` +
+          `重新阅读 verification-before-completion skill，确认所有验证项已落实。`
         );
       }
     },

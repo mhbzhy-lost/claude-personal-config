@@ -19,6 +19,41 @@ memory 内容在支持 SessionStart 的环境已自动注入。
 必须先写 `docs/bugs/bug-<摘要>.md`（根因分析 6 要素），然后再执行修复。
 流程细节见 systematic-debugging skill
 
+## Git Commit 规范
+
+格式：`type(scope): 中文祈使句`，scope 可选。
+
+**Type 白名单**（英文小写）：
+`feat` `fix` `refactor` `perf` `test` `docs` `style` `chore` `build` `ci` `revert`
+
+**标准示范**：
+
+```
+feat(plugins): 增加 commit message 门禁
+
+双层校验：opencode 插件层拦截 bash 工具中的 git commit，
+.githooks/commit-msg 兜底防止绕过 opencode 调用路径。
+
+Ref: #2847
+```
+
+**subject 规则**：
+- 必须包含至少一个中文字符
+- 不超过 50 字，不以句号（。/ .）结尾
+- 祈使句动词开头（增加 / 修复 / 重构），不用过去时（已修复 / 实现了 / 修复了）
+- 禁止零信息词单独作为 subject（fix / update / bugfix / wip / 修改 / 更新）
+- 描述做了什么，why 写到 body
+
+**禁止 AI 署名**：commit message 任何位置不得出现 `Co-Authored-By: Claude/Copilot/Cursor`、
+`Generated with Claude`、`AI-assisted` 等标识。改动描述中提及 AI 工具文件名
+（如 claude-config）不受此限制。
+
+**主观约束**：
+- body 解释 why 而非 what（diff 已说明 what）
+- 一次 commit 对应一个逻辑变更，不合并无关改动
+- 修复 + 测试可放一个 commit；重构 + 修复必须拆开
+- PR 标题遵循 subject 规则
+
 ## 输出语言
 
 编写 skill 可全英文；技术文档（需要人审的文章）默认中文。

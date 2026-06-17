@@ -30,8 +30,8 @@ review, integration, and final judgment.
 This worker requires a skill-local `.env` file by default:
 
 ```bash
-cp "${CLAUDE_CONFIG_HOME}/claude-skills/claude-code-worker/.env.example" \
-   "${CLAUDE_CONFIG_HOME}/claude-skills/claude-code-worker/.env"
+cp "${CLAUDE_CONFIG_HOME}/userconf/skills/claude-code-worker/.env.example" \
+   "${CLAUDE_CONFIG_HOME}/userconf/skills/claude-code-worker/.env"
 ```
 
 The `.env` file must set `ANTHROPIC_BASE_URL` to a private or third-party
@@ -50,7 +50,7 @@ gateway. When only `ANTHROPIC_AUTH_TOKEN` is set, the runner creates a temporary
 2. Run the bundled worker:
 
 ```bash
-SKILL_HOME="${CLAUDE_CONFIG_HOME:-/Users/zhanghaiyang/claude-personal-config}/claude-skills/claude-code-worker"
+SKILL_HOME="${CLAUDE_CONFIG_HOME}/userconf/skills/claude-code-worker"
 
 "${SKILL_HOME}/bin/run.sh" \
   --repo /path/to/repo \

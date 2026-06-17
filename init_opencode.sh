@@ -2,15 +2,14 @@
 # init_opencode.sh
 #
 # 将 claude-config 中 opencode 所需的配置同步到 ~/.config/opencode/。
-# 与 init_claude.sh 互补，不修改任何 Claude Code 配置。
 #
 # 职责：
-#   - MCP server：转为 opencode 原生格式写入 opencode.json（幂等）
-#   - Skills：关闭 Claude Code 兼容加载；保留 OpenCode 原生 skills / plugin
-#   - Instructions：同步 AGENTS.md / Superpowers.md 到 OpenCode 全局规则入口
-#   - OpenAI-compatible cache proxy：调用 vendor/opencode-cache-proxy 自带配置入口
+#   - Plugins：逐文件软链 userconf/plugins → ~/.config/opencode/plugins
+#   - Instructions：软链 userconf/AGENTS.md → ~/.config/opencode/AGENTS.md
+#   - Shared / Docs：软链共享策略与知识文档
+#   - OpenAI-compatible cache proxy：调用 vendor/opencode-cache-proxy 配置入口
 #
-# 不影响 ~/.claude.json / ~/.claude/，可独立运行。
+# 不影响 ~/.claude/，可独立运行。
 #
 # Library mode（仅供单测）：
 #   OPENCODE_INIT_AS_LIBRARY=1 source init_opencode.sh
@@ -160,7 +159,7 @@ ensure_opencode_installed() {
 #       · 真文件副本与仓内不一致时警告保留（疑似用户本地改动）
 #       · 用户自管文件（不在仓内 opencode/plugins/ 中）原样不动
 sync_opencode_plugins() {
-  local src_path="$SRC/opencode/plugins"
+  local src_path="$SRC/userconf/plugins"
   local dst_path="$OPENCODE_CONFIG_DIR/plugins"
 
   if [ ! -d "$src_path" ]; then
@@ -171,28 +170,20 @@ sync_opencode_plugins() {
   mkdir -p "$OPENCODE_CONFIG_DIR"
 
   # 不存在 → 创建真实目录，避免 cache proxy 子仓配置写入时被整目录软链
-  # 重新映射回主仓 opencode/plugins/。
+  # 重新映射回主仓 userconf/plugins/。
   if [ ! -e "$dst_path" ] && [ ! -L "$dst_path" ]; then
     mkdir -p "$dst_path"
     echo "[plugin] $dst_path 已创建（per-file symlink 模式）"
   fi
 
-  # 已是本仓整目录软链 → 迁移为真实目录。cache proxy 插件现在由子仓
-  # 配置入口管理，继续保留整目录软链会把子仓写入反向落到主仓。
+  # 已是软链 → 校验指向是否正确
   if [ -L "$dst_path" ]; then
-    local cur legacy_src_path
+    local cur
     cur=$(readlink "$dst_path")
-    legacy_src_path="$SRC/opencode-plugins"
     if [ "$cur" = "$src_path" ]; then
-      rm -f "$dst_path"
-      mkdir -p "$dst_path"
-      echo "[plugin] $dst_path 从整目录软链迁移为 per-file symlink 模式"
-    elif [ "$cur" = "$legacy_src_path" ]; then
-      rm -f "$dst_path"
-      mkdir -p "$dst_path"
-      echo "[plugin] $dst_path 从旧路径 ${legacy_src_path} 迁移为 per-file symlink 模式"
+      echo "[plugin] $dst_path -> ${src_path}（已就绪）"
     else
-      echo "[warn]  $dst_path 是软链但指向 ${cur}（非本仓 opencode/plugins/），人工核对后再处理"
+      echo "[warn]  $dst_path 是软链但指向 ${cur}（预期 ${src_path}），人工核对后再处理"
       return
     fi
   fi
@@ -200,36 +191,7 @@ sync_opencode_plugins() {
   # 是真目录 → per-file symlink 模式
   echo "[plugin] $dst_path 是真目录，进入 per-file symlink 模式"
 
-  # 退役 plugin：stop-verification 曾在每个 session.idle toast 提醒，噪音过高。
-  # 大型任务结束检查统一挪到 git push gate，因此本仓托管的旧软链可自动清理。
-  # dag-dispatch-hint.js → workflow-hint.js → subagent-hint.js 三次迭代，前两者
-  # 均已退役，统一走 retired 列表。
-  local retired_plugin retired_link retired_target
-  for retired_plugin in "stop-verification.js" "workflow-hint.js" "dag-dispatch-hint.js"; do
-    retired_link="$dst_path/$retired_plugin"
-    if [ -L "$retired_link" ]; then
-      retired_target=$(readlink "$retired_link")
-      case "$retired_target" in
-        "$src_path/$retired_plugin" | */opencode-dynamic-workflow/plugins/"$retired_plugin")
-          rm -f "$retired_link"
-          echo "[plugin] 已移除退役 plugin 软链 $retired_link"
-          ;;
-      esac
-    fi
-  done
-
-  # 清理旧版逐文件软链残留（指向已废弃路径）
-  local legacy_link="$dst_path/git-commit-hint.js"
-  if [ -L "$legacy_link" ]; then
-    local legacy_target
-    legacy_target=$(readlink "$legacy_link")
-    if [ "$legacy_target" = "$SRC/opencode-plugins/git-commit-hint.js" ]; then
-      rm -f "$legacy_link"
-      echo "[plugin] 已清理旧路径软链 $legacy_link"
-    fi
-  fi
-
-  # 仓内 opencode/plugins/ 目前是平铺文件，不递归处理子目录；若未来添加
+  # 仓内 userconf/plugins/ 目前是平铺文件，不递归处理子目录；若未来添加
   # 子目录形态的 plugin，需要在此扩展递归逻辑。
   local src_file dst_file basename current_target
   for src_file in "$src_path"/*; do
@@ -398,14 +360,12 @@ sync_opencode_docs() {
 # ── Global instructions 软链 ────────────────────────────
 # OpenCode 在 OPENCODE_DISABLE_CLAUDE_CODE=1 时不会读取 ~/.claude/CLAUDE.md，
 # 因此需要把本仓全局规则接到 OpenCode 原生全局入口：
-#   ~/.config/opencode/AGENTS.md -> claude/CLAUDE.md
-# Superpowers.md 由 opencode.json.instructions 显式注入；同目录保留软链用于
-# 让该 instruction 能解析到本仓选择性 Superpowers 规则。
+#   ~/.config/opencode/AGENTS.md -> userconf/AGENTS.md
 sync_opencode_instructions() {
   mkdir -p "$OPENCODE_CONFIG_DIR"
 
   local src_path dst_path cur
-  for entry in "claude/CLAUDE.md:AGENTS.md" "claude/Superpowers.md:Superpowers.md"; do
+  for entry in "userconf/AGENTS.md:AGENTS.md"; do
     src_path="$SRC/${entry%%:*}"
     dst_path="$OPENCODE_CONFIG_DIR/${entry##*:}"
 
@@ -473,15 +433,6 @@ else
   echo "[skip]  vendor/opencode-dynamic-workflow 不存在，跳过 workflow 配置"
 fi
 
-# ── MCP 变量（与 init_claude.sh 保持一致） ──────────────
-SKILL_CATALOG_DIR="$SRC/mcp/skill-catalog"
-SKILL_CATALOG_VENV="$SKILL_CATALOG_DIR/.venv"
-MCP_CMD="$SKILL_CATALOG_VENV/bin/python"
-
-EMBEDDING_MODEL="${SKILL_CATALOG_EMBEDDING_MODEL:-bge-m3}"
-OLLAMA_PORT="${SKILL_CATALOG_OLLAMA_PORT:-11435}"
-OLLAMA_HOST_URL="http://127.0.0.1:$OLLAMA_PORT"
-ENABLE_INTENT_ENHANCEMENT="${ENABLE_INTENT_ENHANCEMENT:-true}"
 
 mkdir -p "$OPENCODE_CONFIG_DIR"
 
@@ -501,20 +452,12 @@ fi
 #   - 已有但值不同 → 覆盖（告警）
 #   - 不存在 → 新增
 export OPENCODE_JSON="$OPENCODE_JSON"
-export MCP_CMD="$MCP_CMD"
 export SRC="$SRC"
-export EMBEDDING_MODEL="$EMBEDDING_MODEL"
-export OLLAMA_HOST_URL="$OLLAMA_HOST_URL"
-export ENABLE_INTENT_ENHANCEMENT="$ENABLE_INTENT_ENHANCEMENT"
 $PY -c '
 import json, os, sys
 
 config_path = os.environ["OPENCODE_JSON"]
-venv_python = os.environ["MCP_CMD"]
 src = os.environ["SRC"]
-embedding_model = os.environ["EMBEDDING_MODEL"]
-ollama_host = os.environ["OLLAMA_HOST_URL"]
-intent_enhancement = os.environ["ENABLE_INTENT_ENHANCEMENT"]
 
 config = {}
 if os.path.exists(config_path):
@@ -527,35 +470,6 @@ if os.path.exists(config_path):
 
 mcp = config.setdefault("mcp", {})
 changed = False
-
-if "skill-catalog" in mcp:
-    mcp.pop("skill-catalog", None)
-    changed = True
-    print("[mcp] skill-catalog 已移除（源码保留）")
-
-if "block-catalog" in mcp:
-    mcp.pop("block-catalog", None)
-    changed = True
-    print("[mcp] block-catalog 已移除（源码保留）")
-
-# ── Instructions ──
-# OpenCode 不展开 AGENTS.md 里的 @file 引用；通过原生 instructions 字段
-# 让 Superpowers.md 与 AGENTS.md 一起注入。
-desired_instruction = "Superpowers.md"
-existing_instructions = config.get("instructions")
-if existing_instructions is None:
-    config["instructions"] = [desired_instruction]
-    changed = True
-    print("[instructions] Superpowers.md 新增")
-elif isinstance(existing_instructions, list):
-    if desired_instruction not in existing_instructions:
-        existing_instructions.append(desired_instruction)
-        changed = True
-        print("[instructions] Superpowers.md 已追加")
-    else:
-        print("[instructions] Superpowers.md 已是最新")
-else:
-    print("[warn]  instructions 字段不是 list，跳过 Superpowers.md 自动追加")
 
 # ── playwright-mcp ──
 # 暴露两个 server，agent 自由选用：
@@ -593,23 +507,6 @@ if existing_pw_headless != desired_pw_headless:
 else:
     print("[mcp] playwright-mcp-headless 已是最新")
 
-# ── Plugin ──
-existing_plugins = config.get("plugin")
-retired_plugins = {f"{src}/vendor/superpowers"}
-if isinstance(existing_plugins, list):
-    kept_plugins = [item for item in existing_plugins if item not in retired_plugins]
-    if kept_plugins != existing_plugins:
-        if kept_plugins:
-            config["plugin"] = kept_plugins
-        else:
-            config.pop("plugin", None)
-        changed = True
-        print("[plugin] 已移除 vendor/superpowers plugin，保留用户自管 plugin")
-    else:
-        print("[plugin] plugin 已是最新")
-else:
-    print("[plugin] plugin 已是最新")
-
 # ── LSP ──
 # 内置 LSP 仅支持 boolean (true/false) 或 object (disable/custom)。
 # 空对象 {} 违反 schema 会导致 ConfigInvalidError，改用 lsp: true
@@ -630,9 +527,9 @@ else:
     print("[warn]  lsp 字段类型异常，跳过")
 
 # ── Permission ──
-# opencode-permission.json 是 SSOT 模板，写入 opencode.json.permission。
+# permission.json 是 SSOT 模板，写入 opencode.json.permission。
 # 不做增量合并：整体替换模板内容，保持与仓内 SSOT 文件一致。
-permission_path = os.path.join(src, "opencode", "opencode-permission.json")
+permission_path = os.path.join(src, "userconf", "permission.json")
 if os.path.exists(permission_path):
     try:
         with open(permission_path) as f:
@@ -668,8 +565,7 @@ else:
 # ── OpenCode 运行环境注册到 ~/.zshrc ──────────────────
 # OpenCode 的 opencode.json 没有 top-level env 字段（仅 mcp.<name>.environment
 # 可设；不覆盖 agent 主进程），shell 环境变量是 skill 中
-# ${CLAUDE_CONFIG_HOME} 引用的唯一一致来源。逻辑与
-# init_claude.sh / init_codex.sh 保持一致：
+# ${CLAUDE_CONFIG_HOME} 引用的唯一一致来源。
 #   变量存在且值一致（允许前后空白、可选 export、尾部注释）→ no-op
 #   变量存在但值不同 → warn 不覆盖
 #   完全不存在 → 追加

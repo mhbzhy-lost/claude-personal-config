@@ -11,8 +11,8 @@ GIT_DIR="$(git rev-parse --git-dir 2>/dev/null)" || GIT_DIR=".git"
 # Resolve relative --git-dir against GIT_TOP (needed for submodules where --git-dir returns relative path)
 case "$GIT_DIR" in /*) ;; *) GIT_DIR="${GIT_TOP}/${GIT_DIR}" ;; esac
 export MARKER_DIR="${GIT_DIR}/review-markers"
-export REVIEWER_PY="${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/reviewer.py"
-export REVIEWER_ENV="${CLAUDE_CONFIG_HOME}/claude-skills/external-llm-review/.env"
+export REVIEWER_PY="${CLAUDE_CONFIG_HOME}/userconf/skills/external-llm-review/reviewer.py"
+export REVIEWER_ENV="${CLAUDE_CONFIG_HOME}/userconf/skills/external-llm-review/.env"
 
 python3 -c '
 import calendar, hashlib, json, os, re, subprocess, sys, time
@@ -287,12 +287,13 @@ if not Path(REVIEWER_ENV).is_file():
 
 # --- Get diff stats for exemption ---
 try:
+    # Exclude deletions (D) and renames (R) to avoid bloating with mass file removals
     diff_stat = subprocess.check_output(
-        ["git", "diff", "--stat", f"{base_ref}..HEAD"],
+        ["git", "diff", "--diff-filter=ACM", "--stat", f"{base_ref}..HEAD"],
         text=True, stderr=subprocess.DEVNULL
     ).strip()
     diff_numstat = subprocess.check_output(
-        ["git", "diff", "--numstat", f"{base_ref}..HEAD"],
+        ["git", "diff", "--diff-filter=ACM", "--numstat", f"{base_ref}..HEAD"],
         text=True, stderr=subprocess.DEVNULL
     ).strip()
 except Exception:
@@ -330,8 +331,9 @@ if diff_numstat:
 
 # --- Compute diff hash ---
 try:
+    # Exclude deletions (D) and renames (R) to match reviewer.py behavior
     diff_content = subprocess.check_output(
-        ["git", "diff", f"{base_ref}..HEAD"],
+        ["git", "diff", "--diff-filter=ACM", f"{base_ref}..HEAD"],
         text=True, stderr=subprocess.DEVNULL
     )
     diff_hash = hashlib.sha256(diff_content.encode()).hexdigest()[:16]

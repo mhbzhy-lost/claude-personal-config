@@ -142,7 +142,7 @@ describe("PlanTrackerGate plugin", () => {
 
     await assert.rejects(
       async () => before(input, output),
-      /禁止 && 组合 git 与非 git 命令/
+      /禁止 .*组合 git 与非 git 命令/
     );
   });
 
@@ -153,7 +153,7 @@ describe("PlanTrackerGate plugin", () => {
 
     await assert.rejects(
       async () => before(input, output),
-      /禁止 && 组合 git 与非 git 命令/
+      /禁止 .*组合 git 与非 git 命令/
     );
   });
 
@@ -169,16 +169,34 @@ describe("PlanTrackerGate plugin", () => {
     }
   });
 
-  it("should ALLOW ; with mixed commands (not restricted)", async () => {
+  it("should BLOCK ; with mixed commands (git + non-git)", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
     const output = { args: { command: "cd /tmp/repo; git push" } };
 
-    try {
-      await before(input, output);
-    } catch (error) {
-      assert.ok(!error.message.includes("禁止 && 组合"));
-    }
+    await assert.rejects(
+      async () => before(input, output),
+      /禁止 .*组合 git 与非 git 命令/
+    );
+  });
+
+  it("should BLOCK ; with npm test and git status", async () => {
+    const before = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "npm test; git status" } };
+
+    await assert.rejects(
+      async () => before(input, output),
+      /禁止 .*组合 git 与非 git 命令/
+    );
+  });
+
+  it("should ALLOW ; with only git commands", async () => {
+    const before = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "git status; git log" } };
+
+    await before(input, output);
   });
 
   it("should ALLOW | pipes (not restricted)", async () => {
@@ -221,6 +239,22 @@ describe("PlanTrackerGate plugin", () => {
     );
   });
 
+  it("should mention verification-before-completion skill in block message", async () => {
+    const before = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "git -C /tmp/plan-test-work push" } };
+
+    try {
+      await before(input, output);
+      assert.fail("Expected rejection");
+    } catch (error) {
+      assert.ok(
+        error.message.includes("verification-before-completion"),
+        `Error should mention verification-before-completion skill: ${error.message}`
+      );
+    }
+  });
+
   it("should BLOCK git -C with path traversal attack", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
@@ -254,7 +288,7 @@ describe("PlanTrackerGate plugin", () => {
 
     await assert.rejects(
       async () => before(input, output),
-      /禁止 && 组合 git 与非 git 命令/
+      /禁止 .*组合 git 与非 git 命令/
     );
   });
 
@@ -265,7 +299,7 @@ describe("PlanTrackerGate plugin", () => {
 
     await assert.rejects(
       async () => before(input, output),
-      /禁止 && 组合 git 与非 git 命令/
+      /禁止 .*组合 git 与非 git 命令/
     );
   });
 

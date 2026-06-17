@@ -35,7 +35,7 @@ review, integration, and final judgment.
 2. Run the bundled worker:
 
 ```bash
-SKILL_HOME="${CLAUDE_CONFIG_HOME:-/Users/mhbzhy/claude-config}/claude-skills/opencode-deepseek-worker"
+SKILL_HOME="${CLAUDE_CONFIG_HOME}/userconf/skills/opencode-deepseek-worker"
 
 "$SKILL_HOME/bin/run.sh" \
   --repo /path/to/repo \
