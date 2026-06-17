@@ -87,17 +87,16 @@ function isGitCommand(segment) {
 }
 
 function extractGitCPath(command) {
-  const match = command.match(/\bgit\s+-C\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
+  const match = command.match(/\bgit\s+(?:\S+\s+)*-C\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
   if (match) {
     const rawPath = match[1] || match[2] || match[3];
-    // Resolve to absolute path
     const resolved = resolvePath(rawPath);
-    const realResolved = realpathSync(resolved);
-    // Validate within workspace or temp dirs (aligned with rm guard)
-    const isAllowed = ALLOWED_DIRS.some(d => realResolved.startsWith(d)) || 
+    let realResolved;
+    try { realResolved = realpathSync(resolved); } catch { realResolved = resolved; }
+    const isAllowed = ALLOWED_DIRS.some(d => realResolved.startsWith(d)) ||
                       realResolved.startsWith(realpathSync(process.cwd()));
     if (!isAllowed) {
-      throw new Error(`Path ${resolved} is outside workspace (${REPO_ROOT || process.cwd()})`);
+      throw new Error(`Path is outside allowed workspace boundaries`);
     }
     return resolved;
   }

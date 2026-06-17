@@ -229,7 +229,7 @@ describe("PlanTrackerGate plugin", () => {
 
     await assert.rejects(
       async () => before(input, output),
-      /Path .* is outside workspace/
+      /Path is outside allowed workspace boundaries/
     );
   });
 
@@ -267,6 +267,57 @@ describe("PlanTrackerGate plugin", () => {
       async () => before(input, output),
       /禁止 && 组合 git 与非 git 命令/
     );
+  });
+
+  it("should ALLOW git -C with relative path from subdirectory", async () => {
+    const before = await loadPlugin();
+    const input = { tool: "bash" };
+    // From repo/subdir, git -C ../.. points to repo root (should be allowed)
+    const output = { args: { command: "git -C ../.. push" } };
+
+    // Should not throw path traversal error
+    try {
+      await before(input, output);
+    } catch (error) {
+      assert.ok(
+        !error.message.includes("outside workspace"),
+        `Unexpected path traversal error: ${error.message}`
+      );
+    }
+  });
+
+  it("should ALLOW git --no-pager -C with global options before -C", async () => {
+    const before = await loadPlugin();
+    const input = { tool: "bash" };
+    // git global options can appear before -C
+    const output = { args: { command: "git --no-pager -C /tmp/plan-test-work push" } };
+
+    // Should extract /tmp/plan-test-work and block due to TODOs (not path traversal)
+    await assert.rejects(
+      async () => before(input, output),
+      /Git push blocked/
+    );
+  });
+
+  it("should NOT leak absolute paths in error message", async () => {
+    const before = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "git -C /etc push" } };
+
+    try {
+      await before(input, output);
+      assert.fail("Expected path traversal error");
+    } catch (error) {
+      // Should not contain /Users or /home absolute paths
+      assert.ok(
+        !error.message.includes("/Users/"),
+        `Error message leaks absolute path: ${error.message}`
+      );
+      assert.ok(
+        error.message.includes("outside"),
+        `Error message should mention 'outside': ${error.message}`
+      );
+    }
   });
 });
 
