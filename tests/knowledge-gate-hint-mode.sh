@@ -15,7 +15,8 @@ git config user.name "Test User"
 mkdir -p .agent/hooks
 
 # Copy knowledge-gate.py
-cp /Users/leshi.zhy/claude-config/.agent/hooks/knowledge-gate.py .agent/hooks/
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cp "${REPO_ROOT}/.agent/hooks/knowledge-gate.py" .agent/hooks/
 
 # Test 1: Block mode (default behavior)
 echo -e "\n--- Test 1: Block mode (should fail) ---"

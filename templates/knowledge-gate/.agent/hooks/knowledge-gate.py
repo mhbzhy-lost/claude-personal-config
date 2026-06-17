@@ -51,7 +51,7 @@ def _load_config(config_path: Path) -> tuple[dict[str, Any] | None, str | None]:
 
 
 def _staged_files(repo: Path) -> list[str] | None:
-    proc = _run_git(repo, ["diff", "--cached", "--name-only", "--diff-filter=ACMRT"])
+    proc = _run_git(repo, ["diff", "--cached", "--name-only", "--diff-filter=ACM"])
     if proc.returncode != 0:
         detail = proc.stderr.strip() or "unknown error"
         print(f"knowledge-gate: git diff failed: {detail}", file=sys.stderr)

@@ -37,3 +37,4 @@ blocks/*/component/frontend/node_modules
 
 # hook execution logs (diagnostic, not source)
 logs/
+.workflow-stdout.log
