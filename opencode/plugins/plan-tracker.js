@@ -7,7 +7,7 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,7 +15,7 @@ const __dirname = dirname(__filename);
 
 function findRepoRoot(startDir) {
   let current = startDir;
-  for (let i = 0; i < 5; i++) {
+  while (true) {
     if (existsSync(join(current, ".git"))) {
       return current;
     }
@@ -60,15 +60,19 @@ function splitCommands(command) {
   return segments;
 }
 
+const SHELL_WRAPPERS = new Set(["exec", "command", "sudo", "nohup", "env"]);
+
 function isGitCommand(segment) {
-  // Handle env var prefix like VAR=val git ...
   const parts = segment.trim().split(/\s+/);
   let idx = 0;
   while (idx < parts.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(parts[idx])) {
     idx++;
   }
+  while (idx < parts.length && SHELL_WRAPPERS.has(parts[idx])) {
+    idx++;
+  }
   const cmd = parts[idx];
-  return cmd === "git" || cmd?.endsWith("/git");
+  return basename(cmd || "") === "git";
 }
 
 // Log warning once if script not found
@@ -139,6 +143,7 @@ function runPlanTracker(repoRoot) {
     const proc = spawn("python3", [PLAN_TRACKER_PATH, repoRoot], {
       cwd: repoRoot,
       stdio: ["ignore", "pipe", "pipe"],
+      timeout: 30_000,
     });
 
     let stdout = "";
@@ -152,7 +157,12 @@ function runPlanTracker(repoRoot) {
       stderr += data.toString();
     });
 
-    proc.on("close", (code) => {
+    proc.on("close", (code, signal) => {
+      if (signal === "SIGTERM") {
+        console.error("[PlanTracker] Timeout (30s) exceeded");
+        resolvePromise();
+        return;
+      }
       if (code === 0) {
         resolvePromise();
       } else if (code === 1) {

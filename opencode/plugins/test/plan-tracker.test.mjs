@@ -202,15 +202,35 @@ describe("PlanTrackerGate plugin", () => {
   it("should use output.args.workdir as scan target when set", async () => {
     const hooks = await loadPlugin();
     const input = { tool: "bash" };
-    // Point to a dir with no plan-tracker.py nearby - just verify it doesn't crash
     const output = { args: { command: "git push", workdir: "/tmp" } };
 
     try {
       await hooks.before(input, output);
     } catch (error) {
-      // May throw plan-tracker.py failure; must not throw mixing error
       assert.ok(!error.message.includes("禁止 && 组合"));
     }
+  });
+
+  it("should BLOCK && mixing with exec shell wrapper on git", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "exec git push && npm test" } };
+
+    await assert.rejects(
+      async () => hooks.before(input, output),
+      /禁止 && 组合 git 与非 git 命令/
+    );
+  });
+
+  it("should BLOCK && mixing with sudo shell wrapper on git", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "sudo git push && npm test" } };
+
+    await assert.rejects(
+      async () => hooks.before(input, output),
+      /禁止 && 组合 git 与非 git 命令/
+    );
   });
 });
 

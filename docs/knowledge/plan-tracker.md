@@ -131,7 +131,7 @@ Active plan has pending TODO items:
 # 测试 plan-tracker.py 核心逻辑
 cd shared/hooks && python3 test_plan_tracker.py
 
-# 测试 OpenCode plugin（22 tests，含 && mixing 规则）
+# 测试 OpenCode plugin（24 tests，含 && mixing + shell wrapper 规则）
 cd opencode/plugins && node --test test/plan-tracker.test.mjs
 
 # 测试 rm 临时目录白名单 + symlink 安全（9 tests）
