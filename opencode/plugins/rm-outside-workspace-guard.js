@@ -100,6 +100,16 @@ const isInside = (candidate, root) => {
   return candidate === root || candidate.startsWith(normalizedRoot)
 }
 
+// System temp directories - safe to delete outside workspace
+const TEMP_DIRS = ["/tmp", "/private/tmp"]
+
+const isSafeTempDir = (candidate) => {
+  return TEMP_DIRS.some((dir) => {
+    const normalizedDir = dir.endsWith(sep) ? dir : dir + sep
+    return candidate === dir || candidate.startsWith(normalizedDir)
+  })
+}
+
 const commandStartIndex = (tokens) => {
   let index = 0
   if (tokens[index] === "env") index += 1
@@ -148,7 +158,7 @@ const checkedRmTargets = (command, workspaceRoot, initialCwd) => {
         continue
       }
       const absoluteTarget = normalizeExistingOrLexical(resolve(cwd, target))
-      if (!isInside(absoluteTarget, workspaceRoot)) {
+      if (!isInside(absoluteTarget, workspaceRoot) && !isSafeTempDir(absoluteTarget)) {
         blocked.push({ target, absoluteTarget })
       }
     }
