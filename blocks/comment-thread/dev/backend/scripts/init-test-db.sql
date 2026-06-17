@@ -1,1 +1,0 @@
-CREATE DATABASE ct_test OWNER ct;

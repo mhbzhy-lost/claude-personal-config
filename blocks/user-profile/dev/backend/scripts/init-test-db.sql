@@ -1,1 +1,0 @@
-CREATE DATABASE up_test OWNER up;

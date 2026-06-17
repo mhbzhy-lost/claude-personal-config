@@ -1,1 +1,0 @@
-CREATE DATABASE cpl_test OWNER cpl;

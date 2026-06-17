@@ -1,1 +1,0 @@
-CREATE DATABASE pd_test OWNER pd;
