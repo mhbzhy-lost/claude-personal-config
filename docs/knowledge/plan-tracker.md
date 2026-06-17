@@ -87,22 +87,35 @@ Active plan has pending TODO items:
   时同步更新 `shared/hooks/git-commit-hook.sh` 中的对应 pattern
 - OpenCode plugin 在 `git push` 前触发，如果 script 执行失败（如 Python 环境缺失），
   plugin 应 fail-open 并记录 warning 日志，不能 block 所有 push
-- OpenCode plugin 使用 `REPO_ROOT` 常量（优先读 `CLAUDE_CONFIG_HOME` 环境变量，
-  默认 `~/.config/opencode`）定位 `shared/hooks/plan-tracker.py`，不要用 `__dirname`
-  相对路径（plugin 实际运行在 `~/.config/opencode/plugins/`，找不到 shared 目录）
+- **路径解析**：OpenCode plugin 使用 `findRepoRoot()` 函数从 `import.meta.url`
+  向上查找 `.git` 目录来定位仓库根目录，不使用硬编码路径或 `__dirname` 相对路径
+  （错误示例：`join(__dirname, "..", "..", "shared", ...)` 会解析到
+  `~/.config/opencode/shared/...` 而不是真正的仓库根目录）
 - Plan 状态为 `completed` / `paused` / `archived` 时，`plan-tracker.py` 应跳过不拦截
+
+## Symlink 安全
+
+`rm-outside-workspace-guard.js` 的临时目录白名单使用 `realpathSync()` 解析
+符号链接，防止攻击者在 `/tmp` 中创建指向敏感目录的 symlink 绕过检查。
+
+白名单同时包含原始路径和 realpath 解析后的路径（如 `/tmp` 和 `/private/tmp`），
+以处理 macOS 的 symlink 重定向。
 
 ## 验证方式
 
 ```bash
-# 测试 plan-tracker.py 核心逻辑
+# 测试 plan-tracker.py 核心逻辑（12 tests）
 cd shared/hooks && python3 test_plan_tracker.py
 
-# 测试 OpenCode plugin
-cd opencode/plugins && npm test test/plan-tracker.test.mjs
+# 测试 OpenCode plugin（15 tests）
+cd opencode/plugins && node --test test/plan-tracker.test.mjs
+
+# 测试 rm 临时目录白名单 + symlink 安全（9 tests）
+cd opencode/plugins && node --test test/rm-outside-workspace-guard.test.mjs
 
 # 端到端测试：创建一个含 TODO 的 plan，尝试 push 应被拦截
-echo -e "---\ntitle: Test\nstatus: active\n---\n- TODO: Test task" > /tmp/test-plan.md
+mkdir -p /tmp/test-plan-dir
+echo -e "---\ntitle: Test\nstatus: active\n---\n- TODO: Test task" > /tmp/test-plan-dir/test-plan.md
 # 在 OpenCode 中执行 git push，观察是否被拦截
 ```
 

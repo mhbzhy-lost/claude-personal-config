@@ -7,7 +7,18 @@
  */
 
 import { existsSync, realpathSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { resolve, sep } from "node:path"
+
+// Build temp dirs list: both original and realpath-resolved versions
+// /var -> /private/var and /tmp -> /private/tmp are common macOS symlinks
+const TEMP_DIRS = Array.from(new Set([
+  tmpdir(),
+  realpathSync(tmpdir()),
+  "/tmp",
+  realpathSync("/tmp"),
+  "/private/tmp",
+]))
 
 const CONTROL_SPLIT = new Set([";", "&&", "||"])
 const WRAPPER_COMMANDS = new Set(["sudo", "command"])
@@ -100,14 +111,22 @@ const isInside = (candidate, root) => {
   return candidate === root || candidate.startsWith(normalizedRoot)
 }
 
-// System temp directories - safe to delete outside workspace
-const TEMP_DIRS = ["/tmp", "/private/tmp"]
-
+// Resolve symlinks for path to prevent symlink bypass attacks
 const isSafeTempDir = (candidate) => {
-  return TEMP_DIRS.some((dir) => {
-    const normalizedDir = dir.endsWith(sep) ? dir : dir + sep
-    return candidate === dir || candidate.startsWith(normalizedDir)
-  })
+  try {
+    // Resolve symlinks to get the real path
+    const realPath = realpathSync(candidate)
+    return TEMP_DIRS.some((dir) => {
+      const normalizedDir = dir.endsWith(sep) ? dir : dir + sep
+      return realPath === dir || realPath.startsWith(normalizedDir)
+    })
+  } catch {
+    // If path doesn't exist yet, can't check symlinks — fall back to string match
+    return TEMP_DIRS.some((dir) => {
+      const normalizedDir = dir.endsWith(sep) ? dir : dir + sep
+      return candidate === dir || candidate.startsWith(normalizedDir)
+    })
+  }
 }
 
 const commandStartIndex = (tokens) => {

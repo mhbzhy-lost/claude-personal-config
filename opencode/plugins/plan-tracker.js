@@ -6,10 +6,39 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const REPO_ROOT = process.env.CLAUDE_CONFIG_HOME || "/Users/leshi.zhy/claude-config";
-const PLAN_TRACKER_PATH = join(REPO_ROOT, "shared", "hooks", "plan-tracker.py");
+// Derive repo root from plugin location, walk up to find repo root
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PLUGIN_DIR = __dirname;
+
+// Walk up directory tree to find repo root
+function findRepoRoot(startDir) {
+  let current = startDir;
+  for (let i = 0; i < 5; i++) {
+    if (existsSync(join(current, ".git"))) {
+      return current;
+    }
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return null;
+}
+
+const REPO_ROOT = findRepoRoot(PLUGIN_DIR);
+const PLAN_TRACKER_PATH = REPO_ROOT ? join(REPO_ROOT, "shared", "hooks", "plan-tracker.py") : null;
+
+// Log warning once if script not found
+let warningLogged = false;
+function logScriptWarning() {
+  if (!warningLogged && !PLAN_TRACKER_PATH) {
+    console.error("[PlanTracker] Warning: cannot find repo root or plan-tracker.py");
+    warningLogged = true;
+  }
+}
 
 export const PlanTrackerGate = async (ctx) => {
   const hooks = {
@@ -55,13 +84,17 @@ export const PlanTrackerGate = async (ctx) => {
 };
 
 function runPlanTracker() {
-  return new Promise((resolve, reject) => {
-    if (!existsSync(PLAN_TRACKER_PATH)) {
-      // Script not found, allow push (fail open)
-      resolve();
-      return;
-    }
+  if (!PLAN_TRACKER_PATH || !REPO_ROOT) {
+    logScriptWarning();
+    return Promise.resolve();
+  }
 
+  if (!existsSync(PLAN_TRACKER_PATH)) {
+    logScriptWarning();
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
     const proc = spawn("python3", [PLAN_TRACKER_PATH, REPO_ROOT], {
       cwd: REPO_ROOT,
       stdio: ["ignore", "pipe", "pipe"],
@@ -82,17 +115,20 @@ function runPlanTracker() {
       if (code === 0) {
         resolve();
       } else if (code === 1) {
-        // Has pending TODOs
-        reject(new Error(stdout.trim()));
+        // Has pending TODOs — stdout already contains the formatted message
+        const output = stdout.trim();
+        reject(new Error(output || "Plan has pending TODO items"));
       } else {
-        // Unexpected error, block push to be safe
-        reject(new Error(`plan-tracker.py failed with exit code ${code}: ${stderr}`));
+        // Unexpected error — include stderr for diagnosis
+        const errMsg = stderr.trim() || `exit code ${code}`;
+        console.error("[PlanTracker] Python script error:", errMsg);
+        reject(new Error(`Plan tracker failed: ${errMsg}`));
       }
     });
 
     proc.on("error", (err) => {
-      // Failed to spawn, fail open
-      console.error("[PlanTrackerGate] Failed to run plan-tracker.py:", err.message);
+      // Failed to spawn (e.g. python3 not found) — fail open
+      console.error("[PlanTracker] Failed to run plan-tracker.py:", err.message);
       resolve();
     });
   });
