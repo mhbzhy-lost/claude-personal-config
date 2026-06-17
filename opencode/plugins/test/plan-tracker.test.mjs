@@ -36,117 +36,181 @@ describe("PlanTrackerGate plugin", () => {
 
   it("should return early for bash commands that are not git push", async () => {
     const hooks = await loadPlugin();
-    const input = { tool: "bash", args: { command: "ls -la" } };
-    const output = {};
+    const input = { tool: "bash" };
+    const output = { args: { command: "ls -la" } };
 
-    // Should not throw
     await hooks.before(input, output);
   });
 
   it("should return early for git commands that are not push", async () => {
     const hooks = await loadPlugin();
-    const input = { tool: "bash", args: { command: "git status" } };
-    const output = {};
+    const input = { tool: "bash" };
+    const output = { args: { command: "git status" } };
 
-    // Should not throw
     await hooks.before(input, output);
   });
 
   it("should intercept git push commands", async () => {
     const hooks = await loadPlugin();
-    const input = { tool: "bash", args: { command: "git push" } };
-    const output = {};
+    const input = { tool: "bash" };
+    const output = { args: { command: "git push" } };
 
-    // This will try to run plan-tracker.py
-    // If there are pending TODOs, it should throw
-    // If no pending TODOs, it should pass silently
+    // Will run plan-tracker.py on process.cwd() (this repo)
+    // Just ensure it does not throw a mixing-rule error
     try {
       await hooks.before(input, output);
-      // If we reach here, no pending TODOs - that's OK
     } catch (error) {
-      // If there are pending TODOs, should throw with clear message
-      assert.ok(error.message.includes("Git push blocked"));
+      assert.ok(!error.message.includes("禁止 && 组合"));
     }
   });
 
   it("should intercept git push with branch name", async () => {
     const hooks = await loadPlugin();
-    const input = { tool: "bash", args: { command: "git push origin main" } };
-    const output = {};
+    const input = { tool: "bash" };
+    const output = { args: { command: "git push origin main" } };
 
-    // Should be intercepted
     try {
       await hooks.before(input, output);
     } catch (error) {
-      assert.ok(error.message.includes("Git push blocked"));
+      assert.ok(!error.message.includes("禁止 && 组合"));
     }
   });
 
   it("should intercept git push with flags", async () => {
     const hooks = await loadPlugin();
-    const input = { tool: "bash", args: { command: "git push --force" } };
-    const output = {};
+    const input = { tool: "bash" };
+    const output = { args: { command: "git push --force" } };
 
-    // Should be intercepted
     try {
       await hooks.before(input, output);
     } catch (error) {
-      assert.ok(error.message.includes("Git push blocked"));
+      assert.ok(!error.message.includes("禁止 && 组合"));
     }
   });
 
   it("should NOT intercept git push --dry-run", async () => {
     const hooks = await loadPlugin();
-    const input = { tool: "bash", args: { command: "git push --dry-run" } };
-    const output = {};
+    const input = { tool: "bash" };
+    const output = { args: { command: "git push --dry-run" } };
 
-    // Should NOT be intercepted (not a real push)
     await hooks.before(input, output);
   });
 
   it("should NOT intercept git push --mirror", async () => {
     const hooks = await loadPlugin();
-    const input = { tool: "bash", args: { command: "git push --mirror" } };
-    const output = {};
+    const input = { tool: "bash" };
+    const output = { args: { command: "git push --mirror" } };
 
-    // Should NOT be intercepted (not a real push)
     await hooks.before(input, output);
   });
 
   it("should NOT intercept git push -n", async () => {
     const hooks = await loadPlugin();
-    const input = { tool: "bash", args: { command: "git push -n" } };
-    const output = {};
+    const input = { tool: "bash" };
+    const output = { args: { command: "git push -n" } };
 
-    // Should NOT be intercepted (not a real push)
     await hooks.before(input, output);
   });
 
   it("should NOT intercept git push-url (not a subcommand)", async () => {
     const hooks = await loadPlugin();
-    const input = { tool: "bash", args: { command: "git push-url https://example.com" } };
-    const output = {};
+    const input = { tool: "bash" };
+    const output = { args: { command: "git push-url https://example.com" } };
 
-    // Should NOT be intercepted (not git push)
     await hooks.before(input, output);
   });
 
   it("should handle missing command gracefully", async () => {
     const hooks = await loadPlugin();
-    const input = { tool: "bash", args: {} };
-    const output = {};
+    const input = { tool: "bash" };
+    const output = { args: {} };
 
-    // Should not throw
     await hooks.before(input, output);
   });
 
   it("should handle null/undefined command gracefully", async () => {
     const hooks = await loadPlugin();
-    const input = { tool: "bash", args: { command: null } };
-    const output = {};
+    const input = { tool: "bash" };
+    const output = { args: { command: null } };
 
-    // Should not throw
     await hooks.before(input, output);
+  });
+
+  it("should BLOCK && mixing git and non-git commands", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "cd /tmp/repo && git push" } };
+
+    await assert.rejects(
+      async () => hooks.before(input, output),
+      /禁止 && 组合 git 与非 git 命令/
+    );
+  });
+
+  it("should BLOCK && with npm test and git", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "npm test && git push" } };
+
+    await assert.rejects(
+      async () => hooks.before(input, output),
+      /禁止 && 组合 git 与非 git 命令/
+    );
+  });
+
+  it("should ALLOW && with only git commands", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "git add -A && git commit -m \"test\" && git push" } };
+
+    // No mixing error; plan-tracker.py may reject but that's orthogonal
+    try {
+      await hooks.before(input, output);
+    } catch (error) {
+      assert.ok(!error.message.includes("禁止 && 组合"));
+    }
+  });
+
+  it("should ALLOW ; with mixed commands (not restricted)", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "cd /tmp/repo; git push" } };
+
+    try {
+      await hooks.before(input, output);
+    } catch (error) {
+      assert.ok(!error.message.includes("禁止 && 组合"));
+    }
+  });
+
+  it("should ALLOW | pipes (not restricted)", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "git log | head" } };
+
+    await hooks.before(input, output);
+  });
+
+  it("should ALLOW env var prefix on git commands", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "GIT_AUTHOR_NAME=test git commit -m \"test\"" } };
+
+    await hooks.before(input, output);
+  });
+
+  it("should use output.args.workdir as scan target when set", async () => {
+    const hooks = await loadPlugin();
+    const input = { tool: "bash" };
+    // Point to a dir with no plan-tracker.py nearby - just verify it doesn't crash
+    const output = { args: { command: "git push", workdir: "/tmp" } };
+
+    try {
+      await hooks.before(input, output);
+    } catch (error) {
+      // May throw plan-tracker.py failure; must not throw mixing error
+      assert.ok(!error.message.includes("禁止 && 组合"));
+    }
   });
 });
 

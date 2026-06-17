@@ -101,22 +101,44 @@ Active plan has pending TODO items:
 白名单同时包含原始路径和 realpath 解析后的路径（如 `/tmp` 和 `/private/tmp`），
 以处理 macOS 的 symlink 重定向。
 
+## `&&` 命令组合限制
+
+`plan-tracker.js` 除了 push gate，还禁止 `&&` 组合中混合 git 与非 git 命令。
+
+**规则：**
+- `&&` 组合内：若同时包含 git 和 non-git segment，throw error
+- `;` 和 `|`（管道）不受此规则限制
+- Env var 前缀（`VAR=val git ...`）仍被视为 git 命令
+- 单个 git 命令（如 `git push`）直接用，不涉及此规则
+
+**正确做法：**
+- 切换目录：用 bash tool 的 `workdir` 参数，不要 `cd`
+- 测试后再 push：分两次 bash 调用
+- 多 git 命令链（如 `git add && git commit-a && git push`）：允许，全是 git
+
+**错误示例：**
+- `cd /some/repo && git push` ❌（跨仓库用 workdir）
+- `npm test && git push` ❌（分两次调用）
+- `GIT_DIR=/x git status && npm test` ❌（env 前缀 + git 仍计为 git，与非 git 组合违规）
+
+**实现：**
+- `splitCommands(command)`：按 `&&` 分割，尊重单双引号
+- `isGitCommand(segment)`：忽略 `VAR=val` 前缀后判断第一个 token 是否为 `git`
+
 ## 验证方式
 
 ```bash
-# 测试 plan-tracker.py 核心逻辑（12 tests）
+# 测试 plan-tracker.py 核心逻辑
 cd shared/hooks && python3 test_plan_tracker.py
 
-# 测试 OpenCode plugin（15 tests）
+# 测试 OpenCode plugin（22 tests，含 && mixing 规则）
 cd opencode/plugins && node --test test/plan-tracker.test.mjs
 
 # 测试 rm 临时目录白名单 + symlink 安全（9 tests）
 cd opencode/plugins && node --test test/rm-outside-workspace-guard.test.mjs
 
-# 端到端测试：创建一个含 TODO 的 plan，尝试 push 应被拦截
-mkdir -p /tmp/test-plan-dir
-echo -e "---\ntitle: Test\nstatus: active\n---\n- TODO: Test task" > /tmp/test-plan-dir/test-plan.md
-# 在 OpenCode 中执行 git push，观察是否被拦截
+# 端到端 harness：在 /tmp/plan-test-work 执行（验证 plugin + python 联动）
+# 使用独立 .mjs 脚本调用 PlanTrackerGate，避免 opencode 内部 git-commit 插件触发
 ```
 
 ## 相关资料
