@@ -6,11 +6,10 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const REPO_ROOT = process.env.CLAUDE_CONFIG_HOME || "/Users/leshi.zhy/claude-config";
+const PLAN_TRACKER_PATH = join(REPO_ROOT, "shared", "hooks", "plan-tracker.py");
 
 export const PlanTrackerGate = async (ctx) => {
   const hooks = {
@@ -57,18 +56,14 @@ export const PlanTrackerGate = async (ctx) => {
 
 function runPlanTracker() {
   return new Promise((resolve, reject) => {
-    // Find plan-tracker.py relative to the plugin
-    const planTrackerPath = join(__dirname, "..", "..", "shared", "hooks", "plan-tracker.py");
-    const repoRoot = join(__dirname, "..", "..");
-
-    if (!existsSync(planTrackerPath)) {
+    if (!existsSync(PLAN_TRACKER_PATH)) {
       // Script not found, allow push (fail open)
       resolve();
       return;
     }
 
-    const proc = spawn("python3", [planTrackerPath, repoRoot], {
-      cwd: repoRoot,
+    const proc = spawn("python3", [PLAN_TRACKER_PATH, REPO_ROOT], {
+      cwd: REPO_ROOT,
       stdio: ["ignore", "pipe", "pipe"],
     });
 

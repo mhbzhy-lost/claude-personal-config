@@ -87,6 +87,9 @@ Active plan has pending TODO items:
   时同步更新 `shared/hooks/git-commit-hook.sh` 中的对应 pattern
 - OpenCode plugin 在 `git push` 前触发，如果 script 执行失败（如 Python 环境缺失），
   plugin 应 fail-open 并记录 warning 日志，不能 block 所有 push
+- OpenCode plugin 使用 `REPO_ROOT` 常量（优先读 `CLAUDE_CONFIG_HOME` 环境变量，
+  默认 `~/.config/opencode`）定位 `shared/hooks/plan-tracker.py`，不要用 `__dirname`
+  相对路径（plugin 实际运行在 `~/.config/opencode/plugins/`，找不到 shared 目录）
 - Plan 状态为 `completed` / `paused` / `archived` 时，`plan-tracker.py` 应跳过不拦截
 
 ## 验证方式
