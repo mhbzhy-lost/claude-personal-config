@@ -4,27 +4,15 @@
     "OpenCode permissions are glob/command gates, not a filesystem sandbox.",
     "Last matching rule wins — insertion order matters.",
     "rm guard plugin (rm-outside-workspace-guard.js) hard-blocks external rm; permission deny rule is second defense line.",
-    "read/edit/glob/grep use $REPO placeholder resolved at runtime to workspace root.",
+    "read/glob/grep/edit all unrestricted (glob/command gates cannot do filesystem sandboxing; real safety from rm-guard plugin + git-commit-gate + human review).",
     "bash whitelist replaces wildcard '*': only git, npm, node, python3, rg are explicitly allowed.",
     "To re-enable full YOLO, replace bash allowlist with { \"*\": \"allow\" }."
   ],
   "template": {
-    "glob": {
-      "$REPO/**": "allow",
-      "*": "deny"
-    },
-    "grep": {
-      "$REPO/**": "allow",
-      "*": "deny"
-    },
-    "read": {
-      "$REPO/**": "allow",
-      "*": "deny"
-    },
-    "edit": {
-      "$REPO/**": "allow",
-      "*": "deny"
-    },
+    "glob": "allow",
+    "grep": "allow",
+    "read": "allow",
+    "edit": "allow",
     "webfetch": "allow",
     "websearch": "allow",
     "question": "allow",
@@ -32,20 +20,6 @@
     "doom_loop": "allow",
     "external_directory": "allow",
     "skill": "allow",
-    "bash": {
-      "git": "allow",
-      "git *": "allow",
-      "npm": "allow",
-      "npm *": "allow",
-      "node": "allow",
-      "node *": "allow",
-      "python3": "allow",
-      "python3 *": "allow",
-      "rg": "allow",
-      "rg *": "allow",
-      "rm *": "deny",
-      "sudo rm *": "deny",
-      "*": "deny"
-    }
+    "bash": "allow"
   }
 }

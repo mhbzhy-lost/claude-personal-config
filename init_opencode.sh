@@ -507,6 +507,26 @@ if existing_pw_headless != desired_pw_headless:
 else:
     print("[mcp] playwright-mcp-headless 已是最新")
 
+# ── basic-memory ──
+# 个人跨会话知识图谱 MCP server。agent 可通过 write_note / search /
+# build_context 在会话中沉淀记忆，下次启动时自动继承上下文。
+# 安装：uv tool install basic-memory（init 脚本不负责安装，仅负责注入配置）
+desired_bm = {
+    "type": "local",
+    "command": ["uvx", "basic-memory", "mcp"],
+    "enabled": True,
+}
+existing_bm = mcp.get("basic-memory")
+if existing_bm != desired_bm:
+    if existing_bm is not None:
+        print("[mcp] basic-memory 已有配置，更新为最新")
+    else:
+        print("[mcp] basic-memory 新增")
+    mcp["basic-memory"] = desired_bm
+    changed = True
+else:
+    print("[mcp] basic-memory 已是最新")
+
 # ── LSP ──
 # 内置 LSP 仅支持 boolean (true/false) 或 object (disable/custom)。
 # 空对象 {} 违反 schema 会导致 ConfigInvalidError，改用 lsp: true
