@@ -65,6 +65,12 @@ agent 必须先手动检查并清理残留旧配置，再执行脚本。
 | `userconf/` | 全局 opencode 配置（AGENTS.md、AGENTS.reason.md） | `init_opencode.sh` |
 | `init_opencode.sh` | opencode 全局软链初始化 | `bash init_opencode.sh` |
 
+## Runbook
+
+操作手册（怎么改、怎么跑、怎么排查）写在 `docs/runbook/`，区别于
+`docs/knowledge/`（代码做了什么）。每个 runbook 聚焦一个具体操作场景，
+`docs/runbook/AGENTS.md` 是目录级索引，新增 runbook 后必须同步更新索引表。
+
 ## Project Knowledge
 
 提交前判断本次变更是否影响长期项目事实、约定、流程、风险或验证方式。
