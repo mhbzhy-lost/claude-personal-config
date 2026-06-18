@@ -2,24 +2,7 @@
   "description": "OpenCode YOLO permission policy with layered defenses. rm guard plugin + deny rule double-layered; bash restricted to explicit command whitelist; file tools scoped to workspace.",
   "notes": [
     "OpenCode permissions are glob/command gates, not a filesystem sandbox.",
-    "Last matching rule wins — insertion order matters.",
-    "rm guard plugin (rm-outside-workspace-guard.js) hard-blocks external rm; permission deny rule is second defense line.",
-    "read/glob/grep/edit all unrestricted (glob/command gates cannot do filesystem sandboxing; real safety from rm-guard plugin + git-commit-gate + human review).",
-    "bash whitelist replaces wildcard '*': only git, npm, node, python3, rg are explicitly allowed.",
-    "To re-enable full YOLO, replace bash allowlist with { \"*\": \"allow\" }."
+    "Full YOLO: no per-tool rules needed. Real safety from rm-guard plugin + git-commit-gate plugin + human review."
   ],
-  "template": {
-    "glob": "allow",
-    "grep": "allow",
-    "read": "allow",
-    "edit": "allow",
-    "webfetch": "allow",
-    "websearch": "allow",
-    "question": "allow",
-    "lsp": "allow",
-    "doom_loop": "allow",
-    "external_directory": "allow",
-    "skill": "allow",
-    "bash": "allow"
-  }
+  "template": "allow"
 }
