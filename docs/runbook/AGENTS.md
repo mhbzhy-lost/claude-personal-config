@@ -5,13 +5,23 @@
 
 ## 现有 Runbook
 
-（暂无，按实际需求添加）
+| 文件 | 操作场景 |
+|---|---|
+| `opencode-dynamic-workflow-rollback.md` | （已删除，后续需要时从 git 历史恢复） |
+| `external-llm-review-provider.md` | 切换 / 新增外部 LLM review provider |
+| `plan-tracker-config.md` | 配置 plan 文件格式、理解 git push 拦截、修复常见失败 |
+| `permission-sync.md` | 修改 permission.json 后同步到 opencode 并重启生效 |
 
-<!--
-新增 runbook 后在此表追加一行，格式：
+## 相关 runbook（仍在 docs/knowledge/ 中）
 
-| `filename.md` | 一句话描述操作场景 |
--->
+以下知识文档包含排查步骤，适合遇到对应问题时直接查阅：
+
+| 知识文档 | 排查场景 |
+|---|---|
+| `docs/knowledge/permission-model.md` | "命令被拦截"、"路径被拒绝" |
+| `docs/knowledge/workspace-boundary.md` | agent 访问外部路径的场景分类 |
+| `docs/knowledge/git-commit-gate.md` | commit message 校验规则、逃逸机制 |
+| `docs/knowledge/codex-hooks-management.md` | hooks.json 与模板不一致 |
 
 ## 编写规范
 

@@ -4,15 +4,9 @@ kind: runbook
 status: active
 applies_to:
   - vendor/opencode-dynamic-workflow/
-   - opencode/plugins/subagent-hint.js
+  - userconf/plugins/subagent-hint.js
   - shared/policies/subagent-dispatch-hint.json
-  - claude/CLAUDE.md
-  - claude/CLAUDE.reason.md
   - init_opencode.sh
-  - codex/hooks/tests/test_codex_hooks.py
-  - docs/knowledge/subagent-dispatch-hook.md
-last_verified: 2026-06-15
-source: opencode-dynamic-workflow phase 2 planning
 ---
 
 # Dynamic Workflow 回退预案

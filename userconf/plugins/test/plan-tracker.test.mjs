@@ -135,26 +135,31 @@ describe("PlanTrackerGate plugin", () => {
     await before(input, output);
   });
 
-  it("should BLOCK && mixing git and non-git commands", async () => {
+  it("should BLOCK && with cd and git commands", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
     const output = { args: { command: "cd /tmp/repo && git push" } };
 
     await assert.rejects(
       async () => before(input, output),
-      /禁止 .*组合 git 与非 git 命令/
+      /禁止.*cd.*git/
     );
   });
 
-  it("should BLOCK && with npm test and git", async () => {
+  it("should allow non-cd mixing with git commands", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
     const output = { args: { command: "npm test && git push" } };
 
-    await assert.rejects(
-      async () => before(input, output),
-      /禁止 .*组合 git 与非 git 命令/
-    );
+    // Should NOT throw cd+git mixing error; git push gate may still block
+    try {
+      await before(input, output);
+    } catch (error) {
+      assert.ok(
+        !error.message.includes("禁止") && !error.message.includes("cd"),
+        `Unexpected cd-mixing error: ${error.message}`
+      );
+    }
   });
 
   it("should ALLOW && with only git commands", async () => {
@@ -169,26 +174,23 @@ describe("PlanTrackerGate plugin", () => {
     }
   });
 
-  it("should BLOCK ; with mixed commands (git + non-git)", async () => {
+  it("should BLOCK ; with cd and git commands", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
     const output = { args: { command: "cd /tmp/repo; git push" } };
 
     await assert.rejects(
       async () => before(input, output),
-      /禁止 .*组合 git 与非 git 命令/
+      /禁止.*cd.*git/
     );
   });
 
-  it("should BLOCK ; with npm test and git status", async () => {
+  it("should allow ; with npm test and git status (no cd)", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
     const output = { args: { command: "npm test; git status" } };
 
-    await assert.rejects(
-      async () => before(input, output),
-      /禁止 .*组合 git 与非 git 命令/
-    );
+    await before(input, output);
   });
 
   it("should ALLOW ; with only git commands", async () => {
@@ -227,43 +229,36 @@ describe("PlanTrackerGate plugin", () => {
     }
   });
 
-  it("should BLOCK git -C with TODO repo", async () => {
+  it("should BLOCK git -C (always blocked, not just path traversal)", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
-    // git -C targets /tmp/plan-test-work which has active TODOs
     const output = { args: { command: "git -C /tmp/plan-test-work push" } };
 
     await assert.rejects(
       async () => before(input, output),
-      /Git push blocked/
+      /禁止.*git -C/
     );
   });
 
-  it("should mention verification-before-completion skill in block message", async () => {
+  it("should mention git -C ban in error message", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
-    const output = { args: { command: "git -C /tmp/plan-test-work push" } };
+    const output = { args: { command: "git -C /any/path push" } };
 
-    try {
-      await before(input, output);
-      assert.fail("Expected rejection");
-    } catch (error) {
-      assert.ok(
-        error.message.includes("verification-before-completion"),
-        `Error should mention verification-before-completion skill: ${error.message}`
-      );
-    }
+    await assert.rejects(
+      async () => before(input, output),
+      /git -C/
+    );
   });
 
-  it("should BLOCK git -C with path traversal attack", async () => {
+  it("should BLOCK git -C regardless of path", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
-    // Attempting to scan outside workspace
     const output = { args: { command: "git -C /etc push" } };
 
     await assert.rejects(
       async () => before(input, output),
-      /Path is outside allowed workspace boundaries/
+      /禁止.*git -C/
     );
   });
 
@@ -281,75 +276,76 @@ describe("PlanTrackerGate plugin", () => {
     assert.ok(elapsed < 100, `Took ${elapsed}ms, expected <100ms`);
   });
 
-  it("should BLOCK && mixing with exec shell wrapper on git", async () => {
+  it("should allow exec shell wrapper with git + non-cd commands", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
     const output = { args: { command: "exec git push && npm test" } };
 
-    await assert.rejects(
-      async () => before(input, output),
-      /禁止 .*组合 git 与非 git 命令/
-    );
-  });
-
-  it("should BLOCK && mixing with sudo shell wrapper on git", async () => {
-    const before = await loadPlugin();
-    const input = { tool: "bash" };
-    const output = { args: { command: "sudo git push && npm test" } };
-
-    await assert.rejects(
-      async () => before(input, output),
-      /禁止 .*组合 git 与非 git 命令/
-    );
-  });
-
-  it("should ALLOW git -C with relative path from subdirectory", async () => {
-    const before = await loadPlugin();
-    const input = { tool: "bash" };
-    // From repo/subdir, git -C ../.. points to repo root (should be allowed)
-    const output = { args: { command: "git -C ../.. push" } };
-
-    // Should not throw path traversal error
+    // exec is not cd, mixing is allowed; push gate may still block
     try {
       await before(input, output);
     } catch (error) {
       assert.ok(
-        !error.message.includes("outside workspace"),
-        `Unexpected path traversal error: ${error.message}`
+        !error.message.includes("禁止") && !error.message.includes("cd"),
+        `Unexpected cd-mixing error: ${error.message}`
       );
     }
   });
 
-  it("should ALLOW git --no-pager -C with global options before -C", async () => {
+  it("should allow sudo shell wrapper with git + non-cd commands", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
-    // git global options can appear before -C
-    const output = { args: { command: "git --no-pager -C /tmp/plan-test-work push" } };
+    const output = { args: { command: "sudo git push && npm test" } };
 
-    // Should extract /tmp/plan-test-work and block due to TODOs (not path traversal)
+    // sudo is not cd, mixing is allowed; push gate may still block
+    try {
+      await before(input, output);
+    } catch (error) {
+      assert.ok(
+        !error.message.includes("禁止") && !error.message.includes("cd"),
+        `Unexpected cd-mixing error: ${error.message}`
+      );
+    }
+  });
+
+  it("should BLOCK git -C even with relative path", async () => {
+    const before = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "git -C ../.. push" } };
+
     await assert.rejects(
       async () => before(input, output),
-      /Git push blocked/
+      /禁止.*git -C/
     );
   });
 
-  it("should NOT leak absolute paths in error message", async () => {
+  it("should BLOCK git --no-pager -C with global options", async () => {
+    const before = await loadPlugin();
+    const input = { tool: "bash" };
+    const output = { args: { command: "git --no-pager -C /tmp push" } };
+
+    await assert.rejects(
+      async () => before(input, output),
+      /禁止.*git -C/
+    );
+  });
+
+  it("should NOT leak absolute paths in git -C error message", async () => {
     const before = await loadPlugin();
     const input = { tool: "bash" };
     const output = { args: { command: "git -C /etc push" } };
 
     try {
       await before(input, output);
-      assert.fail("Expected path traversal error");
+      assert.fail("Expected git -C error");
     } catch (error) {
-      // Should not contain /Users or /home absolute paths
       assert.ok(
         !error.message.includes("/Users/"),
         `Error message leaks absolute path: ${error.message}`
       );
       assert.ok(
-        error.message.includes("outside"),
-        `Error message should mention 'outside': ${error.message}`
+        error.message.includes("git -C"),
+        `Error should mention 'git -C': ${error.message}`
       );
     }
   });

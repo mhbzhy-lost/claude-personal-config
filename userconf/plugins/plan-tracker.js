@@ -2,14 +2,14 @@
  * Plan Tracker Gate Plugin
  * 
  * Blocks git push if plan has pending TODO items.
- * Also enforces rule: && cannot mix git and non-git commands.
+ * Blocks cd + git mixing (use workdir instead of cd).
+ * Blocks git -C (use workdir instead of git -C <path>).
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { join, dirname, basename, resolve as resolvePath } from "node:path";
+import { existsSync } from "node:fs";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmpdir } from "node:os";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -28,16 +28,6 @@ function findRepoRoot(startDir) {
 }
 
 const REPO_ROOT = findRepoRoot(__dirname);
-
-// Allow temp dirs (aligned with rm-outside-workspace-guard)
-const ALLOWED_DIRS = Array.from(new Set([
-  REPO_ROOT,
-  tmpdir(),
-  realpathSync(tmpdir()),
-  "/tmp",
-  realpathSync("/tmp"),
-  "/private/tmp",
-].filter(Boolean))).map(d => realpathSync(d));
 const PLAN_TRACKER_PATH = REPO_ROOT ? join(REPO_ROOT, "shared", "hooks", "plan-tracker.py") : null;
 
 // Split command by && and ;, respecting quotes
@@ -90,21 +80,20 @@ function isGitCommand(segment) {
   return basename(cmd || "") === "git";
 }
 
-function extractGitCPath(command) {
-  const match = command.match(/\bgit\s+(?:\S+\s+)*-C\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
-  if (match) {
-    const rawPath = match[1] || match[2] || match[3];
-    const resolved = resolvePath(rawPath);
-    let realResolved;
-    try { realResolved = realpathSync(resolved); } catch { realResolved = resolved; }
-    const isAllowed = ALLOWED_DIRS.some(d => realResolved.startsWith(d)) ||
-                      realResolved.startsWith(realpathSync(process.cwd()));
-    if (!isAllowed) {
-      throw new Error(`Path is outside allowed workspace boundaries`);
-    }
-    return resolved;
+function isCdCommand(segment) {
+  const parts = segment.trim().split(/\s+/);
+  let idx = 0;
+  while (idx < parts.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(parts[idx])) {
+    idx++;
   }
-  return null;
+  while (idx < parts.length && SHELL_WRAPPERS.has(parts[idx])) {
+    idx++;
+  }
+  return parts[idx] === "cd";
+}
+
+function hasGitC(command) {
+  return /\bgit\s+(?:\S+\s+)*-C\b/.test(command);
 }
 
 // Log warning once if script not found
@@ -124,19 +113,26 @@ export const PlanTrackerGate = async (ctx) => {
       const command = output.args?.command;
       if (typeof command !== "string" || !command.trim()) return;
 
-      // Split by &&
+      // Split by && and ;
       const segments = splitCommands(command);
-      
-      // Check for git/non-git mixing
+
+      // Block cd + git mixing
+      const hasCd = segments.some(isCdCommand);
       const hasGit = segments.some(isGitCommand);
-      const hasNonGit = segments.some(seg => !isGitCommand(seg));
-      
-      if (hasGit && hasNonGit) {
+
+      if (hasCd && hasGit) {
         throw new Error(
-          "禁止 &&/; 组合 git 与非 git 命令。\n" +
-          "- 单个 git 命令：直接用（git push）\n" +
-          "- 多个 git 命令：允许链式调用（git add && git commit && git push）\n" +
-          "- 切换目录：用 bash tool 的 workdir 参数，不要用 cd"
+          "禁止 cd 与 git 命令组合使用。\n" +
+          "- 切换目录：用 bash tool 的 workdir 参数，不要 cd\n" +
+          "- 混合 git 与非 git 命令（如 npm test && git push）是允许的"
+        );
+      }
+
+      // Block git -C (always)
+      if (hasGitC(command)) {
+        throw new Error(
+          "禁止 git -C 方式。\n" +
+          "- 切换目录：用 bash tool 的 workdir 参数，不要 git -C <path>"
         );
       }
 
@@ -147,10 +143,9 @@ export const PlanTrackerGate = async (ctx) => {
       // Skip dry-run, mirror, etc.
       if (/(?:--dry-run|--mirror|-n)\b/.test(command)) return;
 
-      // Scan the actual repo (from workdir or git -C or cwd)
-      // Priority: workdir > git -C path > cwd
-      // workdir is IDE/Agent explicit context (most trusted), git -C is user hint
-      const repoRoot = output.args?.workdir || extractGitCPath(command) || process.cwd();
+      // Scan the actual repo
+      // git -C is already blocked above, so only workdir or cwd
+      const repoRoot = output.args?.workdir || process.cwd();
       
       try {
         await runPlanTracker(repoRoot);
