@@ -7,7 +7,6 @@
 
 | 文件 | 操作场景 |
 |---|---|
-| `opencode-dynamic-workflow-rollback.md` | （已删除，后续需要时从 git 历史恢复） |
 | `external-llm-review-provider.md` | 切换 / 新增外部 LLM review provider |
 | `plan-tracker-config.md` | 配置 plan 文件格式、理解 git push 拦截、修复常见失败 |
 | `permission-sync.md` | 修改 permission.json 后同步到 opencode 并重启生效 |
