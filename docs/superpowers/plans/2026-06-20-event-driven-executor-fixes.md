@@ -531,7 +531,7 @@ grep -rn "export function countRefs" lib/
   - `tests/ref-count.test.mjs`: 修改 import 为 `from "../lib/utils.mjs"`，更新测试以适配新 API
 - **Tests:** 1 new regression test, 5 total ref-count tests pass
 
-### Task 7: Expose terminalNodes / mergeInstructions on dag() return (revised T7)
+### Task 7: Expose terminalNodes / mergeInstructions on dag() return (revised T7) (revised T7)
 
 **Context**: Real E2E revealed the `autoMerge: true` option accepted but never executed. First attempt auto-implemented the merge. User decision: remove autoMerge entirely; merge is the main agent's responsibility (human-in-the-loop for conflict resolution).
 
@@ -555,6 +555,30 @@ results.mergeInstructions()   // human-readable merge command list
 ```
 
 **Tests:** 3 new tests (enumerable keys, branch/atomPath presence, non-terminal exclusion) — 224 pass / 1 fail (pre-existing env test)
+
+### Task 8: External LLM review + fix two real issues
+
+**Context**: DeepSeek 外源评审（Round 1 + Round 1-suffix，完整 158k diff）报告 8 Critical + 7 Important + 5 Minor。综合判断 4 步消化：
+
+- Critical 8 条中：5 条误判（Node.js 单线程 race / Promise 幂等 / recycle 设计语义 / fork 语义 / checkReady 重复解析），2 条设计选择，1 条未读新代码（#8）
+- Important 7 条中：2 条真实重要度，其余代码味道
+- Minor 5 条中：3 条误判（拼写注释 / needMerge 使用 / 测试语言）
+
+**真正修复**:
+- **#8 Important** (commit `ffe26b0`): `acquire()` 中 reset 失败后 atom 泄漏到 busy pool。TDD 回归测试：reset 抛错时 `busyAtoms` 必须为 0，atom 回到 `idleAtoms`
+- **#1 代码味道** (同 commit): `agent-worker.mjs` 两处 `await import("node:child_process")` 改顶部静态 import（无 race，但代码味道；single-line exemption from TDD）
+- **#1-suffix Important 降级** (commit `bc040a4`): git merge / worktree add / git checkout 三处字符串模板拼接 shell 命令，存在 `$` 注入面。TDD 回归测试：用 literal `wf-$HOME` 分支名，未修时 RED 错误显式出现 `wf-/Users/mhbzhy`（shell 展开），修后 GREEN
+
+**未修及理由**:
+- #4 并发 race：Node.js 单线程，`if + delete` 同步不会被打断
+- #2 路径穿越：repoPath 来自 workflow 脚本（主 agent），不是外部输入
+- #3 子进程泄漏：#8 修复已 kill 孤儿进程
+- #5 IPC 队列溢出：workflow 派发→等待→下一个，不会快速连发
+- #6 execSync 丢 stderr：多数用于探测 `git rev-parse --is-inside-work-tree`；重要的 `git merge` 已用 `stdio: pipe`
+- #8 双重 shutdown：`idleAtoms.clear()` 后二次进入空循环
+- #14 `git merge --abort` 不完整：官方 abort API，含 `MERGE_MSG` 全回退
+
+**测试**: 233 tests, 232 pass, 1 fail (pre-existing env)
 
 ### Final State
 - **Total tests:** 225

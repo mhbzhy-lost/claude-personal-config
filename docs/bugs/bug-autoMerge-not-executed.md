@@ -37,17 +37,17 @@ autoMerge=true:
 
 **核心遗漏**：T4 删除 `merge-gate.mjs` 时，`mergeAccumulator()` 的功能被一并丢弃，但没有在 event-driven 架构的任何位置重新实现该功能。
 
-## 5. 修复方案
+## 5. 设计变更（最终方案）
 
-**设计变更（基于用户决策）**：
+经过两轮方案演化：
 
-原方案：`autoMerge: true` 自动 merge 到 baseBranch
-新方案：**完全移除 autoMerge**。`dag()` 返回 `terminalNodes`（含分支名、atomPath、merge 命令），由主 agent 手动执行 merge。
+**V1**: `_autoMerge()` 自动 merge（commit 已回滚）
 
-**理由**：merge 可能产生冲突，主 agent 处理时人类可介入（human-in-the-loop），脚本/sub-agent 自动 merge 则人类失去介入机会。
+**V2**: 暴露 `terminalNodes` + `mergeInstructions()`，由主 agent 手动 merge
+- 设计理由：merge 可能冲突，主 agent 处理时人类可介入（human-in-the-loop），脚本自动 merge 则无法人工干预
 
 **修改位置**：
-- `lib/executor/event-driven.mjs`：删除 `_autoMerge()` 方法和 `execute()` 末尾的 autoMerge 调用块
+- `lib/executor/event-driven.mjs`：删除 V1 `_autoMerge()` 方法 + `execFileSync` import
 - `lib/runner.mjs`：在 `dag()` 返回时新增非枚举属性 `terminalNodes` 和 `mergeInstructions()`，计算终端节点（无 dependents）的 git 状态
 
 **API**：
@@ -55,11 +55,9 @@ autoMerge=true:
 ```js
 const results = await wf.dag([...])
 
-// 新增非枚举属性
-results.terminalNodes   // [{ id, branch, atomPath, commitAhead, commands }]
-results.mergeInstructions()  // 返回可读的 merge 指令字符串
-
-// Object.keys(results) 仍然只返回 node IDs（非枚举属性不暴露）
+// 新增非枚举属性（不影响 Object.keys）
+results.terminalNodes         // [{ id, branch, atomPath, commitAhead, commands }]
+results.mergeInstructions() // 返回可读的 merge 命令字符串
 ```
 
 ## 6. 修复后验证
