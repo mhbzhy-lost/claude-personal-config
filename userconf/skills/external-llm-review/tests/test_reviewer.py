@@ -67,6 +67,9 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
         args = Namespace(provider="idealab-openai")
         self.assertEqual(reviewer.resolve_provider(args, env={}), "idealab-openai")
 
+        args = Namespace(provider="deepseek")
+        self.assertEqual(reviewer.resolve_provider(args, env={}), "deepseek")
+
     def test_review_provider_reads_env(self):
         args = Namespace(provider=None)
         self.assertEqual(
@@ -996,6 +999,29 @@ class GetProviderDispatchTest(unittest.TestCase):
     def test_default_providers_dir_constant(self):
         from _config import DEFAULT_PROVIDERS_DIR
         self.assertEqual(DEFAULT_PROVIDERS_DIR.name, "providers")
+
+    def test_get_provider_returns_deepseek_as_openai_compatible(self):
+        """DeepSeek uses standard OpenAI-compatible wire protocol, no special handling."""
+        from _config import get_provider
+        from _provider import IdealabOpenAIProvider
+        self.write_provider(
+            "deepseek",
+            "provider: deepseek\n"
+            "base_url: https://api.deepseek.com/v1\n"
+            "api_key: ${DEEPSEEK_API_KEY}\n"
+            "model: deepseek-chat\n"
+            "max_tokens: 16000\n",
+        )
+        provider = get_provider(
+            "deepseek",
+            providers_dir=self.providers_dir,
+            env={"DEEPSEEK_API_KEY": "sk-ds"},
+        )
+        self.assertIsInstance(provider, IdealabOpenAIProvider)
+        self.assertEqual(provider.api_key, "sk-ds")
+        self.assertEqual(provider.model, "deepseek-chat")
+        self.assertEqual(provider.base_url, "https://api.deepseek.com/v1")
+        self.assertEqual(provider.max_tokens, 16000)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ For backend=anthropic set ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY / ANTHROPIC_MOD
 
 Usage:
     python reviewer.py <BASE_SHA> <HEAD_SHA> \
-        [--provider idealab-anthropic|idealab-openai|bailian] [--worktree PATH] [--spec FILE]
+        [--provider idealab-anthropic|idealab-openai|bailian|deepseek] [--worktree PATH] [--spec FILE]
         [--max-diff N] [--review-depth standard|exhaustive] [--review-round 1|2]
         [--max-issues N] [--max-output-tokens N] [--api-timeout-seconds N]
 
@@ -172,10 +172,10 @@ def resolve_provider(args: argparse.Namespace, *, env: Mapping[str, str]) -> str
     Returns provider name (e.g. 'idealab-anthropic', 'bailian').
     """
     provider = (getattr(args, "provider", None) or env.get("EXTERNAL_LLM_REVIEW_PROVIDER", "idealab-anthropic")).strip().lower()
-    if provider not in ("idealab-anthropic", "idealab-openai", "bailian"):
+    if provider not in ("idealab-anthropic", "idealab-openai", "bailian", "deepseek"):
         raise ValueError(
             f"EXTERNAL_LLM_REVIEW_PROVIDER/--provider must be one of "
-            f"('idealab-anthropic', 'idealab-openai', 'bailian'), got {provider!r}"
+            f"('idealab-anthropic', 'idealab-openai', 'bailian', 'deepseek'), got {provider!r}"
         )
     return provider
 
@@ -509,7 +509,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("head_sha", help="git head commit (the changes to review)")
     parser.add_argument(
         "--provider",
-        choices=("idealab-anthropic", "idealab-openai", "bailian"),
+        choices=("idealab-anthropic", "idealab-openai", "bailian", "deepseek"),
         default=None,
         help="provider to use (default: EXTERNAL_LLM_REVIEW_PROVIDER or idealab-anthropic)",
     )
@@ -561,7 +561,7 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
         print(
             f"ERROR: EXTERNAL_LLM_API_FORMAT={legacy_format!r} is no longer read by "
             "reviewer.py. Provider selection is now done via --provider or "
-            "EXTERNAL_LLM_REVIEW_PROVIDER (one of: idealab-anthropic, idealab-openai, bailian). "
+            "EXTERNAL_LLM_REVIEW_PROVIDER (one of: idealab-anthropic, idealab-openai, bailian, deepseek). "
             "Please remove EXTERNAL_LLM_API_FORMAT from your .env file. "
             "See .env.example and providers/<name>.yaml.",
             file=sys.stderr,

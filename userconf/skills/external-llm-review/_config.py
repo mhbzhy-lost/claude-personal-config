@@ -43,6 +43,7 @@ _PROVIDER_CLS: dict[str, type[BaseProvider]] = {
     "idealab-anthropic": IdealabAnthropicProvider,
     "idealab-openai": IdealabOpenAIProvider,
     "bailian": BailianProvider,
+    "deepseek": IdealabOpenAIProvider,
 }
 
 

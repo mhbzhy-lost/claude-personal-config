@@ -13,7 +13,7 @@ from _config import get_provider
 import httpx
 
 SKILL_DIR = Path(__file__).resolve().parent
-PROVIDERS = ["idealab-anthropic", "idealab-openai", "bailian"]
+PROVIDERS = ["idealab-anthropic", "idealab-openai", "bailian", "deepseek"]
 
 load_dotenv(SKILL_DIR / ".env")
 
