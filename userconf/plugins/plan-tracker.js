@@ -138,7 +138,7 @@ export const PlanTrackerGate = async (ctx) => {
 
       // If command doesn't contain 'git push', we're done
       // Pattern limits to 5 tokens between git and push to avoid ReDoS
-      if (!/\bgit\s+(?:\S+\s+){0,5}push\b/.test(command)) return;
+      if (!/\bgit\s+(?:\S+\s+){0,5}push(?=\s|$)/.test(command)) return;
 
       // Skip dry-run, mirror, etc.
       if (/(?:--dry-run|--mirror|-n)\b/.test(command)) return;

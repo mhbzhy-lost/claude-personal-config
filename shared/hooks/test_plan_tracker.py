@@ -23,13 +23,39 @@ class PlanTrackerTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(r.stdout.strip(), "")
 
-    def test_plan_without_frontmatter_ignored(self):
+    def test_markdown_without_frontmatter_with_todo_exits_1(self):
+        """Without status requirement, any .md with TODO: should be blocked."""
         with tempfile.TemporaryDirectory() as d:
-            (Path(d) / "notes.md").write_text("- TODO: some task\n")
+            (Path(d) / "notes.md").write_text("# Notes\n\n- TODO: some task\n")
             r = run_tracker(d)
-            self.assertEqual(r.returncode, 0)
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("some task", r.stdout)
 
-    def test_active_plan_with_all_done_exits_0(self):
+    def test_markdown_without_frontmatter_all_done_exits_0(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "notes.md").write_text("# Notes\n\n- DONE: completed task\n")
+            r = run_tracker(d)
+            self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_paused_plan_blocks_on_todo(self):
+        """Status field is ignored: paused plans with TODO: must still block."""
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "plan.md").write_text(
+                "---\nstatus: paused\n---\n# Plan\n\n- TODO: allow push anyway\n"
+            )
+            r = run_tracker(d)
+            self.assertEqual(r.returncode, 1, r.stdout)
+
+    def test_completed_plan_blocks_on_todo(self):
+        """Status field is ignored: completed plans with TODO: must still block."""
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "plan.md").write_text(
+                "---\nstatus: completed\n---\n- TODO: this should be ignored\n"
+            )
+            r = run_tracker(d)
+            self.assertEqual(r.returncode, 1, r.stdout)
+
+    def test_plan_with_all_done_exits_0(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "plan.md").write_text(
                 "---\nstatus: active\n---\n# Plan\n\n- DONE: first\n- DONE: second\n"
@@ -37,7 +63,7 @@ class PlanTrackerTests(unittest.TestCase):
             r = run_tracker(d)
             self.assertEqual(r.returncode, 0, r.stdout)
 
-    def test_active_plan_with_todo_exits_1(self):
+    def test_plan_with_todo_exits_1(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "plan.md").write_text(
                 "---\nstatus: active\n---\n# Plan\n\n- TODO: pending task\n- DONE: done\n"
@@ -46,22 +72,6 @@ class PlanTrackerTests(unittest.TestCase):
             self.assertEqual(r.returncode, 1)
             self.assertIn("pending task", r.stdout)
             self.assertIn("plan.md", r.stdout)
-
-    def test_paused_plan_skips_todo_check(self):
-        with tempfile.TemporaryDirectory() as d:
-            (Path(d) / "plan.md").write_text(
-                "---\nstatus: paused\n---\n# Plan\n\n- TODO: allow push anyway\n"
-            )
-            r = run_tracker(d)
-            self.assertEqual(r.returncode, 0, r.stdout)
-
-    def test_completed_plan_skips_todo_check(self):
-        with tempfile.TemporaryDirectory() as d:
-            (Path(d) / "plan.md").write_text(
-                "---\nstatus: completed\n---\n- TODO: this should be ignored\n"
-            )
-            r = run_tracker(d)
-            self.assertEqual(r.returncode, 0)
 
     def test_lists_all_pending_todos(self):
         with tempfile.TemporaryDirectory() as d:
@@ -162,35 +172,6 @@ class PlanTrackerTests(unittest.TestCase):
                     unreadable_file.chmod(0o644)
                 except:
                     pass
-
-    def test_yaml_quoted_status(self):
-        """Test that YAML quoted status values are parsed correctly."""
-        test_cases = [
-            ('status: "active"', True),   # Double quotes should work
-            ("status: 'active'", True),   # Single quotes should work
-            ('status: "completed"', False),  # Completed should not block
-            ('status: "paused"', False),  # Paused should not block
-        ]
-        
-        for status_line, should_block in test_cases:
-            with tempfile.TemporaryDirectory() as d:
-                plan_file = Path(d) / "plan.md"
-                plan_file.write_text(
-                    f"---\n{status_line}\n---\n- TODO: task\n"
-                )
-                
-                r = run_tracker(d)
-                if should_block:
-                    self.assertEqual(
-                        r.returncode, 1,
-                        f"Failed for {status_line}: expected exit 1, got {r.returncode}"
-                    )
-                else:
-                    self.assertEqual(
-                        r.returncode, 0,
-                        f"Failed for {status_line}: expected exit 0, got {r.returncode}"
-                    )
-
 
 if __name__ == "__main__":
     unittest.main()

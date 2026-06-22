@@ -5,22 +5,8 @@ import re
 import sys
 from pathlib import Path
 
-FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---", re.DOTALL)
-STATUS_PATTERN = re.compile(r'^status:\s*["\']?(\w+)["\']?', re.MULTILINE)
 TODO_PATTERN = re.compile(r"^-?\s*TODO:\s*(.+)", re.MULTILINE)
 DONE_PATTERN = re.compile(r"^-?\s*(DONE|COMPLETED|COMPLETE):\s*(.+)", re.MULTILINE | re.IGNORECASE)
-
-
-def parse_frontmatter(text):
-    m = FRONTMATTER_PATTERN.match(text)
-    if not m:
-        return None
-    return m.group(1)
-
-
-def get_plan_status(fm_text):
-    m = STATUS_PATTERN.search(fm_text)
-    return m.group(1).strip().lower() if m else None
 
 
 def scan_todos(text):
@@ -38,12 +24,6 @@ def scan_plan(root):
             text = p.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as e:
             print(f"Warning: cannot read {p}: {e}", file=sys.stderr)
-            continue
-        fm = parse_frontmatter(text)
-        if fm is None:
-            continue
-        status = get_plan_status(fm)
-        if status != "active":
             continue
 
         todos = scan_todos(text)
@@ -66,7 +46,7 @@ def main():
     pending = scan_plan(root)
 
     if pending:
-        print("Active plan has pending TODO items:")
+        print("Plan has pending TODO items:")
         for rel, task in pending:
             print(f"  {rel}: TODO: {task}")
         sys.exit(1)
