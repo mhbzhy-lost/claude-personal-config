@@ -15,9 +15,14 @@ def scan_todos(text):
 
 def scan_plan(root):
     root = Path(root)
+    plans_dir = root / "docs" / "plans"
     pending = []
 
-    for p in root.rglob("*.md"):
+    # 只扫描 docs/plans/ 目录，避免误报文档示例
+    if not plans_dir.exists():
+        return pending
+
+    for p in plans_dir.rglob("*.md"):
         if ".workflow/" in p.parts or "node_modules/" in p.parts:
             continue
         try:
