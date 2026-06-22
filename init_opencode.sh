@@ -390,6 +390,91 @@ sync_opencode_instructions() {
   done
 }
 
+# ── Themes 软链 ─────────────────────────────────────────
+sync_opencode_themes() {
+  local src_path="$SRC/userconf/themes"
+  local dst_path="$OPENCODE_CONFIG_DIR/themes"
+
+  if [ ! -d "$src_path" ]; then
+    echo "[skip]  userconf/themes/ 不存在，跳过"
+    return
+  fi
+
+  mkdir -p "$dst_path"
+
+  local src_file dst_file basename
+  for src_file in "$src_path"/*; do
+    [ -f "$src_file" ] || continue
+    basename=$(basename "$src_file")
+    dst_file="$dst_path/$basename"
+
+    if [ -L "$dst_file" ] && [ "$(readlink "$dst_file")" = "$src_file" ]; then
+      echo "[themes] $dst_file -> ${src_file}（已就绪）"
+      continue
+    fi
+
+    if [ -L "$dst_file" ]; then
+      rm -f "$dst_file"
+      ln -s "$src_file" "$dst_file"
+      echo "[themes] $basename 软链已更新"
+      continue
+    fi
+
+    if [ -f "$dst_file" ]; then
+      if cmp -s "$src_file" "$dst_file"; then
+        rm -f "$dst_file"
+        ln -s "$src_file" "$dst_file"
+        echo "[themes] $basename 升级为软链"
+      else
+        echo "[warn]  $dst_file 与仓内不一致，保留本地副本"
+      fi
+      continue
+    fi
+
+    ln -s "$src_file" "$dst_file"
+    echo "[themes] $basename 软链已创建"
+  done
+}
+
+# ── tui.json 软链 ───────────────────────────────────────
+sync_opencode_tui() {
+  local src_path="$SRC/userconf/tui.json"
+  local dst_path="$OPENCODE_CONFIG_DIR/tui.json"
+
+  if [ ! -f "$src_path" ]; then
+    echo "[skip]  userconf/tui.json 不存在，跳过"
+    return
+  fi
+
+  mkdir -p "$OPENCODE_CONFIG_DIR"
+
+  if [ -L "$dst_path" ] && [ "$(readlink "$dst_path")" = "$src_path" ]; then
+    echo "[tui] $dst_path -> ${src_path}（已就绪）"
+    return
+  fi
+
+  if [ -L "$dst_path" ]; then
+    rm -f "$dst_path"
+    ln -s "$src_path" "$dst_path"
+    echo "[tui] $dst_path 软链已更新"
+    return
+  fi
+
+  if [ -f "$dst_path" ]; then
+    if cmp -s "$src_path" "$dst_path"; then
+      rm -f "$dst_path"
+      ln -s "$src_path" "$dst_path"
+      echo "[tui] $dst_path 升级为软链"
+    else
+      echo "[warn]  $dst_path 与仓内不一致，保留本地副本"
+    fi
+    return
+  fi
+
+  ln -s "$src_path" "$dst_path"
+  echo "[tui] $dst_path 软链已创建"
+}
+
 # ===========================================================================
 # === Library guard =========================================================
 # 单测把 OPENCODE_INIT_AS_LIBRARY=1 之后 source 此脚本，期望只加载上面的
@@ -420,6 +505,8 @@ configure_opencode_cache_proxy
 sync_opencode_instructions
 sync_opencode_shared
 sync_opencode_docs
+sync_opencode_themes
+sync_opencode_tui
 
 # ── Workflow 子模块配置 ─────────────────────────────────
 # install-opencode.sh 内含 npm install（网络操作），失败不应中断整个 init 流程。
