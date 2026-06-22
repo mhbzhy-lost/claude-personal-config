@@ -20,14 +20,7 @@ set -euo pipefail
 
 # 用 BASH_SOURCE[0] 替代 $0：即使脚本被 source 执行也能正确定位自身目录
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# 优先级：OPENCODE_CONFIG_DIR > XDG_CONFIG_HOME > $HOME/.config
-if [ -z "${OPENCODE_CONFIG_DIR:-}" ]; then
-    if [ -n "${XDG_CONFIG_HOME:-}" ]; then
-        OPENCODE_CONFIG_DIR="$XDG_CONFIG_HOME/opencode"
-    else
-        OPENCODE_CONFIG_DIR="$HOME/.config/opencode"
-    fi
-fi
+OPENCODE_CONFIG_DIR="${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}"
 OPENCODE_JSON="$OPENCODE_CONFIG_DIR/opencode.json"
 BAILIAN_CACHE_PROXY_PORT="${BAILIAN_CACHE_PROXY_PORT:-48761}"
 
