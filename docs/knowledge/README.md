@@ -107,7 +107,7 @@ Follow the shared project knowledge rules in `AGENTS.md`.
 ```markdown
 ---
 title: 简短标题
-kind: architecture | convention | decision | runbook | integration | pitfall
+kind: architecture | convention | decision | integration | pitfall
 status: active
 applies_to:
   - path/or/module
@@ -203,7 +203,6 @@ docs/knowledge/
   architecture/
   conventions/
   decisions/
-  runbooks/
   integrations/
   pitfalls/
 ```
@@ -214,7 +213,6 @@ docs/knowledge/
 - `architecture/`：架构边界、数据流、跨模块设计
 - `conventions/`：编码、测试、错误处理、命名等长期约定
 - `decisions/`：重要技术决策及原因
-- `runbooks/`：本地开发、发布、排错、运维流程
 - `integrations/`：第三方服务、SDK、外部系统
 - `pitfalls/`：已踩过且未来可能复现的问题
 
