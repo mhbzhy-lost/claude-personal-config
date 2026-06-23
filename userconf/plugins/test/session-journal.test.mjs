@@ -16,6 +16,7 @@ import {
   ensureSessionDir,
   writeSummary,
   readSummary,
+  SessionJournalPlugin,
 } from "../session-journal.js"
 
 describe("distill()", () => {
@@ -326,6 +327,193 @@ describe("writeSummary() + readSummary()", () => {
       const md = readFileSync(mdPath, "utf-8")
       assert.ok(md.includes("src/auth.ts"))
       assert.ok(md.includes("门禁绕过"))
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+})
+
+// =============================================
+// Task 4: SessionJournalPlugin factory + after hook
+// =============================================
+
+describe("SessionJournalPlugin", () => {
+  it("export async factory 函数", () => {
+    assert.equal(typeof SessionJournalPlugin, "function")
+  })
+
+  it("返回 tool.execute.after + experimental.session.compacting + event hooks", async () => {
+    const hooks = await SessionJournalPlugin({})
+    assert.equal(typeof hooks["tool.execute.after"], "function")
+    assert.equal(typeof hooks["experimental.session.compacting"], "function")
+    assert.equal(typeof hooks["event"], "function")
+  })
+})
+
+describe("tool.execute.after hook", () => {
+  it("bash 命令写入 journal entry", async () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-hook-"))
+    try {
+      const hooks = await SessionJournalPlugin({})
+      const after = hooks["tool.execute.after"]
+      await after(
+        { tool: "bash" },
+        { args: { command: "ls -la", workdir: tmpRepo }, exitCode: 0 }
+      )
+      const sessionDir = findWorkspaceSessionDir(tmpRepo)
+      const entries = readJournal(sessionDir)
+      assert.equal(entries.length, 1)
+      assert.equal(entries[0].tool, "bash")
+      assert.equal(entries[0].command, "ls -la")
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+
+  it("edit 命令后注入 summary 到 output", async () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-hook-"))
+    const sessionDir = findWorkspaceSessionDir(tmpRepo)
+    ensureSessionDir(sessionDir)
+    try {
+      writeSummary(sessionDir, {
+        antiPatterns: ["test.ts: 已编辑 5 次"],
+        openIssues: [],
+        progress: "已编辑 1 个文件",
+      })
+      const hooks = await SessionJournalPlugin({})
+      const after = hooks["tool.execute.after"]
+      const input = { tool: "edit", args: { filePath: "test.ts" } }
+      const output = { args: { workdir: tmpRepo }, output: "Edit successful" }
+      await after(input, output)
+      assert.ok(output.output.includes("test.ts: 已编辑 5 次"))
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+
+  it("空 summary 不注入任何内容", async () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-hook-"))
+    try {
+      const hooks = await SessionJournalPlugin({})
+      const after = hooks["tool.execute.after"]
+      const input = { tool: "edit", args: { filePath: "a.ts" } }
+      const output = { args: { workdir: tmpRepo }, output: "Edit successful" }
+      await after(input, output)
+      assert.equal(output.output, "Edit successful")
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+
+  it("read 工具不触发 summary 注入", async () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-hook-"))
+    const sessionDir = findWorkspaceSessionDir(tmpRepo)
+    ensureSessionDir(sessionDir)
+    writeSummary(sessionDir, { antiPatterns: ["x.ts: 已编辑 3 次"], openIssues: [], progress: "" })
+    try {
+      const hooks = await SessionJournalPlugin({})
+      const after = hooks["tool.execute.after"]
+      const input = { tool: "read" }
+      const output = { args: { workdir: tmpRepo }, output: "file content" }
+      await after(input, output)
+      assert.equal(output.output, "file content")
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+
+  it("累计编辑条目触发蒸馏", async () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-hook-"))
+    try {
+      const hooks = await SessionJournalPlugin({})
+      const after = hooks["tool.execute.after"]
+      for (let i = 0; i < 12; i++) {
+        await after(
+          { tool: "edit", args: { filePath: `src/file${i}.ts` } },
+          { args: { workdir: tmpRepo }, output: `Edit #${i}` }
+        )
+      }
+      const sessionDir = findWorkspaceSessionDir(tmpRepo)
+      const summary = readSummary(sessionDir)
+      assert.ok(summary.progress.length > 0, "蒸馏应在累计足够条目后触发")
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+})
+
+// =============================================
+// Task 5: experimental.session.compacting hook
+// =============================================
+
+describe("experimental.session.compacting hook", () => {
+  it("存在 summary 时注入到 compaction context", async () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-compact-"))
+    const sessionDir = findWorkspaceSessionDir(tmpRepo)
+    ensureSessionDir(sessionDir)
+    try {
+      writeSummary(sessionDir, {
+        antiPatterns: ["src/auth.ts: 已编辑 5 次"],
+        openIssues: ["最近的测试失败: npm test"],
+        progress: "已编辑 3 个文件",
+      })
+      const hooks = await SessionJournalPlugin({ directory: tmpRepo })
+      const compacting = hooks["experimental.session.compacting"]
+      const output = { context: [], prompt: null }
+      await compacting({}, output)
+      assert.ok(output.context.length > 0)
+      const injected = output.context.join("\n")
+      assert.ok(injected.includes("src/auth.ts"))
+      assert.ok(injected.includes("npm test"))
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+
+  it("无 summary 时不注入任何 context", async () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-compact-"))
+    try {
+      const hooks = await SessionJournalPlugin({ directory: tmpRepo })
+      const compacting = hooks["experimental.session.compacting"]
+      const output = { context: [], prompt: null }
+      await compacting({}, output)
+      assert.equal(output.context.length, 0)
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+})
+
+// =============================================
+// Task 6: event hook (session.created → archive)
+// =============================================
+
+describe("event hook", () => {
+  it("session.created 归档旧 journal", async () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-evt-"))
+    const sessionDir = findWorkspaceSessionDir(tmpRepo)
+    ensureSessionDir(sessionDir)
+    try {
+      appendFileSync(join(sessionDir, "journal.jsonl"), '{"tool":"edit","ts":1}\n')
+      writeFileSync(join(sessionDir, "summary.md"), "# old summary")
+      const hooks = await SessionJournalPlugin({ directory: tmpRepo })
+      await hooks.event({ event: { type: "session.created", properties: {} } })
+      assert.ok(!existsSync(join(sessionDir, "journal.jsonl")))
+      assert.ok(existsSync(join(sessionDir, "archive")))
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+
+  it("非 session.created 事件不触发归档", async () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-evt-"))
+    const sessionDir = findWorkspaceSessionDir(tmpRepo)
+    ensureSessionDir(sessionDir)
+    try {
+      appendFileSync(join(sessionDir, "journal.jsonl"), '{"tool":"edit","ts":1}\n')
+      const hooks = await SessionJournalPlugin({ directory: tmpRepo })
+      await hooks.event({ event: { type: "session.idle", properties: {} } })
+      assert.ok(existsSync(join(sessionDir, "journal.jsonl")))
     } finally {
       rmSync(tmpRepo, { recursive: true, force: true })
     }

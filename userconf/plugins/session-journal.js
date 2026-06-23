@@ -221,3 +221,82 @@ export function readSummary(sessionDir) {
     return EMPTY_SUMMARY()
   }
 }
+
+const DISTILL_INTERVAL = 10
+
+export const SessionJournalPlugin = async (ctx) => {
+  const directory = ctx?.directory
+  let entryCount = 0
+
+  return {
+    "tool.execute.after": async (input, output) => {
+      const tool = input.tool
+      if (!tool) return
+
+      const workdir = output.args?.workdir || output.args?.cwd || process.cwd()
+      const sessionDir = findWorkspaceSessionDir(workdir)
+
+      const entry = {
+        tool,
+        ts: Date.now(),
+        file: input.args?.filePath || input.args?.file_path || output.args?.file_path || "",
+        command: output.args?.command || "",
+      }
+
+      if (tool === "bash") {
+        entry.exitCode = output.exitCode ?? output.exit_code ?? null
+      }
+
+      try {
+        appendEntry(sessionDir, entry)
+        entryCount++
+      } catch {}
+
+      if (entryCount % DISTILL_INTERVAL === 0) {
+        try {
+          const entries = readJournal(sessionDir)
+          const summary = distill(entries)
+          writeSummary(sessionDir, summary)
+        } catch {}
+      }
+
+      if ((tool === "edit" || tool === "write") && entry.file) {
+        try {
+          const summary = readSummary(sessionDir)
+          const text = formatSummary(summary)
+          if (text && output.output != null) {
+            output.output = String(output.output) + "\n\n" + text
+          } else if (text) {
+            output.output = text
+          }
+        } catch {}
+      }
+    },
+
+    "experimental.session.compacting": async (_, output) => {
+      try {
+        const workdir = directory || process.cwd()
+        const sessionDir = findWorkspaceSessionDir(workdir)
+        const summary = readSummary(sessionDir)
+        const text = formatSummary(summary)
+        if (text) {
+          output.context.push(`## Session Journal — 反模式摘要
+
+以下内容记录本次 session 中检测到的反模式和开放问题，请在生成继续摘要时保留这些信息：
+
+${text}`)
+        }
+      } catch {}
+    },
+
+    event: async ({ event }) => {
+      if (event.type !== "session.created") return
+      try {
+        const workdir = directory || process.cwd()
+        const sessionDir = findWorkspaceSessionDir(workdir)
+        archiveSession(sessionDir)
+        entryCount = 0
+      } catch {}
+    },
+  }
+}
