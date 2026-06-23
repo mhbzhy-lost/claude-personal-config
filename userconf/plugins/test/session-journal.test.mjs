@@ -1,11 +1,21 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
+import { mkdtempSync, rmSync, mkdirSync, existsSync, appendFileSync, writeFileSync, readFileSync, readdirSync } from "node:fs"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
 import {
   distill,
   detectRepeatEdits,
   detectTestFailSequence,
   detectBypassUsage,
   formatSummary,
+  findWorkspaceSessionDir,
+  appendEntry,
+  readJournal,
+  archiveSession,
+  ensureSessionDir,
+  writeSummary,
+  readSummary,
 } from "../session-journal.js"
 
 describe("distill()", () => {
@@ -169,5 +179,155 @@ describe("formatSummary()", () => {
     const text = formatSummary(summary)
     assert.ok(text.includes("已编辑"))
     assert.ok(!text.includes("⚠️"))
+  })
+})
+
+// =============================================
+// Task 2: Journal I/O 测试
+// =============================================
+
+describe("findWorkspaceSessionDir()", () => {
+  it("workdir 直接返回 session 路径", () => {
+    const dir = findWorkspaceSessionDir("/some/workspace")
+    assert.equal(dir, join("/some/workspace", ".opencode", "session"))
+  })
+
+  it("workdir 为 null 时 fallback 到 cwd", () => {
+    const dir = findWorkspaceSessionDir(null)
+    assert.ok(dir.endsWith(".opencode/session") || dir.includes(".opencode"))
+  })
+})
+
+describe("appendEntry()", () => {
+  it("写入 JSONL 条目", () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-test-"))
+    const sessionDir = join(tmpRepo, ".opencode", "session")
+    ensureSessionDir(sessionDir)
+    try {
+      appendEntry(sessionDir, { tool: "edit", file: "src/a.ts", ts: 1 })
+      appendEntry(sessionDir, { tool: "bash", command: "ls", exitCode: 0, ts: 2 })
+      const entries = readJournal(sessionDir)
+      assert.equal(entries.length, 2)
+      assert.equal(entries[0].tool, "edit")
+      assert.equal(entries[1].tool, "bash")
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+
+  it("不存在的 journal 返回空数组", () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-test-"))
+    const sessionDir = join(tmpRepo, ".opencode", "session")
+    ensureSessionDir(sessionDir)
+    try {
+      assert.deepEqual(readJournal(sessionDir), [])
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+
+  it("损坏的 JSON 行跳过并继续", () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-test-"))
+    const sessionDir = join(tmpRepo, ".opencode", "session")
+    ensureSessionDir(sessionDir)
+    try {
+      appendEntry(sessionDir, { tool: "edit", file: "a.ts", ts: 1 })
+      appendFileSync(join(sessionDir, "journal.jsonl"), "NOT JSON\n")
+      appendEntry(sessionDir, { tool: "write", file: "b.ts", ts: 2 })
+      const entries = readJournal(sessionDir)
+      assert.equal(entries.length, 2)
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("archiveSession()", () => {
+  it("将当前 journal 移到 archive 目录", () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-test-"))
+    const sessionDir = join(tmpRepo, ".opencode", "session")
+    ensureSessionDir(sessionDir)
+    try {
+      appendFileSync(join(sessionDir, "journal.jsonl"), '{"tool":"edit","ts":1}\n')
+      writeFileSync(join(sessionDir, "summary.md"), "# Test summary")
+
+      archiveSession(sessionDir)
+
+      assert.ok(!existsSync(join(sessionDir, "journal.jsonl")))
+      assert.ok(existsSync(join(sessionDir, "archive")))
+      const archived = readdirSync(join(sessionDir, "archive"))
+      assert.ok(archived.length >= 1)
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+
+  it("空 journal 不归档，archive 目录不创建", () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-test-"))
+    const sessionDir = join(tmpRepo, ".opencode", "session")
+    ensureSessionDir(sessionDir)
+    try {
+      archiveSession(sessionDir)
+      assert.ok(!existsSync(join(sessionDir, "archive")))
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+})
+
+// =============================================
+// Task 3: Summary 读写测试
+// =============================================
+
+describe("writeSummary() + readSummary()", () => {
+  it("写入并读回 summary", () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-test-"))
+    const sessionDir = join(tmpRepo, ".opencode", "session")
+    ensureSessionDir(sessionDir)
+    try {
+      const summary = {
+        antiPatterns: ["src/a.ts: 已编辑 3 次"],
+        openIssues: [],
+        progress: "已编辑 1 个文件",
+      }
+      writeSummary(sessionDir, summary)
+      const loaded = readSummary(sessionDir)
+      assert.deepEqual(loaded, summary)
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+
+  it("不存在的 summary 返回空 summary", () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-test-"))
+    const sessionDir = join(tmpRepo, ".opencode", "session")
+    ensureSessionDir(sessionDir)
+    try {
+      const loaded = readSummary(sessionDir)
+      assert.deepEqual(loaded, { antiPatterns: [], openIssues: [], progress: "" })
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+
+  it("写入 summary.md 包含反模式内容", () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-test-"))
+    const sessionDir = join(tmpRepo, ".opencode", "session")
+    ensureSessionDir(sessionDir)
+    try {
+      const summary = {
+        antiPatterns: ["src/auth.ts: 已编辑 5 次"],
+        openIssues: ["门禁绕过"],
+        progress: "已编辑 2 个文件",
+      }
+      writeSummary(sessionDir, summary)
+      const mdPath = join(sessionDir, "summary.md")
+      assert.ok(existsSync(mdPath))
+      const md = readFileSync(mdPath, "utf-8")
+      assert.ok(md.includes("src/auth.ts"))
+      assert.ok(md.includes("门禁绕过"))
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
   })
 })

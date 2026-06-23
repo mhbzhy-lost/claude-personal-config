@@ -1,5 +1,59 @@
 const TEST_CMD_RE = /\b(jest|vitest|pytest|mocha|node --test|npm test|pnpm test|bun test|swift test|cargo test|go test)\b/
 
+import { existsSync, mkdirSync, appendFileSync, readFileSync, writeFileSync, renameSync, readdirSync } from "node:fs"
+import { join } from "node:path"
+
+const JOURNAL_FILE = "journal.jsonl"
+
+export function findWorkspaceSessionDir(workdir) {
+  const root = workdir || process.cwd()
+  return join(root, ".opencode", "session")
+}
+
+export function ensureSessionDir(sessionDir) {
+  if (!existsSync(sessionDir)) {
+    mkdirSync(sessionDir, { recursive: true })
+  }
+  return sessionDir
+}
+
+export function appendEntry(sessionDir, entry) {
+  ensureSessionDir(sessionDir)
+  appendFileSync(join(sessionDir, JOURNAL_FILE), JSON.stringify(entry) + "\n")
+}
+
+export function readJournal(sessionDir) {
+  const path = join(sessionDir, JOURNAL_FILE)
+  if (!existsSync(path)) return []
+  const raw = readFileSync(path, "utf-8")
+  const entries = []
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue
+    try {
+      entries.push(JSON.parse(line))
+    } catch {
+      // skip malformed lines
+    }
+  }
+  return entries
+}
+
+export function archiveSession(sessionDir) {
+  const journalPath = join(sessionDir, JOURNAL_FILE)
+  if (!existsSync(journalPath)) return
+
+  const archiveDir = join(sessionDir, "archive")
+  if (!existsSync(archiveDir)) mkdirSync(archiveDir, { recursive: true })
+
+  const ts = new Date().toISOString().replace(/[:.]/g, "-")
+  renameSync(journalPath, join(archiveDir, `${ts}.jsonl`))
+
+  const summaryPath = join(sessionDir, "summary.md")
+  if (existsSync(summaryPath)) {
+    renameSync(summaryPath, join(archiveDir, `${ts}-summary.md`))
+  }
+}
+
 export function detectRepeatEdits(entries, threshold = 3) {
   const counts = new Map()
   for (const e of entries) {
@@ -118,4 +172,52 @@ export function formatSummary(summary) {
     }
   }
   return lines.join("\n")
+}
+
+const SUMMARY_JSON_FILE = "summary.json"
+const SUMMARY_MD_FILE = "summary.md"
+
+const EMPTY_SUMMARY = () => ({ antiPatterns: [], openIssues: [], progress: "" })
+
+export function writeSummary(sessionDir, summary) {
+  ensureSessionDir(sessionDir)
+  writeFileSync(join(sessionDir, SUMMARY_JSON_FILE), JSON.stringify(summary, null, 2))
+  const lines = []
+  lines.push(`# Session 反模式摘要`)
+  lines.push("")
+  lines.push(`> 自动蒸馏于 ${new Date().toISOString()}`)
+  lines.push("")
+  if (summary.progress) {
+    lines.push(`**进度**: ${summary.progress}`)
+    lines.push("")
+  }
+  if (summary.antiPatterns.length) {
+    lines.push(`## 反模式`)
+    for (const p of summary.antiPatterns) {
+      lines.push(`- ${p}`)
+    }
+    lines.push("")
+  }
+  if (summary.openIssues.length) {
+    lines.push(`## 开放问题`)
+    for (const i of summary.openIssues) {
+      lines.push(`- ${i}`)
+    }
+  }
+  writeFileSync(join(sessionDir, SUMMARY_MD_FILE), lines.join("\n"))
+}
+
+export function readSummary(sessionDir) {
+  const jsonPath = join(sessionDir, SUMMARY_JSON_FILE)
+  if (!existsSync(jsonPath)) return EMPTY_SUMMARY()
+  try {
+    const data = JSON.parse(readFileSync(jsonPath, "utf-8"))
+    return {
+      antiPatterns: data.antiPatterns || [],
+      openIssues: data.openIssues || [],
+      progress: data.progress || "",
+    }
+  } catch {
+    return EMPTY_SUMMARY()
+  }
 }
