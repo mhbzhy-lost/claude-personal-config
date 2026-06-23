@@ -38,3 +38,6 @@ blocks/*/component/frontend/node_modules
 # hook execution logs (diagnostic, not source)
 logs/
 .workflow-stdout.log
+
+# session-journal 运行时产物（workspace 维度，不入仓）
+.opencode/session/
