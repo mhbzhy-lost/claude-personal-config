@@ -519,3 +519,81 @@ describe("event hook", () => {
     }
   })
 })
+
+// =============================================
+// Task 8: 端到端集成测试
+// =============================================
+
+describe("集成：完整 session 生命周期", () => {
+  it("记录 → 蒸馏 → 注入 → 归档全流程", async () => {
+    const tmpRepo = mkdtempSync(join(tmpdir(), "sj-e2e-"))
+    try {
+      const hooks = await SessionJournalPlugin({ directory: tmpRepo })
+      const after = hooks["tool.execute.after"]
+      const event = hooks.event
+      const compacting = hooks["experimental.session.compacting"]
+
+      for (let i = 0; i < 4; i++) {
+        await after(
+          { tool: "edit", args: { filePath: "src/auth.ts" } },
+          { args: { workdir: tmpRepo }, output: `Edit #${i}` }
+        )
+      }
+
+      const sessionDir = findWorkspaceSessionDir(tmpRepo)
+      const journal = readJournal(sessionDir)
+      assert.ok(journal.length >= 4, `journal 应有 ≥4 条, 实际 ${journal.length}`)
+
+      for (let i = 0; i < 8; i++) {
+        await after(
+          { tool: "bash" },
+          { args: { command: "ls", workdir: tmpRepo }, exitCode: 0 }
+        )
+      }
+
+      const summary = readSummary(sessionDir)
+      if (summary.antiPatterns.length > 0) {
+        assert.ok(summary.antiPatterns.some(p => p.includes("src/auth.ts")))
+      }
+
+      const compactOutput = { context: [], prompt: null }
+      await compacting({}, compactOutput)
+      assert.ok(compactOutput.context.length > 0, "compacting hook 应注入 context")
+
+      await event({ event: { type: "session.created", properties: {} } })
+      assert.ok(!existsSync(join(sessionDir, "journal.jsonl")))
+      assert.ok(existsSync(join(sessionDir, "archive")))
+
+      await after(
+        { tool: "edit", args: { filePath: "src/new.ts" } },
+        { args: { workdir: tmpRepo }, output: "New session" }
+      )
+      const newJournal = readJournal(sessionDir)
+      assert.equal(newJournal.length, 1)
+    } finally {
+      rmSync(tmpRepo, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("fail-open 行为", () => {
+  it("不存在的 workdir 不抛异常", async () => {
+    const hooks = await SessionJournalPlugin({})
+    const after = hooks["tool.execute.after"]
+    await after(
+      { tool: "edit", args: { filePath: "x.ts" } },
+      { args: { workdir: "/nonexistent/path" }, output: "ok" }
+    )
+  })
+
+  it("undefined tool 不抛异常", async () => {
+    const hooks = await SessionJournalPlugin({})
+    const after = hooks["tool.execute.after"]
+    await after({}, { args: {} })
+  })
+
+  it("event handler 对异常 event 不抛异常", async () => {
+    const hooks = await SessionJournalPlugin({})
+    await hooks.event({ event: { type: "session.created", properties: undefined } })
+  })
+})
