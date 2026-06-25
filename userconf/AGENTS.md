@@ -54,18 +54,6 @@ Ref: #2847
 - 修复 + 测试可放一个 commit；重构 + 修复必须拆开
 - PR 标题遵循 subject 规则
 
-## Plan 文件规范
-
-写 plan 文件时，每个步骤必须用 `TODO:` / `DONE:` 标记：
-
-```
-- TODO: 编写单元测试
-- DONE: 实现数据校验逻辑
-- TODO: 添加错误处理
-```
-
-完成步骤时更新为 `DONE:`。
-
 ## 输出语言
 
 编写 skill 可全英文；技术文档（需要人审的文章）默认中文。
@@ -104,12 +92,6 @@ Ref: #2847
 禁止：在有登录态/无需用户干预的情况下自行决定使用 headed/前台模式。
 
 ## Skill 行为 override
-
-### `writing-plans`
-使用前必须先进行 Web 调研，补充最新资料与外部约束。
-计划必须含子任务拆分、DAG、可并发集合、验证方式。
-
-禁止：编写计划前不做 Web 调研，计划中缺失 DAG 依赖分析。
 
 ### `receiving-code-review`
 必须先判断反馈是否技术上成立，再决定采纳。
@@ -153,7 +135,6 @@ Currently linked Superpowers workflow skills in `~/.agents/skills`:
 
 - `systematic-debugging`
 - `test-driven-development`
-- `writing-plans`
 - `verification-before-completion`
 - `receiving-code-review`
 
@@ -167,7 +148,6 @@ These thoughts mean STOP and check the linked skills:
 | "I'll write tests after" | Use `test-driven-development` first unless exempt. |
 | "I'll claim it works from inspection" | Use `verification-before-completion` before completion claims. |
 | "This review comment sounds right" | Use `receiving-code-review` to verify it first. |
-| "This needs a plan, but I can improvise" | Use `writing-plans` for multi-step plans. |
 | "I remember this skill" | Skills evolve. Read the current linked version. |
 | "Maybe another Superpowers skill exists" | If it is not linked into `~/.agents/skills`, do not rely on it. |
 
@@ -177,7 +157,6 @@ When multiple linked skills could apply, use this order:
 
 1. **Process skills first**:
    - bugs, failures, unexpected behavior: `systematic-debugging`
-   - multi-step planning: `writing-plans`
    - review feedback: `receiving-code-review`
 2. **Implementation discipline second**:
    - code or behavior changes: `test-driven-development`
@@ -199,8 +178,8 @@ Examples:
 `verification-before-completion`): follow exactly unless user or repository rules
 explicitly override.
 
-**Structured** (`writing-plans`, `receiving-code-review`): follow the workflow,
-but adapt the level of detail to the task.
+**Structured** (`receiving-code-review`): follow the workflow, but adapt the
+level of detail to the task.
 
 ## User Instructions
 

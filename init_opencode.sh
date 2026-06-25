@@ -5,6 +5,7 @@
 #
 # 职责：
 #   - Plugins：逐文件软链 userconf/plugins → ~/.config/opencode/plugins
+#   - Agents：逐文件软链 userconf/agents → ~/.config/opencode/agents
 #   - Instructions：软链 userconf/AGENTS.md → ~/.config/opencode/AGENTS.md
 #   - Shared / Docs：软链共享策略与知识文档
 #   - OpenAI-compatible cache proxy：调用 vendor/opencode-cache-proxy 配置入口
@@ -260,6 +261,60 @@ sync_opencode_plugins() {
   done
 }
 
+# ── Agents ──────────────────────────────────────────────
+# opencode schema 不提供 agents.paths；文件型全局 agent 只能放在
+# ~/.config/opencode/agent(s)/。这里采用 per-file symlink，避免整目录软链覆盖
+# 用户自管 agent。
+sync_opencode_agents() {
+  local src_path="$SRC/userconf/agents"
+  local dst_path="$OPENCODE_CONFIG_DIR/agents"
+
+  if [ ! -d "$src_path" ]; then
+    echo "[skip]  userconf/agents/ 不存在，跳过"
+    return
+  fi
+
+  mkdir -p "$dst_path"
+
+  local src_file dst_file basename current_target
+  for src_file in "$src_path"/*.md; do
+    [ -e "$src_file" ] || continue
+    [ -f "$src_file" ] || continue
+    basename=$(basename "$src_file")
+    dst_file="$dst_path/$basename"
+
+    if [ -L "$dst_file" ] && [ "$(readlink "$dst_file")" = "$src_file" ]; then
+      echo "[agents] $dst_file -> ${src_file}（已就绪）"
+      continue
+    fi
+
+    if [ -L "$dst_file" ]; then
+      current_target=$(readlink "$dst_file")
+      echo "[warn]  $dst_file 是软链但指向 ${current_target}，人工核对后再处理"
+      continue
+    fi
+
+    if [ -f "$dst_file" ]; then
+      if cmp -s "$src_file" "$dst_file"; then
+        rm -f "$dst_file"
+        ln -s "$src_file" "$dst_file"
+        echo "[agents] $basename 升级为软链"
+      else
+        echo "[warn]  $dst_file 与仓内不一致，保留本地副本"
+      fi
+      continue
+    fi
+
+    if [ -d "$dst_file" ]; then
+      echo "[warn]  $dst_file 是目录，与本仓 agent 同名；人工核对后再重跑 init"
+      continue
+    fi
+
+    ln -s "$src_file" "$dst_file"
+    echo "[agents] $basename 软链已创建"
+  done
+}
+
 configure_opencode_cache_proxy() {
   local config_cli="$SRC/vendor/opencode-cache-proxy/proxy/bin/bailian-cache-proxy-configure.mjs"
   local plugin_dir="${OPENCODE_CACHE_PROXY_PLUGIN_DIR:-$OPENCODE_CONFIG_DIR/plugins}"
@@ -501,6 +556,7 @@ echo "[skills] OpenCode Claude Code compatibility loading disabled via OPENCODE_
 
 # ── Run sync ────────────────────────────────────────────
 sync_opencode_plugins
+sync_opencode_agents
 configure_opencode_cache_proxy
 sync_opencode_instructions
 sync_opencode_shared
