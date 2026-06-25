@@ -6,6 +6,7 @@
 # 职责：
 #   - Plugins：逐文件软链 userconf/plugins → ~/.config/opencode/plugins
 #   - Agents：逐文件软链 userconf/agents → ~/.config/opencode/agents
+#   - Skills：按 agents/skills.list 软链 userconf/skills 或 vendor/superpowers/skills → ~/.agents/skills
 #   - Instructions：软链 userconf/AGENTS.md → ~/.config/opencode/AGENTS.md
 #   - Shared / Docs：软链共享策略与知识文档
 #   - OpenAI-compatible cache proxy：调用 vendor/opencode-cache-proxy 配置入口
@@ -22,6 +23,7 @@ set -euo pipefail
 # 用 BASH_SOURCE[0] 替代 $0：即使脚本被 source 执行也能正确定位自身目录
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPENCODE_CONFIG_DIR="${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}"
+AGENTS_SKILLS_DIR="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
 OPENCODE_JSON="$OPENCODE_CONFIG_DIR/opencode.json"
 BAILIAN_CACHE_PROXY_PORT="${BAILIAN_CACHE_PROXY_PORT:-48761}"
 
@@ -88,6 +90,90 @@ ensure_opencode_required_submodules() {
   ensure_opencode_submodule_ready \
     "vendor/opencode-dynamic-workflow" \
     "$SRC/vendor/opencode-dynamic-workflow/lib/runner.mjs"
+}
+
+# ── Shared skills ───────────────────────────────────────
+# ~/.agents/skills 是 OpenCode/Codex 等客户端共享的 external skill 入口。
+# 白名单由 agents/skills.list 管理；仓内自维护 skill 优先取 userconf/skills，
+# 通用流程 skill fallback 到 vendor/superpowers/skills。
+trim_skill_name() {
+  local value="$1"
+  value="${value%%#*}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s\n' "$value"
+}
+
+shared_skill_source() {
+  local skill_name="$1"
+  local candidate
+
+  for candidate in \
+    "$SRC/userconf/skills/$skill_name" \
+    "$SRC/vendor/superpowers/skills/$skill_name"; do
+    if [ -d "$candidate" ] && [ -f "$candidate/SKILL.md" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+is_managed_skill_target() {
+  local target="$1"
+
+  case "$target" in
+    "$SRC/userconf/skills/"*|"$SRC/vendor/superpowers/skills/"*|"$SRC/claude-skills/"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+sync_shared_skills() {
+  local list_path="$SRC/agents/skills.list"
+
+  if [ ! -f "$list_path" ]; then
+    echo "[skip]  agents/skills.list 不存在，跳过共享 skill 同步"
+    return
+  fi
+
+  mkdir -p "$AGENTS_SKILLS_DIR"
+
+  local raw_line skill_name src_path dst_path current_target
+  while IFS= read -r raw_line || [ -n "$raw_line" ]; do
+    skill_name="$(trim_skill_name "$raw_line")"
+    [ -n "$skill_name" ] || continue
+
+    if ! src_path="$(shared_skill_source "$skill_name")"; then
+      echo "[warn]  skill $skill_name 未找到源目录，跳过"
+      continue
+    fi
+
+    dst_path="$AGENTS_SKILLS_DIR/$skill_name"
+
+    if [ -L "$dst_path" ]; then
+      current_target="$(readlink "$dst_path")"
+      if [ "$current_target" = "$src_path" ]; then
+        continue
+      fi
+      if is_managed_skill_target "$current_target"; then
+        rm -f "$dst_path"
+        ln -s "$src_path" "$dst_path"
+        echo "[skill] $dst_path 软链已更新"
+      else
+        echo "[warn]  $dst_path 是软链但指向 ${current_target}，人工核对后再处理"
+      fi
+      continue
+    fi
+
+    if [ -e "$dst_path" ]; then
+      echo "[warn]  $dst_path 已存在且不是软链，保留本地内容"
+      continue
+    fi
+
+    ln -s "$src_path" "$dst_path"
+    echo "[skill] $dst_path 软链已创建"
+  done < "$list_path"
 }
 
 # ── OpenCode binary ─────────────────────────────────────
@@ -553,6 +639,7 @@ ensure_opencode_installed
 # ~/.claude/skills/ 叠加进 OpenCode 首轮上下文；OpenCode 原生 skills / plugin
 # 仍由自身配置加载。
 echo "[skills] OpenCode Claude Code compatibility loading disabled via OPENCODE_DISABLE_CLAUDE_CODE"
+sync_shared_skills
 
 # ── Run sync ────────────────────────────────────────────
 sync_opencode_plugins

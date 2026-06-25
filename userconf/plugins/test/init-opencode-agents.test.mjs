@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
@@ -62,6 +62,87 @@ describe("init_opencode agents sync", () => {
       assert.equal(linkTarget, join(repoRoot, "userconf", "agents", "plan-runner.md"))
     } finally {
       rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it("repairs shared skill symlinks that still point to deprecated claude-skills", () => {
+    const skillsDir = mkdtempSync(join(tmpdir(), "agents-skills-"))
+
+    try {
+      const linkPath = join(skillsDir, "external-llm-review")
+      execFileSync("ln", ["-s", join(repoRoot, "claude-skills", "external-llm-review"), linkPath])
+
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `AGENTS_SKILLS_DIR=${JSON.stringify(skillsDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "declare -F sync_shared_skills >/dev/null",
+            "sync_shared_skills",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      const linkTarget = execFileSync("readlink", [linkPath], { encoding: "utf8" }).trim()
+
+      assert.equal(linkTarget, join(repoRoot, "userconf", "skills", "external-llm-review"))
+    } finally {
+      rmSync(skillsDir, { recursive: true, force: true })
+    }
+  })
+
+  it("symlinks Superpowers skills from vendor fallback", () => {
+    const skillsDir = mkdtempSync(join(tmpdir(), "agents-skills-"))
+
+    try {
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `AGENTS_SKILLS_DIR=${JSON.stringify(skillsDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "declare -F sync_shared_skills >/dev/null",
+            "sync_shared_skills",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      const linkPath = join(skillsDir, "systematic-debugging")
+      const linkTarget = execFileSync("readlink", [linkPath], { encoding: "utf8" }).trim()
+
+      assert.equal(linkTarget, join(repoRoot, "vendor", "superpowers", "skills", "systematic-debugging"))
+    } finally {
+      rmSync(skillsDir, { recursive: true, force: true })
+    }
+  })
+
+  it("external-llm-review skill documentation points at userconf skill path", () => {
+    const skill = readFileSync(join(repoRoot, "userconf", "skills", "external-llm-review", "SKILL.md"), "utf8")
+
+    assert.match(skill, /userconf\/skills\/external-llm-review/)
+    assert.doesNotMatch(skill, /claude-skills\/external-llm-review/)
+  })
+
+  it("every shared skill whitelist entry has a userconf or vendor source", () => {
+    const list = readFileSync(join(repoRoot, "agents", "skills.list"), "utf8")
+      .split("\n")
+      .map((line) => line.replace(/#.*$/, "").trim())
+      .filter(Boolean)
+
+    for (const skill of list) {
+      const sources = [
+        join(repoRoot, "userconf", "skills", skill, "SKILL.md"),
+        join(repoRoot, "vendor", "superpowers", "skills", skill, "SKILL.md"),
+      ]
+
+      assert.ok(sources.some((path) => existsSync(path)), `${skill} should have a source SKILL.md`)
     }
   })
 
