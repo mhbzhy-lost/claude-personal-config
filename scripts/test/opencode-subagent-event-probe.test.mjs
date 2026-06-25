@@ -1,10 +1,10 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { buildRunArgs, createProbeWorkspace, formatServeNotReadyError, summarizeProbeEvents } from "../opencode-subagent-event-probe.mjs"
+import { buildRunArgs, createProbeWorkspace, formatServeNotReadyError, readTextFromOffset, shouldWaitForRepairEvidence, summarizeProbeEvents } from "../opencode-subagent-event-probe.mjs"
 
 describe("opencode subagent event probe", () => {
   it("creates a self-contained OpenCode probe workspace", () => {
@@ -78,5 +78,29 @@ describe("opencode subagent event probe", () => {
 
     assert.doesNotMatch(source, /spawnSync\("sleep"/)
     assert.match(source, /Atomics\.wait/)
+  })
+
+  it("reads only newly appended log bytes", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-subagent-probe-test-"))
+    try {
+      const logPath = join(root, "serve.log")
+      writeFileSync(logPath, "ready\n")
+
+      const first = readTextFromOffset(logPath, 0)
+      appendFileSync(logPath, "next\n")
+      const second = readTextFromOffset(logPath, first.offset)
+
+      assert.equal(first.text, "ready\n")
+      assert.equal(second.text, "next\n")
+      assert.equal(second.offset, Buffer.byteLength("ready\nnext\n"))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("skips repair evidence wait after run timeout", () => {
+    assert.equal(shouldWaitForRepairEvidence({ signal: "SIGTERM", error: null }), false)
+    assert.equal(shouldWaitForRepairEvidence({ signal: null, error: new Error("timeout") }), false)
+    assert.equal(shouldWaitForRepairEvidence({ signal: null, error: null }), true)
   })
 })

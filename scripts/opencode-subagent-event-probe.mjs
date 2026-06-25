@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process"
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs"
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -206,13 +206,36 @@ function sleepMs(ms) {
   Atomics.wait(sleepArray, 0, 0, ms)
 }
 
+export function readTextFromOffset(path, offset = 0) {
+  const fd = openSync(path, "r")
+  try {
+    const size = fstatSync(fd).size
+    const start = Math.min(offset, size)
+    const length = size - start
+    if (length === 0) return { text: "", offset: size }
+    const buffer = Buffer.alloc(length)
+    readSync(fd, buffer, 0, length, start)
+    return { text: buffer.toString("utf8"), offset: size }
+  } finally {
+    closeSync(fd)
+  }
+}
+
+export function shouldWaitForRepairEvidence(result) {
+  return !result.error && !result.signal
+}
+
 function waitForServer({ logPath, port, process, timeoutMs }) {
   const start = Date.now()
+  let offset = 0
+  let recentLog = ""
   while (Date.now() - start < timeoutMs) {
     if (process.exitCode != null) return false
     if (existsSync(logPath)) {
-      const log = readFileSync(logPath, "utf8")
-      if (log.includes(`http://127.0.0.1:${port}`)) return true
+      const next = readTextFromOffset(logPath, offset)
+      offset = next.offset
+      recentLog = (recentLog + next.text).slice(-4096)
+      if (recentLog.includes(`http://127.0.0.1:${port}`)) return true
     }
     sleepMs(100)
   }
@@ -264,7 +287,9 @@ export function runProbe({ root, model, timeoutMs = 180000, prompt = DEFAULT_PRO
     encoding: "utf8",
   })
 
-  waitForRepairEvidence(paths.logPath, Math.min(postRunWaitMs, timeoutMs))
+  if (shouldWaitForRepairEvidence(result)) {
+    waitForRepairEvidence(paths.logPath, Math.min(postRunWaitMs, timeoutMs))
+  }
 
   try { serve.kill() } catch {}
   closeSync(serveOut)
