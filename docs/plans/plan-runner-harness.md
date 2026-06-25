@@ -107,6 +107,10 @@ docs/plans/<task_id>.md
     "round": 0,
     "audit": [],
     "external": []
+  },
+  "self_check": {
+    "status": "not_started",
+    "round": 0
   }
 }
 ```
@@ -119,6 +123,7 @@ planning_required
 waiting_for_todo
 ready_to_execute
 executing
+self_checking
 deterministic_check
 audit_review
 external_review
@@ -161,6 +166,8 @@ Task state 只保留后续流程会消费的字段。完整语义计划只写入
 | `reviews.round` | harness 计数 | repair loop 上限，两轮失败后 blocked |
 | `reviews.audit` | harness 记录审计 subagent JSON 结果 | final completeness check；repair prompt 输入 |
 | `reviews.external` | harness 记录 external review JSON 结果 | final completeness check；pre-push 兜底依据 |
+| `self_check.status` | harness 在首次完成尝试时写入 | `session.idle` re-entry 判断：`not_started` 时先投递 self-check，`prompted` 的下一次 idle 才允许 deterministic check |
+| `self_check.round` | harness 在投递 self-check prompt 后递增 | 限制当前切片只做一次 completion self-check，避免同一完成尝试反复自检而不进入确定性检查 |
 
 不进入 task state 的字段：`project_id`、`workspace_id`、`directory`、`branch`、`created_at`、`goal`、`approach`、`non_goals`、`stop_conditions`、`affected_files`、`kind`、`harness_gates`。
 
@@ -339,7 +346,7 @@ todowrite
 
 执行类工具在 `ready_to_execute` / `executing` / `repairing` 阶段还必须满足：当前 `todowrite` 中恰好有一个 `in_progress` task。harness 将该 task 作为当前执行上下文，把后续 edit/write/bash/task 事件绑定到这个 task；如果没有 `in_progress` 或存在多个 `in_progress`，则 block 执行类工具。
 
-`deterministic_check`、`audit_review`、`external_review` 默认禁止 plan-runner/child agent 的执行类工具。
+`self_checking` 允许执行类工具，用于 agent 在自检后补证据或重开 todo。`deterministic_check`、`audit_review`、`external_review` 默认禁止 plan-runner/child agent 的执行类工具。
 
 harness-owned 操作不走 agent phase gate，包括：
 
@@ -503,7 +510,16 @@ info.directory
 
 `event(session.idle)` 且 session 是 `plan_runner_session_id` 时触发。
 
-第一步 deterministic check：
+第一步 self-check re-entry：
+
+- 当 `self_check.status == not_started` 且当前状态像完成尝试时，harness 先向 `plan_runner_session_id` 投递 verification-before-completion self-check prompt。
+- prompt 发送成功后：`status = self_checking`，`self_check.status = prompted`，`self_check.round += 1`。
+- prompt 发送失败后：`status = interrupted`。
+- agent 收到 self-check 后必须复核计划、todo、diff evidence 和验证命令；证据不足则重开 todo，补证据后再完成。
+
+第二步 deterministic check：
+
+当 `self_check.status == prompted` 且同一 plan-runner session 再次 idle 时，harness 将 `self_check.status` 标记为 `completed`，随后执行原 deterministic check：
 
 - `plan_written == true`
 - `plan_written` 是派生条件：`plan_path` 存在、`plan_sha256` 匹配、`plan_contract.tasks.length > 0`
@@ -523,7 +539,6 @@ info.directory
 失败处理：
 
 ```text
-先保持 status = deterministic_check
 检查 plan_runner_session_id 是否仍存在且可接收 prompt
 调用 client.session.promptAsync(plan_runner_session_id, repair prompt)
 promptAsync 成功后：status = repairing，reviews.round += 1
@@ -759,7 +774,7 @@ rename
 ## 实施任务
 
 当前已落地：T1、T2、T3、T4、T5、T6、T7、T8、T9、T10、T15、T16 的首个最小切片。
-其中 T8 已记录 bash command evidence、`session.diff`、`message.updated.info.summary.diffs` 和 patch part diff evidence；T9 已要求完成项必须有 diff evidence，command-only evidence 不再满足 implementation 完成判断。真实临时 git workspace 已验证可进入 `audit_review`。
+其中 T8 已记录 bash command evidence、`session.diff`、`message.updated.info.summary.diffs` 和 patch part diff evidence；T9 已要求完成项必须有 diff evidence，command-only evidence 不再满足 implementation 完成判断；T10 已在 deterministic check 前插入 verification-before-completion self-check re-entry。
 
 仍未落地：T11、T12、T13、T14，以及坏 JSON 隔离、stale/pre-push 相关 task 兜底等完整恢复路径。
 
@@ -823,8 +838,9 @@ T15 -> T16
 - Test item: waiting_for_todo 阶段 todowrite 必须覆盖所有 task ids
 - Test item: plan-runner child task 只允许 default/general 且 background true
 - Test item: completed todo 只映射 claimed_done
-- Test item: session.idle deterministic check 缺 evidence 时失败
-- Test item: deterministic check 成功后进入 audit_review
+- Test item: session.idle 首次完成尝试先投递 self-check prompt
+- Test item: self-check 后 deterministic check 缺 evidence 时失败
+- Test item: self-check 后 deterministic check 成功进入 audit_review
 - Test item: audit JSON 不可解析时失败
 - Test item: external review fail 后 re-entry repair
 - Test item: 两轮失败后 blocked

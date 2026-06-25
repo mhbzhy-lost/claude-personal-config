@@ -153,6 +153,10 @@ function createInitialState({ taskID, parentSessionID, dispatchCallID, worktree 
       audit: [],
       external: [],
     },
+    self_check: {
+      status: "not_started",
+      round: 0,
+    },
   }
 }
 
@@ -263,7 +267,7 @@ function enforcePhaseGate(stateDir, input) {
     return
   }
 
-  if (state.status === "ready_to_execute" || state.status === "executing" || state.status === "repairing") {
+  if (state.status === "ready_to_execute" || state.status === "executing" || state.status === "repairing" || state.status === "self_checking") {
     if (!EXECUTION_TOOLS.has(input.tool)) throw new Error(`plan-runner phase gate: ${input.tool} is not allowed during ${state.status}`)
     if (EXECUTION_CONTEXT_TOOLS.has(input.tool) && countInProgressTodos(state.todo.last_seen) !== 1) {
       throw new Error("plan-runner phase gate: exactly one in_progress todo is required for execution tools")
@@ -338,6 +342,26 @@ function findDeterministicCheckFailures(state) {
   return reasons
 }
 
+function isCompletionAttempt(state) {
+  if (!state.plan_path || !state.plan_sha256 || state.plan_contract.tasks.length === 0) return false
+  if (!state.todo.mirrored) return false
+  if (completedTaskIDs(state).length === 0) return false
+  return !state.todo.last_seen.some((todo) => todo.status === "pending" || todo.status === "in_progress")
+}
+
+function selfCheckPromptText() {
+  return [
+    "Plan-runner self_check_required: perform verification-before-completion self-check before claiming completion.",
+    "- Re-read the plan tasks and current todo status.",
+    "- For every completed todo, cite concrete evidence from this run.",
+    "- For file or code changes, ensure diff evidence exists.",
+    "- For validation, cite command, exit/result, and output excerpt.",
+    "- Do not say should/probably/seems as completion evidence.",
+    "- If evidence is missing, do not claim complete; reopen the relevant todo, gather evidence, then mark it completed again.",
+    "- After this self-check, provide the final report again.",
+  ].join("\n")
+}
+
 function diffFileName(entry) {
   if (typeof entry === "string") return entry
   return entry?.file || entry?.path || entry?.filename || entry?.name || null
@@ -399,7 +423,46 @@ async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
 
   const state = readTaskState(stateDir, index.task_id)
   if (state.plan_runner_session_id !== sessionID) return
-  if (!["waiting_for_todo", "ready_to_execute", "executing", "repairing"].includes(state.status)) return
+  if (!["waiting_for_todo", "ready_to_execute", "executing", "repairing", "self_checking"].includes(state.status)) return
+
+  if (state.status === "self_checking" && state.self_check?.status === "prompted") {
+    state.self_check.status = "completed"
+    state.updated_at = Date.now()
+    writeTaskState(stateDir, state)
+    appendEvent(stateDir, state.task_id, { type: "self_check_completed", session_id: sessionID })
+  } else if ((state.self_check?.status || "not_started") === "not_started" && isCompletionAttempt(state)) {
+    if (!client?.session?.promptAsync) {
+      state.status = "interrupted"
+      state.updated_at = Date.now()
+      writeTaskState(stateDir, state)
+      appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: "promptAsync unavailable" })
+      return
+    }
+
+    try {
+      await client.session.promptAsync({
+        path: { id: sessionID },
+        query: { directory: directory || state.worktree },
+        body: { parts: [{ type: "text", text: selfCheckPromptText() }] },
+      })
+      state.status = "self_checking"
+      state.self_check = {
+        status: "prompted",
+        round: (state.self_check?.round || 0) + 1,
+      }
+      state.updated_at = Date.now()
+      writeTaskState(stateDir, state)
+      appendEvent(stateDir, state.task_id, { type: "self_check_prompt_sent", session_id: sessionID })
+      return
+    } catch (error) {
+      state.status = "interrupted"
+      state.updated_at = Date.now()
+      writeTaskState(stateDir, state)
+      appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: String(error?.message || error) })
+      return
+    }
+  }
+
   if (state.reviews.round >= 2) {
     state.status = "blocked"
     state.updated_at = Date.now()

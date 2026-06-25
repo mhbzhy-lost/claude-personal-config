@@ -481,10 +481,8 @@ describe("PlanRunnerHarnessPlugin", () => {
           },
         },
       })
-      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
-      assert.equal(state.status, "audit_review")
       assert.deepEqual(state.modified_files, ["probe-output.txt"])
       assert.deepEqual(state.evidence[0], {
         id: "ev-diff-msg_with_diff",
@@ -493,6 +491,56 @@ describe("PlanRunnerHarnessPlugin", () => {
         event_ids: ["msg_with_diff"],
         files: ["probe-output.txt"],
       })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("prompts verification self-check before deterministic audit review", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const prompts = []
+      const hooks = await PlanRunnerHarnessPlugin(
+        { directory: workspace, client: { session: { promptAsync: async (payload) => prompts.push(payload) } } },
+        { stateDir },
+      )
+
+      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+      await hooks.tool.write_plan.execute(
+        {
+          title: "Self Check Slice",
+          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
+          dag: [],
+          parallel_sets: [],
+        },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
+      )
+      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
+      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
+      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
+
+      let state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.equal(state.status, "self_checking")
+      assert.deepEqual(state.self_check, { status: "prompted", round: 1 })
+      assert.equal(prompts.length, 1)
+      assert.match(prompts[0].body.parts[0].text, /verification-before-completion self-check/i)
+      assert.match(prompts[0].body.parts[0].text, /do not claim complete/i)
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
+
+      state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.equal(state.status, "audit_review")
+      assert.deepEqual(state.self_check, { status: "completed", round: 1 })
+      assert.equal(prompts.length, 1)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -533,7 +581,12 @@ describe("PlanRunnerHarnessPlugin", () => {
       await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
 
       assert.equal(prompts.length, 1)
-      assert.match(prompts[0].body.parts[0].text, /T1 has no diff evidence/)
+      assert.match(prompts[0].body.parts[0].text, /self_check_required/)
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
+
+      assert.equal(prompts.length, 2)
+      assert.match(prompts[1].body.parts[0].text, /T1 has no diff evidence/)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -592,8 +645,14 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.equal(prompts.length, 1)
       assert.equal(prompts[0].path.id, "ses_plan_runner")
       assert.equal(prompts[0].query.directory, workspace)
-      assert.match(prompts[0].body.parts[0].text, /validation failed/i)
-      assert.match(prompts[0].body.parts[0].text, /T1/)
+      assert.match(prompts[0].body.parts[0].text, /self_check_required/i)
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
+
+      assert.equal(prompts.length, 2)
+      assert.equal(prompts[1].path.id, "ses_plan_runner")
+      assert.match(prompts[1].body.parts[0].text, /validation failed/i)
+      assert.match(prompts[1].body.parts[0].text, /T1/)
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
       assert.equal(state.status, "repairing")

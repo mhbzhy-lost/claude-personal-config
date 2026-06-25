@@ -67,8 +67,8 @@ subagent safety policy 保证 child 没有 `task` 权限。child 只能返回 ev
 - phase gate 在 `planning_required` / `waiting_for_todo` / execution 阶段限制工具。
 - `todo.updated`、`tool.execute.after(bash)`、`message.updated.info.summary.diffs`、
   `message.part.updated` patch、`session.diff` 写入 evidence 索引。
-- `session.idle(plan-runner)` 做最小 deterministic check，失败时通过
-  `client.session.promptAsync` 投递 repair prompt，成功后才进入 `repairing`。
+- `session.idle(plan-runner)` 首次完成尝试时先通过 `client.session.promptAsync`
+  投递 verification-before-completion self-check；下一次 idle 再做 deterministic check。
 
 ### OpenCode server hook 实测（2026-06-25）
 
@@ -93,9 +93,11 @@ tool/event hook 行为。
 - 真实 git workspace 中 `session.diff.diff` 可能一直为空；可用 diff 主要出现在
   `message.updated.info.summary.diffs`，写文件时还会出现 `message.part.updated` 的
   `part.type == "patch"` 和 `part.files`。
-- 临时 git workspace 实测完成链路：`task(plan-runner)` -> `write_plan` ->
+- 临时 git workspace 实测 self-check re-entry 链路：`task(plan-runner)` -> `write_plan` ->
   `todowrite(T1 in_progress)` -> `write` -> `message.updated.summary.diffs` ->
-  `bash` validation -> `todowrite(T1 completed)` -> `session.idle` -> `audit_review`。
+  `bash` validation -> `todowrite(T1 completed)` -> `session.idle` -> self-check
+  re-entry -> 补充验证命令 evidence。第二次 idle 后进入 `audit_review` 的状态流由
+  harness 单测覆盖。
 
 提示内容：
 - shared policy 精简为后台模式约束（编排决策由 `claude/CLAUDE.md` 管辖）
