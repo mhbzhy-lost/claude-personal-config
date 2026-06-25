@@ -69,6 +69,8 @@ subagent safety policy 保证 child 没有 `task` 权限。child 只能返回 ev
   `message.part.updated` patch、`session.diff` 写入 evidence 索引。
 - `session.idle(plan-runner)` 首次完成尝试时先通过 `client.session.promptAsync`
   投递 verification-before-completion self-check；下一次 idle 再做 deterministic check。
+- task/session state 写入使用 `.tmp.<pid>.<uuid>` 后 rename；读到损坏 JSON 时移到
+  `task-state/corrupt/<state-kind>/`，并把该 state 当作 inactive fail-open。
 
 ### OpenCode server hook 实测（2026-06-25）
 
@@ -98,6 +100,8 @@ tool/event hook 行为。
   `bash` validation -> `todowrite(T1 completed)` -> `session.idle` -> self-check
   re-entry -> 补充验证命令 evidence。第二次 idle 后进入 `audit_review` 的状态流由
   harness 单测覆盖。
+- 损坏 task state JSON 的恢复路径由单测覆盖：`session.idle` 不抛异常，坏文件会进入
+  `corrupt/tasks/<task_id>.json`。
 
 提示内容：
 - shared policy 精简为后台模式约束（编排决策由 `claude/CLAUDE.md` 管辖）
