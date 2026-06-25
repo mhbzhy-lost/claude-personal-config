@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { access, appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import { createHash, randomUUID } from "node:crypto"
 import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
@@ -22,8 +22,17 @@ function taskIdFrom(parentSessionID, dispatchCallID) {
   return `planrun-${safeId(parentSessionID)}-${safeId(dispatchCallID)}`
 }
 
-function ensureDir(path) {
-  if (!existsSync(path)) mkdirSync(path, { recursive: true })
+async function pathExists(path) {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function ensureDir(path) {
+  await mkdir(path, { recursive: true })
 }
 
 function fallbackTool(input) {
@@ -50,7 +59,7 @@ async function loadToolHelper() {
     return (await import("@opencode-ai/plugin/tool")).tool
   } catch {
     const installedTool = join(homedir(), ".opencode", "node_modules", "@opencode-ai", "plugin", "dist", "tool.js")
-    if (existsSync(installedTool)) return (await import(pathToFileURL(installedTool).href)).tool
+    if (await pathExists(installedTool)) return (await import(pathToFileURL(installedTool).href)).tool
     return fallbackTool
   }
 }
@@ -70,61 +79,68 @@ function sessionPath(stateDir, sessionID) {
   return join(stateDir, "sessions", `${safeId(sessionID)}.json`)
 }
 
-function writeJsonAtomic(path, value) {
-  ensureDir(dirname(path))
+async function writeJsonAtomic(path, value) {
+  await ensureDir(dirname(path))
   const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`
-  writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n")
-  renameSync(tmp, path)
-}
-
-function quarantineCorruptJson(path) {
-  const quarantinePath = join(dirname(dirname(path)), "corrupt", basename(dirname(path)), basename(path))
-  ensureDir(dirname(quarantinePath))
-  renameSync(path, quarantinePath)
-  return quarantinePath
-}
-
-function readJson(path) {
   try {
-    return JSON.parse(readFileSync(path, "utf8"))
+    await writeFile(tmp, JSON.stringify(value, null, 2) + "\n")
+    await rename(tmp, path)
+  } catch (error) {
+    try { await unlink(tmp) } catch {}
+    throw error
+  }
+}
+
+async function quarantineCorruptJson(path) {
+  const quarantinePath = join(dirname(dirname(path)), "corrupt", basename(dirname(path)), basename(path))
+  try {
+    await ensureDir(dirname(quarantinePath))
+    await rename(path, quarantinePath)
+    return quarantinePath
+  } catch {
+    return null
+  }
+}
+
+async function readJson(path) {
+  try {
+    return JSON.parse(await readFile(path, "utf8"))
   } catch (error) {
     if (error?.code === "ENOENT") return null
     if (error instanceof SyntaxError) {
-      quarantineCorruptJson(path)
+      await quarantineCorruptJson(path)
       return null
     }
     throw error
   }
 }
 
-function appendEvent(stateDir, taskID, event) {
+async function appendEvent(stateDir, taskID, event) {
   const { events } = statePaths(stateDir, taskID)
-  ensureDir(dirname(events))
-  appendFileSync(events, JSON.stringify({ ts: Date.now(), ...event }) + "\n")
+  await ensureDir(dirname(events))
+  await appendFile(events, JSON.stringify({ ts: Date.now(), ...event }) + "\n")
 }
 
-function writeSessionIndex(stateDir, sessionID, taskID, role) {
-  writeJsonAtomic(sessionPath(stateDir, sessionID), { session_id: sessionID, task_id: taskID, role })
+async function writeSessionIndex(stateDir, sessionID, taskID, role) {
+  await writeJsonAtomic(sessionPath(stateDir, sessionID), { session_id: sessionID, task_id: taskID, role })
 }
 
-function readSessionIndex(stateDir, sessionID) {
-  const path = sessionPath(stateDir, sessionID)
-  if (!existsSync(path)) return null
-  return readJson(path)
+async function readSessionIndex(stateDir, sessionID) {
+  return readJson(sessionPath(stateDir, sessionID))
 }
 
-function readTaskState(stateDir, taskID) {
+async function readTaskState(stateDir, taskID) {
   return readJson(statePaths(stateDir, taskID).task)
 }
 
-function readTaskStateForSession(stateDir, sessionID) {
-  const index = readSessionIndex(stateDir, sessionID)
+async function readTaskStateForSession(stateDir, sessionID) {
+  const index = await readSessionIndex(stateDir, sessionID)
   if (!index) return null
   return readTaskState(stateDir, index.task_id)
 }
 
-function writeTaskState(stateDir, state) {
-  writeJsonAtomic(statePaths(stateDir, state.task_id).task, state)
+async function writeTaskState(stateDir, state) {
+  await writeJsonAtomic(statePaths(stateDir, state.task_id).task, state)
 }
 
 function isPlanRunnerDispatch(args = {}) {
@@ -287,8 +303,8 @@ function todosCoverTasks(todos = [], tasks = []) {
   return tasks.every((task) => todos.some((todo) => String(todo.content || "").includes(task.id)))
 }
 
-function enforcePhaseGate(stateDir, input) {
-  const state = readTaskStateForSession(stateDir, input.sessionID)
+async function enforcePhaseGate(stateDir, input) {
+  const state = await readTaskStateForSession(stateDir, input.sessionID)
   if (!state) return
 
   if (state.status === "planning_required") {
@@ -309,31 +325,31 @@ function enforcePhaseGate(stateDir, input) {
     if (state.status === "ready_to_execute" && EXECUTION_CONTEXT_TOOLS.has(input.tool)) {
       state.status = "executing"
       state.updated_at = Date.now()
-      writeTaskState(stateDir, state)
+      await writeTaskState(stateDir, state)
     }
   }
 }
 
-function handleTodoUpdated(stateDir, event) {
+async function handleTodoUpdated(stateDir, event) {
   if (event.type !== "todo.updated") return
   const sessionID = event.properties?.sessionID
   const todos = event.properties?.todos
   if (!sessionID || !Array.isArray(todos)) return
 
-  const index = readSessionIndex(stateDir, sessionID)
+  const index = await readSessionIndex(stateDir, sessionID)
   if (!index) return
-  const state = readTaskState(stateDir, index.task_id)
+  const state = await readTaskState(stateDir, index.task_id)
   if (!state) return
   state.todo.last_seen = todos
   state.todo.mirrored = todosCoverTasks(todos, state.plan_contract.tasks)
   if (state.status === "waiting_for_todo" && state.todo.mirrored) state.status = "ready_to_execute"
   state.updated_at = Date.now()
-  writeTaskState(stateDir, state)
-  appendEvent(stateDir, state.task_id, { type: "todo_updated", session_id: sessionID, mirrored: state.todo.mirrored })
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, state.task_id, { type: "todo_updated", session_id: sessionID, mirrored: state.todo.mirrored })
 }
 
-function recordToolEvidence(stateDir, input, output) {
-  const state = readTaskStateForSession(stateDir, input.sessionID)
+async function recordToolEvidence(stateDir, input, output) {
+  const state = await readTaskStateForSession(stateDir, input.sessionID)
   if (!state || input.tool !== "bash") return
 
   const taskID = activeTodoTaskID(state.todo.last_seen, state.plan_contract.tasks)
@@ -353,8 +369,8 @@ function recordToolEvidence(stateDir, input, output) {
   state.evidence = state.evidence.filter((item) => item.id !== evidence.id)
   state.evidence.push(evidence)
   state.updated_at = Date.now()
-  writeTaskState(stateDir, state)
-  appendEvent(stateDir, state.task_id, { type: "evidence_recorded", evidence_id: evidence.id, tool: input.tool, call_id: input.callID })
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, state.task_id, { type: "evidence_recorded", evidence_id: evidence.id, tool: input.tool, call_id: input.callID })
 }
 
 function completedTaskIDs(state) {
@@ -402,9 +418,9 @@ function diffFileName(entry) {
   return entry?.file || entry?.path || entry?.filename || entry?.name || null
 }
 
-function recordDiffEvidence(stateDir, { sessionID, files, eventID }) {
+async function recordDiffEvidence(stateDir, { sessionID, files, eventID }) {
   if (!sessionID) return
-  const state = readTaskStateForSession(stateDir, sessionID)
+  const state = await readTaskStateForSession(stateDir, sessionID)
   if (!state) return
 
   const taskID = activeTodoTaskID(state.todo.last_seen, state.plan_contract.tasks)
@@ -423,29 +439,29 @@ function recordDiffEvidence(stateDir, { sessionID, files, eventID }) {
   state.evidence = state.evidence.filter((item) => item.id !== evidence.id)
   state.evidence.push(evidence)
   state.updated_at = Date.now()
-  writeTaskState(stateDir, state)
-  appendEvent(stateDir, state.task_id, { type: "evidence_recorded", evidence_id: evidence.id, event_id: eventID })
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, state.task_id, { type: "evidence_recorded", evidence_id: evidence.id, event_id: eventID })
 }
 
-function handleSessionDiff(stateDir, event) {
+async function handleSessionDiff(stateDir, event) {
   if (event.type !== "session.diff") return
   const eventID = event.id || `session-diff-${Date.now()}`
   const files = (event.properties?.diff || []).map(diffFileName).filter(Boolean)
-  recordDiffEvidence(stateDir, { sessionID: event.properties?.sessionID, files, eventID })
+  await recordDiffEvidence(stateDir, { sessionID: event.properties?.sessionID, files, eventID })
 }
 
-function handleMessageDiff(stateDir, event) {
+async function handleMessageDiff(stateDir, event) {
   if (event.type === "message.updated") {
     const eventID = event.id || event.properties?.info?.id || `message-diff-${Date.now()}`
     const files = (event.properties?.info?.summary?.diffs || []).map(diffFileName).filter(Boolean)
-    recordDiffEvidence(stateDir, { sessionID: event.properties?.sessionID, files, eventID })
+    await recordDiffEvidence(stateDir, { sessionID: event.properties?.sessionID, files, eventID })
     return
   }
 
   if (event.type === "message.part.updated" && event.properties?.part?.type === "patch") {
     const eventID = event.id || event.properties.part.id || `patch-diff-${Date.now()}`
     const files = (event.properties.part.files || []).map(diffFileName).filter(Boolean)
-    recordDiffEvidence(stateDir, { sessionID: event.properties?.sessionID, files, eventID })
+    await recordDiffEvidence(stateDir, { sessionID: event.properties?.sessionID, files, eventID })
   }
 }
 
@@ -453,10 +469,10 @@ async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
   if (event.type !== "session.idle") return
   const sessionID = event.properties?.sessionID
   if (!sessionID) return
-  const index = readSessionIndex(stateDir, sessionID)
+  const index = await readSessionIndex(stateDir, sessionID)
   if (!index || index.role !== "plan-runner") return
 
-  const state = readTaskState(stateDir, index.task_id)
+  const state = await readTaskState(stateDir, index.task_id)
   if (!state) return
   if (state.plan_runner_session_id !== sessionID) return
   if (!["waiting_for_todo", "ready_to_execute", "executing", "repairing", "self_checking"].includes(state.status)) return
@@ -464,14 +480,14 @@ async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
   if (state.status === "self_checking" && state.self_check?.status === "prompted") {
     state.self_check.status = "completed"
     state.updated_at = Date.now()
-    writeTaskState(stateDir, state)
-    appendEvent(stateDir, state.task_id, { type: "self_check_completed", session_id: sessionID })
+    await writeTaskState(stateDir, state)
+    await appendEvent(stateDir, state.task_id, { type: "self_check_completed", session_id: sessionID })
   } else if ((state.self_check?.status || "not_started") === "not_started" && isCompletionAttempt(state)) {
     if (!client?.session?.promptAsync) {
       state.status = "interrupted"
       state.updated_at = Date.now()
-      writeTaskState(stateDir, state)
-      appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: "promptAsync unavailable" })
+      await writeTaskState(stateDir, state)
+      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: "promptAsync unavailable" })
       return
     }
 
@@ -487,14 +503,14 @@ async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
         round: (state.self_check?.round || 0) + 1,
       }
       state.updated_at = Date.now()
-      writeTaskState(stateDir, state)
-      appendEvent(stateDir, state.task_id, { type: "self_check_prompt_sent", session_id: sessionID })
+      await writeTaskState(stateDir, state)
+      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_sent", session_id: sessionID })
       return
     } catch (error) {
       state.status = "interrupted"
       state.updated_at = Date.now()
-      writeTaskState(stateDir, state)
-      appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: String(error?.message || error) })
+      await writeTaskState(stateDir, state)
+      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: String(error?.message || error) })
       return
     }
   }
@@ -502,7 +518,7 @@ async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
   if (state.reviews.round >= 2) {
     state.status = "blocked"
     state.updated_at = Date.now()
-    writeTaskState(stateDir, state)
+    await writeTaskState(stateDir, state)
     return
   }
 
@@ -510,16 +526,16 @@ async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
   if (reasons.length === 0) {
     state.status = "audit_review"
     state.updated_at = Date.now()
-    writeTaskState(stateDir, state)
-    appendEvent(stateDir, state.task_id, { type: "deterministic_check_passed", session_id: sessionID })
+    await writeTaskState(stateDir, state)
+    await appendEvent(stateDir, state.task_id, { type: "deterministic_check_passed", session_id: sessionID })
     return
   }
 
   if (!client?.session?.promptAsync) {
     state.status = "interrupted"
     state.updated_at = Date.now()
-    writeTaskState(stateDir, state)
-    appendEvent(stateDir, state.task_id, { type: "repair_prompt_failed", session_id: sessionID, error: "promptAsync unavailable", reasons })
+    await writeTaskState(stateDir, state)
+    await appendEvent(stateDir, state.task_id, { type: "repair_prompt_failed", session_id: sessionID, error: "promptAsync unavailable", reasons })
     return
   }
 
@@ -537,23 +553,23 @@ async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
     state.status = "repairing"
     state.reviews.round += 1
     state.updated_at = Date.now()
-    writeTaskState(stateDir, state)
-    appendEvent(stateDir, state.task_id, { type: "repair_prompt_sent", session_id: sessionID, reasons })
+    await writeTaskState(stateDir, state)
+    await appendEvent(stateDir, state.task_id, { type: "repair_prompt_sent", session_id: sessionID, reasons })
   } catch (error) {
     state.status = "interrupted"
     state.updated_at = Date.now()
-    writeTaskState(stateDir, state)
-    appendEvent(stateDir, state.task_id, { type: "repair_prompt_failed", session_id: sessionID, error: String(error?.message || error), reasons })
+    await writeTaskState(stateDir, state)
+    await appendEvent(stateDir, state.task_id, { type: "repair_prompt_failed", session_id: sessionID, error: String(error?.message || error), reasons })
   }
 }
 
 async function writePlanTool(args, context, stateDir) {
   if (context.agent !== "plan-runner") throw new Error("write_plan is only available to the plan-runner agent")
 
-  const sessionIndex = readSessionIndex(stateDir, context.sessionID)
+  const sessionIndex = await readSessionIndex(stateDir, context.sessionID)
   if (!sessionIndex) throw new Error("write_plan session is not bound to a plan-runner task")
 
-  const state = readTaskState(stateDir, sessionIndex.task_id)
+  const state = await readTaskState(stateDir, sessionIndex.task_id)
   if (!state) throw new Error("write_plan task state is not readable")
   if (state.status !== "planning_required") throw new Error(`write_plan requires planning_required status, got ${state.status}`)
 
@@ -561,8 +577,8 @@ async function writePlanTool(args, context, stateDir) {
   const worktree = state.worktree || context.worktree || context.directory
   const planPath = join(worktree, "docs", "plans", `${state.task_id}.md`)
   const markdown = formatMarkdown({ taskID: state.task_id, input: args, contract })
-  ensureDir(dirname(planPath))
-  writeFileSync(planPath, markdown)
+  await ensureDir(dirname(planPath))
+  await writeFile(planPath, markdown)
 
   state.status = "waiting_for_todo"
   state.updated_at = Date.now()
@@ -570,8 +586,8 @@ async function writePlanTool(args, context, stateDir) {
   state.plan_path = planPath
   state.plan_sha256 = sha256(markdown)
   state.plan_contract = contract
-  writeTaskState(stateDir, state)
-  appendEvent(stateDir, state.task_id, { type: "plan_written", plan_path: planPath, plan_sha256: state.plan_sha256 })
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, state.task_id, { type: "plan_written", plan_path: planPath, plan_sha256: state.plan_sha256 })
 
   return {
     output: `plan written: ${planPath}`,
@@ -612,7 +628,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
 
     "tool.execute.before": async (input, output) => {
       if (input.tool !== "task" || !isPlanRunnerDispatch(output.args)) {
-        enforcePhaseGate(stateDir, input)
+        await enforcePhaseGate(stateDir, input)
         return
       }
 
@@ -623,40 +639,40 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
         dispatchCallID: input.callID,
         worktree,
       })
-      writeTaskState(stateDir, state)
-      writeSessionIndex(stateDir, input.sessionID, taskID, "parent")
-      appendEvent(stateDir, taskID, { type: "dispatch_started", session_id: input.sessionID, call_id: input.callID })
+      await writeTaskState(stateDir, state)
+      await writeSessionIndex(stateDir, input.sessionID, taskID, "parent")
+      await appendEvent(stateDir, taskID, { type: "dispatch_started", session_id: input.sessionID, call_id: input.callID })
       output.args.prompt = ensureHarnessMarker(output.args.prompt, taskID)
     },
 
     "tool.execute.after": async (input, output) => {
       if (input.tool !== "task" || !isPlanRunnerDispatch(input.args)) {
-        recordToolEvidence(stateDir, input, output)
+        await recordToolEvidence(stateDir, input, output)
         return
       }
       const taskID = taskIdFrom(input.sessionID, input.callID)
       const taskPath = statePaths(stateDir, taskID).task
-      if (!existsSync(taskPath)) return
+      if (!(await pathExists(taskPath))) return
 
       const childSessionID = output.metadata?.sessionId
       const parentSessionID = output.metadata?.parentSessionId
       if (!childSessionID || parentSessionID !== input.sessionID) return
 
-      const state = readTaskState(stateDir, taskID)
+      const state = await readTaskState(stateDir, taskID)
       if (!state) return
       state.plan_runner_session_id = childSessionID
       state.status = "planning_required"
       state.updated_at = Date.now()
       state.lease_expires_at = Date.now() + 10 * 60 * 1000
-      writeTaskState(stateDir, state)
-      writeSessionIndex(stateDir, childSessionID, taskID, "plan-runner")
-      appendEvent(stateDir, taskID, { type: "plan_runner_bound", session_id: childSessionID, call_id: input.callID })
+      await writeTaskState(stateDir, state)
+      await writeSessionIndex(stateDir, childSessionID, taskID, "plan-runner")
+      await appendEvent(stateDir, taskID, { type: "plan_runner_bound", session_id: childSessionID, call_id: input.callID })
     },
 
     event: async ({ event }) => {
-      handleTodoUpdated(stateDir, event)
-      handleSessionDiff(stateDir, event)
-      handleMessageDiff(stateDir, event)
+      await handleTodoUpdated(stateDir, event)
+      await handleSessionDiff(stateDir, event)
+      await handleMessageDiff(stateDir, event)
       await handlePlanRunnerIdle({ stateDir, client, directory: worktree, event })
     },
   }

@@ -39,6 +39,13 @@ describe("PlanRunnerHarnessPlugin", () => {
     assert.doesNotMatch(source, /`\$\{path\}\.tmp\.\$\{process\.pid\}`/)
   })
 
+  it("uses async fs operations in hook runtime", () => {
+    const source = readFileSync(new URL("../plan-runner-harness.js", import.meta.url), "utf8")
+
+    assert.match(source, /node:fs\/promises/)
+    assert.doesNotMatch(source, /\b(appendFileSync|existsSync|mkdirSync|readFileSync|renameSync|writeFileSync)\b/)
+  })
+
   it("creates task state on plan-runner dispatch and binds child session after task returns", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
@@ -272,6 +279,31 @@ describe("PlanRunnerHarnessPlugin", () => {
 
       assert.equal(existsSync(taskPath), false)
       assert.equal(existsSync(join(stateDir, "corrupt", "tasks", `${taskID}.json`)), true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps corrupt state fail-open even when quarantine rename fails", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const taskID = "corrupt-task"
+      const taskPath = join(stateDir, "tasks", `${taskID}.json`)
+
+      mkdirSync(join(stateDir, "sessions"), { recursive: true })
+      mkdirSync(join(stateDir, "tasks"), { recursive: true })
+      mkdirSync(join(stateDir, "corrupt", "tasks", `${taskID}.json`), { recursive: true })
+      writeFileSync(join(stateDir, "sessions", "ses_plan_runner.json"), JSON.stringify({ session_id: "ses_plan_runner", task_id: taskID, role: "plan-runner" }))
+      writeFileSync(taskPath, "{not valid json")
+
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+
+      await assert.doesNotReject(
+        () => hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } }),
+      )
+      assert.equal(existsSync(taskPath), true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

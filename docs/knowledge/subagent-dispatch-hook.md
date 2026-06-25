@@ -73,6 +73,10 @@ subagent safety policy 保证 child 没有 `task` 权限。child 只能返回 ev
   投递 verification-before-completion self-check；下一次 idle 再做 deterministic check。
 - task/session state 写入使用 `.tmp.<pid>.<uuid>` 后 rename；读到损坏 JSON 时移到
   `task-state/corrupt/<state-kind>/`，并把该 state 当作 inactive fail-open。
+- harness runtime I/O 使用 `node:fs/promises`；OpenCode server hook 不应在高频
+  event/tool path 上使用同步 fs helper 阻塞事件循环。
+- corrupt state 隔离失败也必须 fail-open 为 inactive state；隔离目录冲突、权限变化
+  或磁盘异常不能让 hook 崩溃。
 
 ### OpenCode server hook 实测（2026-06-25）
 
