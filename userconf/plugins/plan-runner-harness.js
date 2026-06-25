@@ -343,9 +343,7 @@ function diffFileName(entry) {
   return entry?.file || entry?.path || entry?.filename || entry?.name || null
 }
 
-function handleSessionDiff(stateDir, event) {
-  if (event.type !== "session.diff") return
-  const sessionID = event.properties?.sessionID
+function recordDiffEvidence(stateDir, { sessionID, files, eventID }) {
   if (!sessionID) return
   const state = readTaskStateForSession(stateDir, sessionID)
   if (!state) return
@@ -353,11 +351,9 @@ function handleSessionDiff(stateDir, event) {
   const taskID = activeTodoTaskID(state.todo.last_seen, state.plan_contract.tasks)
   if (!taskID) return
 
-  const files = (event.properties?.diff || []).map(diffFileName).filter(Boolean)
   if (files.length === 0) return
 
   state.modified_files = [...new Set([...state.modified_files, ...files])]
-  const eventID = event.id || `session-diff-${Date.now()}`
   const evidence = {
     id: `ev-diff-${eventID}`,
     type: "diff",
@@ -370,6 +366,28 @@ function handleSessionDiff(stateDir, event) {
   state.updated_at = Date.now()
   writeTaskState(stateDir, state)
   appendEvent(stateDir, state.task_id, { type: "evidence_recorded", evidence_id: evidence.id, event_id: eventID })
+}
+
+function handleSessionDiff(stateDir, event) {
+  if (event.type !== "session.diff") return
+  const eventID = event.id || `session-diff-${Date.now()}`
+  const files = (event.properties?.diff || []).map(diffFileName).filter(Boolean)
+  recordDiffEvidence(stateDir, { sessionID: event.properties?.sessionID, files, eventID })
+}
+
+function handleMessageDiff(stateDir, event) {
+  if (event.type === "message.updated") {
+    const eventID = event.id || event.properties?.info?.id || `message-diff-${Date.now()}`
+    const files = (event.properties?.info?.summary?.diffs || []).map(diffFileName).filter(Boolean)
+    recordDiffEvidence(stateDir, { sessionID: event.properties?.sessionID, files, eventID })
+    return
+  }
+
+  if (event.type === "message.part.updated" && event.properties?.part?.type === "patch") {
+    const eventID = event.id || event.properties.part.id || `patch-diff-${Date.now()}`
+    const files = (event.properties.part.files || []).map(diffFileName).filter(Boolean)
+    recordDiffEvidence(stateDir, { sessionID: event.properties?.sessionID, files, eventID })
+  }
 }
 
 async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
@@ -440,7 +458,7 @@ async function writePlanTool(args, context, stateDir) {
   if (state.status !== "planning_required") throw new Error(`write_plan requires planning_required status, got ${state.status}`)
 
   const contract = buildPlanContract(args)
-  const worktree = context.worktree || context.directory || state.worktree
+  const worktree = state.worktree || context.worktree || context.directory
   const planPath = join(worktree, "docs", "plans", `${state.task_id}.md`)
   const markdown = formatMarkdown({ taskID: state.task_id, input: args, contract })
   ensureDir(dirname(planPath))
@@ -537,6 +555,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
     event: async ({ event }) => {
       handleTodoUpdated(stateDir, event)
       handleSessionDiff(stateDir, event)
+      handleMessageDiff(stateDir, event)
       await handlePlanRunnerIdle({ stateDir, client, directory: worktree, event })
     },
   }

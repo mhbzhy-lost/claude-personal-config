@@ -156,7 +156,7 @@ Task state 只保留后续流程会消费的字段。完整语义计划只写入
 | `todo.mirrored` | harness 对齐检查 | phase gate 从 `waiting_for_todo` 进入 `ready_to_execute` 的条件 |
 | `todo.last_seen` | `todo.updated` event | 判断当前唯一 `in_progress` task；判断是否仍有 pending/in_progress |
 | `evidence` | harness event recorder | completeness checker 的主要输入；关联 diff/command/tool failure 与 task |
-| `modified_files` | harness 从 evidence/session.diff/git diff 维护的索引 | pre-push 快速定位相关 task；检查是否有未映射文件变更 |
+| `modified_files` | harness 从 evidence/message diff/session.diff/git diff 维护的索引 | pre-push 快速定位相关 task；检查是否有未映射文件变更 |
 | `child_sessions` | `session.created.parentID == plan_runner_session_id` | 等待 child idle；判断并发节点是否结束；审计输入 |
 | `reviews.round` | harness 计数 | repair loop 上限，两轮失败后 blocked |
 | `reviews.audit` | harness 记录审计 subagent JSON 结果 | final completeness check；repair prompt 输入 |
@@ -440,6 +440,16 @@ diff files
 additions/deletions/status
 active_task_id if known
 ```
+
+真实 OpenCode 1.17.10 闭环中，`session.diff.diff` 可能为空；可用 diff 主要来自：
+
+```text
+event(message.updated).properties.info.summary.diffs
+event(message.part.updated).properties.part.type == "patch"
+event(message.part.updated).properties.part.files
+```
+
+因此 recorder 不能只依赖 `session.diff`。
 
 `event(session.status)` / `event(session.idle)` 记录：
 
@@ -749,7 +759,7 @@ rename
 ## 实施任务
 
 当前已落地：T1、T2、T3、T4、T5、T6、T7、T8、T9、T10、T15、T16 的首个最小切片。
-其中 T8 已记录 bash command evidence 和 `session.diff` diff evidence；T9 已要求完成项必须有 diff evidence，command-only evidence 不再满足 implementation 完成判断。
+其中 T8 已记录 bash command evidence、`session.diff`、`message.updated.info.summary.diffs` 和 patch part diff evidence；T9 已要求完成项必须有 diff evidence，command-only evidence 不再满足 implementation 完成判断。真实临时 git workspace 已验证可进入 `audit_review`。
 
 仍未落地：T11、T12、T13、T14，以及坏 JSON 隔离、stale/pre-push 相关 task 兜底等完整恢复路径。
 

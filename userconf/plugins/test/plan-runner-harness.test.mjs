@@ -146,6 +146,47 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
+  it("write_plan uses the persisted task worktree when tool context reports root", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+
+      const taskOutput = {
+        args: {
+          background: true,
+          subagent_type: "plan-runner",
+          prompt: "Implement the brief.",
+        },
+      }
+      await hooks["tool.execute.before"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch" },
+        taskOutput,
+      )
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+
+      await hooks.tool.write_plan.execute(
+        {
+          title: "Root Context Slice",
+          tasks: [{ title: "Persist plan", completion_criteria: ["plan file exists under workspace"] }],
+          dag: [],
+          parallel_sets: [],
+        },
+        makeContext({ sessionID: "ses_plan_runner", workspace: "/" }),
+      )
+
+      const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.equal(state.plan_path, join(workspace, "docs", "plans", "planrun-ses_parent-call_dispatch.md"))
+      assert.ok(existsSync(state.plan_path))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("write_plan rejects non plan-runner sessions", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
@@ -374,6 +415,83 @@ describe("PlanRunnerHarnessPlugin", () => {
         task_ids: ["T1"],
         event_ids: ["evt_diff_1"],
         files: ["userconf/plugins/plan-runner-harness.js"],
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("records diff evidence from message.updated summary diffs before idle validation", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+
+      const taskOutput = {
+        args: { background: true, subagent_type: "plan-runner", prompt: "Implement." },
+      }
+      await hooks["tool.execute.before"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch" },
+        taskOutput,
+      )
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+      await hooks.tool.write_plan.execute(
+        {
+          title: "Message Diff Slice",
+          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
+          dag: [],
+          parallel_sets: [],
+        },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
+      )
+      await hooks.event({
+        event: {
+          type: "todo.updated",
+          properties: {
+            sessionID: "ses_plan_runner",
+            todos: [{ content: "T1: Edit file", status: "in_progress" }],
+          },
+        },
+      })
+
+      await hooks.event({
+        event: {
+          type: "message.updated",
+          properties: {
+            sessionID: "ses_plan_runner",
+            info: {
+              id: "msg_with_diff",
+              summary: {
+                diffs: [{ file: "probe-output.txt", status: "added", additions: 1, deletions: 0 }],
+              },
+            },
+          },
+        },
+      })
+      await hooks.event({
+        event: {
+          type: "todo.updated",
+          properties: {
+            sessionID: "ses_plan_runner",
+            todos: [{ content: "T1: Edit file", status: "completed" }],
+          },
+        },
+      })
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
+
+      const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.equal(state.status, "audit_review")
+      assert.deepEqual(state.modified_files, ["probe-output.txt"])
+      assert.deepEqual(state.evidence[0], {
+        id: "ev-diff-msg_with_diff",
+        type: "diff",
+        task_ids: ["T1"],
+        event_ids: ["msg_with_diff"],
+        files: ["probe-output.txt"],
       })
     } finally {
       rmSync(root, { recursive: true, force: true })

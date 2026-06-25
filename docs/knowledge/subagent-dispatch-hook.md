@@ -65,7 +65,8 @@ subagent safety policy 保证 child 没有 `task` 权限。child 只能返回 ev
 - `write_plan` custom tool 写 `docs/plans/<task_id>.md`，并只把 harness 消费的
   `plan_contract` 写入 task state。
 - phase gate 在 `planning_required` / `waiting_for_todo` / execution 阶段限制工具。
-- `todo.updated`、`tool.execute.after(bash)`、`session.diff` 写入 evidence 索引。
+- `todo.updated`、`tool.execute.after(bash)`、`message.updated.info.summary.diffs`、
+  `message.part.updated` patch、`session.diff` 写入 evidence 索引。
 - `session.idle(plan-runner)` 做最小 deterministic check，失败时通过
   `client.session.promptAsync` 投递 repair prompt，成功后才进入 `repairing`。
 
@@ -85,6 +86,16 @@ tool/event hook 行为。
 - `session.idle` 后调用 `client.session.promptAsync` 能把 validation 结果投递回同一
   session，并触发 agent 继续执行。
 - `promptAsync` 只能投递给目标 session；不能按所有 idle session 广播。
+
+真实闭环补充（2026-06-25）：
+- `write_plan` custom tool 的执行 context 中 `worktree/directory` 可能是 `/`，不能用它
+  覆盖 dispatch 阶段保存的 `state.worktree`。
+- 真实 git workspace 中 `session.diff.diff` 可能一直为空；可用 diff 主要出现在
+  `message.updated.info.summary.diffs`，写文件时还会出现 `message.part.updated` 的
+  `part.type == "patch"` 和 `part.files`。
+- 临时 git workspace 实测完成链路：`task(plan-runner)` -> `write_plan` ->
+  `todowrite(T1 in_progress)` -> `write` -> `message.updated.summary.diffs` ->
+  `bash` validation -> `todowrite(T1 completed)` -> `session.idle` -> `audit_review`。
 
 提示内容：
 - shared policy 精简为后台模式约束（编排决策由 `claude/CLAUDE.md` 管辖）
