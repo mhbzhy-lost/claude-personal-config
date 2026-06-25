@@ -24,6 +24,7 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPENCODE_CONFIG_DIR="${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}"
 AGENTS_SKILLS_DIR="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
+AGENTS_SKILLS_LIST="${AGENTS_SKILLS_LIST:-$SRC/agents/skills.list}"
 OPENCODE_JSON="$OPENCODE_CONFIG_DIR/opencode.json"
 BAILIAN_CACHE_PROXY_PORT="${BAILIAN_CACHE_PROXY_PORT:-48761}"
 
@@ -120,6 +121,11 @@ shared_skill_source() {
   return 1
 }
 
+valid_skill_name() {
+  local skill_name="$1"
+  [[ "$skill_name" =~ ^[a-zA-Z0-9_-]+$ ]]
+}
+
 is_managed_skill_target() {
   local target="$1"
 
@@ -130,7 +136,7 @@ is_managed_skill_target() {
 }
 
 sync_shared_skills() {
-  local list_path="$SRC/agents/skills.list"
+  local list_path="$AGENTS_SKILLS_LIST"
 
   if [ ! -f "$list_path" ]; then
     echo "[skip]  agents/skills.list 不存在，跳过共享 skill 同步"
@@ -143,6 +149,11 @@ sync_shared_skills() {
   while IFS= read -r raw_line || [ -n "$raw_line" ]; do
     skill_name="$(trim_skill_name "$raw_line")"
     [ -n "$skill_name" ] || continue
+
+    if ! valid_skill_name "$skill_name"; then
+      echo "[warn]  invalid skill name: $skill_name"
+      continue
+    fi
 
     if ! src_path="$(shared_skill_source "$skill_name")"; then
       echo "[warn]  skill $skill_name 未找到源目录，跳过"

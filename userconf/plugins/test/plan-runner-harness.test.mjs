@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -30,6 +30,13 @@ describe("PlanRunnerHarnessPlugin", () => {
       .map(([name]) => name)
 
     assert.deepEqual(functionExports.sort(), ["PlanRunnerHarnessPlugin", "default"].sort())
+  })
+
+  it("uses unique temp names for atomic state writes", () => {
+    const source = readFileSync(new URL("../plan-runner-harness.js", import.meta.url), "utf8")
+
+    assert.match(source, /randomUUID/)
+    assert.doesNotMatch(source, /`\$\{path\}\.tmp\.\$\{process\.pid\}`/)
   })
 
   it("creates task state on plan-runner dispatch and binds child session after task returns", async () => {
@@ -205,6 +212,32 @@ describe("PlanRunnerHarnessPlugin", () => {
         ),
         /plan-runner/,
       )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("quarantines corrupt task state instead of throwing on idle event", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const taskID = "corrupt-task"
+      const taskPath = join(stateDir, "tasks", `${taskID}.json`)
+
+      mkdirSync(join(stateDir, "sessions"), { recursive: true })
+      mkdirSync(join(stateDir, "tasks"), { recursive: true })
+      writeFileSync(join(stateDir, "sessions", "ses_plan_runner.json"), JSON.stringify({ session_id: "ses_plan_runner", task_id: taskID, role: "plan-runner" }))
+      writeFileSync(taskPath, "{not valid json")
+
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+
+      await assert.doesNotReject(
+        () => hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } }),
+      )
+
+      assert.equal(existsSync(taskPath), false)
+      assert.equal(existsSync(join(stateDir, "corrupt", "tasks", `${taskID}.json`)), true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

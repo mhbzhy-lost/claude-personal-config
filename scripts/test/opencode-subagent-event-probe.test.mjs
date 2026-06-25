@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { buildRunArgs, createProbeWorkspace, summarizeProbeEvents } from "../opencode-subagent-event-probe.mjs"
+import { buildRunArgs, createProbeWorkspace, formatServeNotReadyError, summarizeProbeEvents } from "../opencode-subagent-event-probe.mjs"
 
 describe("opencode subagent event probe", () => {
   it("creates a self-contained OpenCode probe workspace", () => {
@@ -61,5 +61,15 @@ describe("opencode subagent event probe", () => {
 
     assert.equal(summary.promptAsyncOk, true)
     assert.equal(summary.repairCommandObserved, true)
+  })
+
+  it("includes serve log path when reporting server startup failure", () => {
+    const error = formatServeNotReadyError({
+      attachUrl: "http://127.0.0.1:41337",
+      serveLogPath: "/tmp/probe/opencode-serve.log",
+    })
+
+    assert.match(error, /http:\/\/127\.0\.0\.1:41337/)
+    assert.match(error, /opencode-serve\.log/)
   })
 })

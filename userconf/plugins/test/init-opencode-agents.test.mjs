@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
@@ -143,6 +143,41 @@ describe("init_opencode agents sync", () => {
       ]
 
       assert.ok(sources.some((path) => existsSync(path)), `${skill} should have a source SKILL.md`)
+    }
+  })
+
+  it("rejects invalid shared skill names before creating symlinks", () => {
+    const root = mkdtempSync(join(tmpdir(), "agents-skills-invalid-"))
+
+    try {
+      const skillsDir = join(root, "skills")
+      const listPath = join(root, "skills.list")
+      writeFileSync(listPath, "../escape\nwcag-check\n")
+
+      const output = execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `AGENTS_SKILLS_DIR=${JSON.stringify(skillsDir)}`,
+            `AGENTS_SKILLS_LIST=${JSON.stringify(listPath)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "sync_shared_skills",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      assert.match(output, /invalid skill name/)
+      assert.equal(existsSync(join(root, "escape")), false)
+
+      const linkPath = join(skillsDir, "wcag-check")
+      const linkTarget = execFileSync("readlink", [linkPath], { encoding: "utf8" }).trim()
+
+      assert.equal(linkTarget, join(repoRoot, "userconf", "skills", "wcag-check"))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 

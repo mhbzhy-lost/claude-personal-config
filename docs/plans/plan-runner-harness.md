@@ -764,10 +764,9 @@ interrupted task 不全局阻塞，只在 diff 相关时阻塞。
 JSON 写入：
 
 ```text
-写 .tmp.<pid>
-fsync
+写 .tmp.<pid>.<uuid>
 rename
-读到坏 JSON 移到 corrupt/
+读到坏 JSON 移到 corrupt/<state-kind>/
 坏 JSON 不作为 active task
 ```
 
@@ -775,8 +774,9 @@ rename
 
 当前已落地：T1、T2、T3、T4、T5、T6、T7、T8、T9、T10、T15、T16 的首个最小切片。
 其中 T8 已记录 bash command evidence、`session.diff`、`message.updated.info.summary.diffs` 和 patch part diff evidence；T9 已要求完成项必须有 diff evidence，command-only evidence 不再满足 implementation 完成判断；T10 已在 deterministic check 前插入 verification-before-completion self-check re-entry。
+state storage 已补充唯一 temp 文件名和坏 JSON 隔离，损坏 state 不再作为 active task 参与后续 gate。
 
-仍未落地：T11、T12、T13、T14，以及坏 JSON 隔离、stale/pre-push 相关 task 兜底等完整恢复路径。
+仍未落地：T11、T12、T13、T14，以及 stale/pre-push 相关 task 兜底等完整恢复路径。
 
 - Plan item T1: 调研并记录真实 hook payload 样本
 - Plan item T2: 实现 task-state 存储层

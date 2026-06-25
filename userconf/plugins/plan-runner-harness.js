@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 
 const STATE_VERSION = 1
@@ -72,13 +72,29 @@ function sessionPath(stateDir, sessionID) {
 
 function writeJsonAtomic(path, value) {
   ensureDir(dirname(path))
-  const tmp = `${path}.tmp.${process.pid}`
+  const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`
   writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n")
   renameSync(tmp, path)
 }
 
+function quarantineCorruptJson(path) {
+  const quarantinePath = join(dirname(dirname(path)), "corrupt", basename(dirname(path)), basename(path))
+  ensureDir(dirname(quarantinePath))
+  renameSync(path, quarantinePath)
+  return quarantinePath
+}
+
 function readJson(path) {
-  return JSON.parse(readFileSync(path, "utf8"))
+  try {
+    return JSON.parse(readFileSync(path, "utf8"))
+  } catch (error) {
+    if (error?.code === "ENOENT") return null
+    if (error instanceof SyntaxError) {
+      quarantineCorruptJson(path)
+      return null
+    }
+    throw error
+  }
 }
 
 function appendEvent(stateDir, taskID, event) {
@@ -289,6 +305,7 @@ function handleTodoUpdated(stateDir, event) {
   const index = readSessionIndex(stateDir, sessionID)
   if (!index) return
   const state = readTaskState(stateDir, index.task_id)
+  if (!state) return
   state.todo.last_seen = todos
   state.todo.mirrored = todosCoverTasks(todos, state.plan_contract.tasks)
   if (state.status === "waiting_for_todo" && state.todo.mirrored) state.status = "ready_to_execute"
@@ -422,6 +439,7 @@ async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
   if (!index || index.role !== "plan-runner") return
 
   const state = readTaskState(stateDir, index.task_id)
+  if (!state) return
   if (state.plan_runner_session_id !== sessionID) return
   if (!["waiting_for_todo", "ready_to_execute", "executing", "repairing", "self_checking"].includes(state.status)) return
 
@@ -518,6 +536,7 @@ async function writePlanTool(args, context, stateDir) {
   if (!sessionIndex) throw new Error("write_plan session is not bound to a plan-runner task")
 
   const state = readTaskState(stateDir, sessionIndex.task_id)
+  if (!state) throw new Error("write_plan task state is not readable")
   if (state.status !== "planning_required") throw new Error(`write_plan requires planning_required status, got ${state.status}`)
 
   const contract = buildPlanContract(args)
@@ -606,6 +625,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       if (!childSessionID || parentSessionID !== input.sessionID) return
 
       const state = readTaskState(stateDir, taskID)
+      if (!state) return
       state.plan_runner_session_id = childSessionID
       state.status = "planning_required"
       state.updated_at = Date.now()

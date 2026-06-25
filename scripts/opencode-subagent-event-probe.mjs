@@ -196,6 +196,10 @@ export function buildRunArgs({ attachUrl, workspace, model, prompt }) {
   return args
 }
 
+export function formatServeNotReadyError({ attachUrl, serveLogPath }) {
+  return `opencode serve did not become ready on ${attachUrl}; see log: ${serveLogPath}`
+}
+
 function sleepMs(ms) {
   spawnSync("sleep", [String(ms / 1000)])
 }
@@ -247,7 +251,7 @@ export function runProbe({ root, model, timeoutMs = 180000, prompt = DEFAULT_PRO
       ...paths,
       status: 1,
       signal: null,
-      error: `opencode serve did not become ready on ${attachUrl}`,
+      error: formatServeNotReadyError({ attachUrl, serveLogPath: paths.serveLogPath }),
       summary: summarizeProbeEvents(readProbeEvents(paths.logPath)),
     }
   }
