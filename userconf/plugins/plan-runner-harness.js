@@ -177,11 +177,29 @@ function createInitialState({ taskID, parentSessionID, dispatchCallID, worktree 
 }
 
 function validateDag(taskIDs, dag = []) {
+  const edges = new Map()
+  for (const id of taskIDs) edges.set(id, [])
   for (const edge of dag) {
     if (!Array.isArray(edge) || edge.length !== 2) throw new Error("dag edge must contain exactly two task ids")
     for (const id of edge) {
       if (!taskIDs.has(id)) throw new Error(`dag references unknown task id: ${id}`)
     }
+    edges.get(edge[0]).push(edge[1])
+  }
+
+  const visiting = new Set()
+  const visited = new Set()
+  const visit = (id) => {
+    if (visiting.has(id)) throw new Error("dag contains a cycle")
+    if (visited.has(id)) return
+    visiting.add(id)
+    for (const next of edges.get(id)) visit(next)
+    visiting.delete(id)
+    visited.add(id)
+  }
+
+  for (const id of taskIDs) {
+    visit(id)
   }
 }
 

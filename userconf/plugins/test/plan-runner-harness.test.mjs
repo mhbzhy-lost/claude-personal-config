@@ -217,6 +217,40 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
+  it("write_plan rejects cyclic DAGs", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+
+      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+
+      await assert.rejects(
+        () => hooks.tool.write_plan.execute(
+          {
+            title: "Cyclic DAG",
+            tasks: [
+              { title: "First", completion_criteria: ["first done"] },
+              { title: "Second", completion_criteria: ["second done"] },
+            ],
+            dag: [["T1", "T2"], ["T2", "T1"]],
+            parallel_sets: [],
+          },
+          makeContext({ sessionID: "ses_plan_runner", workspace }),
+        ),
+        /cycle/,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("quarantines corrupt task state instead of throwing on idle event", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {

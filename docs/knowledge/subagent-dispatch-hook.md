@@ -64,6 +64,8 @@ subagent safety policy 保证 child 没有 `task` 权限。child 只能返回 ev
 - `tool.execute.after(task)` 通过 `output.metadata.sessionId` 绑定 plan-runner child session。
 - `write_plan` custom tool 写 `docs/plans/<task_id>.md`，并只把 harness 消费的
   `plan_contract` 写入 task state。
+- `write_plan` 会拒绝引用未知 task id 或包含环的 DAG；后续执行/审计可以假设
+  `plan_contract.dag` 是可拓扑排序的依赖图。
 - phase gate 在 `planning_required` / `waiting_for_todo` / execution 阶段限制工具。
 - `todo.updated`、`tool.execute.after(bash)`、`message.updated.info.summary.diffs`、
   `message.part.updated` patch、`session.diff` 写入 evidence 索引。
