@@ -72,4 +72,11 @@ describe("opencode subagent event probe", () => {
     assert.match(error, /http:\/\/127\.0\.0\.1:41337/)
     assert.match(error, /opencode-serve\.log/)
   })
+
+  it("uses in-process sleep instead of external sleep command", () => {
+    const source = readFileSync(new URL("../opencode-subagent-event-probe.mjs", import.meta.url), "utf8")
+
+    assert.doesNotMatch(source, /spawnSync\("sleep"/)
+    assert.match(source, /Atomics\.wait/)
+  })
 })

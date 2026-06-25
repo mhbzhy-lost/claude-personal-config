@@ -16,6 +16,8 @@ Do these steps exactly:
 If you later receive a message containing PROBE_VALIDATE_FIX, run bash command: printf PROBE_REPAIR_OK and then stop.
 `.trim()
 
+const sleepArray = new Int32Array(new SharedArrayBuffer(4))
+
 function ensureDir(path) {
   if (!existsSync(path)) mkdirSync(path, { recursive: true })
 }
@@ -201,7 +203,7 @@ export function formatServeNotReadyError({ attachUrl, serveLogPath }) {
 }
 
 function sleepMs(ms) {
-  spawnSync("sleep", [String(ms / 1000)])
+  Atomics.wait(sleepArray, 0, 0, ms)
 }
 
 function waitForServer({ logPath, port, process, timeoutMs }) {
