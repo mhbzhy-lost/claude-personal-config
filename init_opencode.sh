@@ -123,7 +123,11 @@ shared_skill_source() {
 
 valid_skill_name() {
   local skill_name="$1"
-  [[ "$skill_name" =~ ^[a-zA-Z0-9_-]+$ ]]
+  [ -n "$skill_name" ] || return 1
+  case "$skill_name" in
+    *[!a-zA-Z0-9_-]*) return 1 ;;
+    *) return 0 ;;
+  esac
 }
 
 is_managed_skill_target() {
