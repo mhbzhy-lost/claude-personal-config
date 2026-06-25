@@ -23,6 +23,7 @@ source: docs/bugs/bug-external-llm-review-stale-symlink.md
 - 本仓自维护 skill 源目录是 `userconf/skills/<name>`，不要再使用废弃的 `claude-skills/<name>`。
 - `agents/skills.list` 是共享 skill 白名单；`init_opencode.sh` 按该列表逐项软链到 `~/.agents/skills/`。
 - 源路径解析顺序：先 `userconf/skills/<name>`，再 `vendor/superpowers/skills/<name>`。
+- `<name>` 只允许字母、数字、下划线和连字符；空值或包含路径分隔符的条目会被初始化脚本拒绝。
 
 ## 原因
 
@@ -32,6 +33,7 @@ OpenCode 不会把 `~/.agents/AGENTS.md` 当全局指令，但会扫描 `~/.agen
 
 - 新增共享 skill 时，把源目录放到 `userconf/skills/<name>`，并把 `<name>` 加入 `agents/skills.list`。
 - 引入 Superpowers skill 时，只把白名单名加入 `agents/skills.list`，源目录来自 `vendor/superpowers/skills/<name>`。
+- 修改 `agents/skills.list` 时不要加入路径片段、相对路径或注释后的空名称；非法名称会让同步失败。
 - `init_opencode.sh` 只会自动替换本仓自管路径下的旧软链；如果目标是未知路径或真实目录，会保留并告警，避免覆盖用户本地内容。
 - `SKILL.md` 示例命令必须引用 `userconf/skills/<name>`，不要写 `claude-skills/<name>`。
 
