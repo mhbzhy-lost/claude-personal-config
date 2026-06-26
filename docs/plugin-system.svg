@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 560" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#64748B"/>
+    </marker>
+    <marker id="arrow-dash" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#64748B"/>
+    </marker>
+  </defs>
+
+  <!-- Background areas -->
+  <rect x="50" y="20" width="340" height="480" rx="12" fill="#FEF2F2" stroke="none"/>
+  <rect x="420" y="20" width="560" height="480" rx="12" fill="#EFF6FF" stroke="none"/>
+  <rect x="420" y="340" width="560" height="160" rx="12" fill="#F0FDF4" stroke="none"/>
+  <rect x="1010" y="20" width="340" height="480" rx="12" fill="#F5F3FF" stroke="none"/>
+  <rect x="431" y="510" width="560" height="48" rx="8" fill="#F8FAFC" stroke="none"/>
+
+  <!-- Area titles -->
+  <text x="220" y="45" text-anchor="middle" font-size="15" font-weight="bold" fill="#DC2626">触发源</text>
+  <text x="220" y="62" text-anchor="middle" font-size="9.5" fill="#6B7280">OpenCode 工具调用</text>
+  <text x="700" y="48" text-anchor="middle" font-size="15" font-weight="bold" fill="#2563EB">Before Hooks</text>
+  <text x="700" y="65" text-anchor="middle" font-size="9.5" fill="#6B7280">执行前拦截 · 7 plugins</text>
+  <text x="700" y="360" text-anchor="middle" font-size="15" font-weight="bold" fill="#059669">After Hooks</text>
+  <text x="700" y="377" text-anchor="middle" font-size="9.5" fill="#6B7280">执行后处理 · 2 plugins</text>
+  <text x="1180" y="45" text-anchor="middle" font-size="15" font-weight="bold" fill="#7C3AED">数据源</text>
+  <text x="1180" y="62" text-anchor="middle" font-size="9.5" fill="#6B7280">shared/policies/</text>
+
+  <!-- Left nodes: trigger sources (x=140, w=160, h=48) -->
+  <rect x="140" y="116" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
+  <text x="150" y="136" font-size="12" font-weight="bold" fill="#1E293B">Bash</text>
+  <text x="150" y="152" font-size="9.5" fill="#6B7280">执行命令</text>
+
+  <rect x="140" y="176" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
+  <text x="150" y="196" font-size="12" font-weight="bold" fill="#1E293B">Write / Edit</text>
+  <text x="150" y="212" font-size="9.5" fill="#6B7280">文件操作</text>
+
+  <rect x="140" y="236" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
+  <text x="150" y="256" font-size="12" font-weight="bold" fill="#1E293B">Knowledge</text>
+  <text x="150" y="272" font-size="9.5" fill="#6B7280">知识检索</text>
+
+  <rect x="140" y="296" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
+  <text x="150" y="316" font-size="12" font-weight="bold" fill="#1E293B">SubAgent</text>
+  <text x="150" y="332" font-size="9.5" fill="#6B7280">子代理调度</text>
+
+  <rect x="140" y="356" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
+  <text x="150" y="376" font-size="12" font-weight="bold" fill="#1E293B">Git</text>
+  <text x="150" y="392" font-size="9.5" fill="#6B7280">版本控制</text>
+
+  <!-- Before hooks col1 (x=520, w=160, h=48) -->
+  <rect x="520" y="80" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="530" y="100" font-size="12" font-weight="bold" fill="#1E293B">git-commit-gate</text>
+  <text x="530" y="116" font-size="9.5" fill="#6B7280">校验 commit message</text>
+
+  <rect x="520" y="140" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="530" y="160" font-size="12" font-weight="bold" fill="#1E293B">plan-tracker</text>
+  <text x="530" y="176" font-size="9.5" fill="#6B7280">扫描 TODO 未完成项</text>
+
+  <rect x="520" y="200" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="530" y="220" font-size="12" font-weight="bold" fill="#1E293B">external-review-gate</text>
+  <text x="530" y="236" font-size="9.5" fill="#6B7280">触发异源代码评审</text>
+
+  <rect x="520" y="260" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="530" y="280" font-size="12" font-weight="bold" fill="#1E293B">skill-resolve-preflight</text>
+  <text x="530" y="296" font-size="9.5" fill="#6B7280">强制意图识别</text>
+
+  <!-- Before hooks col2 (x=720, w=160, h=48) -->
+  <rect x="720" y="80" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="730" y="100" font-size="12" font-weight="bold" fill="#1E293B">subagent-hint</text>
+  <text x="730" y="116" font-size="9.5" fill="#6B7280">检查 background 模式</text>
+
+  <rect x="720" y="140" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="730" y="160" font-size="12" font-weight="bold" fill="#1E293B">rm-workspace-guard</text>
+  <text x="730" y="176" font-size="9.5" fill="#6B7280">防删工作区外路径</text>
+
+  <rect x="720" y="200" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="730" y="220" font-size="12" font-weight="bold" fill="#1E293B">coding-guard</text>
+  <text x="730" y="236" font-size="9.5" fill="#6B7280">路径+权限双检查</text>
+
+  <!-- After hooks (x=490/700, y=411, w=160, h=48) -->
+  <rect x="490" y="411" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#10B981" stroke-width="1.5"/>
+  <text x="500" y="431" font-size="12" font-weight="bold" fill="#1E293B">session-journal</text>
+  <text x="500" y="447" font-size="9.5" fill="#6B7280">记录到 .workflow/events/</text>
+
+  <rect x="700" y="411" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#10B981" stroke-width="1.5"/>
+  <text x="710" y="431" font-size="12" font-weight="bold" fill="#1E293B">event-probe</text>
+  <text x="710" y="447" font-size="9.5" fill="#6B7280">事件探针（测试用）</text>
+
+  <!-- Right nodes: data sources (x=1100, w=160, h=48) -->
+  <rect x="1100" y="161" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="1110" y="181" font-size="12" font-weight="bold" fill="#1E293B">git-commit-hint</text>
+  <text x="1110" y="197" font-size="9.5" fill="#6B7280">commit 格式策略</text>
+
+  <rect x="1100" y="221" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="1110" y="241" font-size="12" font-weight="bold" fill="#1E293B">subagent-dispatch-hint</text>
+  <text x="1110" y="257" font-size="9.5" fill="#6B7280">子代理调度策略</text>
+
+  <rect x="1100" y="281" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="1110" y="301" font-size="12" font-weight="bold" fill="#1E293B">skill-resolve-preflight</text>
+  <text x="1110" y="317" font-size="9.5" fill="#6B7280">技能识别策略</text>
+
+  <rect x="1100" y="341" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="1110" y="361" font-size="12" font-weight="bold" fill="#1E293B">todo-scan-policy</text>
+  <text x="1110" y="377" font-size="9.5" fill="#6B7280">任务扫描策略</text>
+
+  <!-- Connection lines -->
+  <line x1="390" y1="260" x2="420" y2="260" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="1010" y1="260" x2="980" y2="260" stroke="#64748B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-dash)"/>
+
+  <!-- Legend -->
+  <circle cx="480" cy="534" r="5" fill="#EF4444"/>
+  <text x="492" y="538" font-size="9.5" fill="#475569">触发源</text>
+  <circle cx="570" cy="534" r="5" fill="#3B82F6"/>
+  <text x="582" y="538" font-size="9.5" fill="#475569">Before Hook</text>
+  <circle cx="690" cy="534" r="5" fill="#10B981"/>
+  <text x="702" y="538" font-size="9.5" fill="#475569">After Hook</text>
+  <circle cx="800" cy="534" r="5" fill="#8B5CF6"/>
+  <text x="812" y="538" font-size="9.5" fill="#475569">数据源</text>
+  <text x="890" y="538" font-size="9.5" fill="#64748B">— 触发  - - - 读取</text>
+</svg>

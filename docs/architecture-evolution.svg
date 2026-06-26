@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 650" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6B7280"/>
+    </marker>
+  </defs>
+
+  <!-- ===== Background Rects ===== -->
+  <rect x="50" y="30" width="280" height="540" fill="#EFF6FF" stroke="none" rx="12"/>
+  <rect x="374" y="30" width="280" height="540" fill="#FEF2F2" stroke="#EF4444" stroke-width="1.5" stroke-dasharray="4,2" rx="12"/>
+  <rect x="698" y="30" width="280" height="540" fill="#FEF2F2" stroke="#EF4444" stroke-width="1.5" stroke-dasharray="4,2" rx="12"/>
+  <rect x="1022" y="30" width="280" height="540" fill="#FEF2F2" stroke="#EF4444" stroke-width="1.5" stroke-dasharray="4,2" rx="12"/>
+  <rect x="1346" y="30" width="280" height="540" fill="#FFFBEB" stroke="none" rx="12"/>
+  <rect x="1670" y="30" width="280" height="540" fill="#F0FDF4" stroke="none" rx="12"/>
+
+  <!-- ===== Column Titles ===== -->
+  <text x="190" y="52" text-anchor="middle" font-size="14" font-weight="bold" fill="#1E293B">阶段 1：基础框架期</text>
+  <text x="190" y="66" text-anchor="middle" font-size="10" fill="#6B7280">2026-04</text>
+  <text x="514" y="52" text-anchor="middle" font-size="14" font-weight="bold" fill="#1E293B">阶段 2：蒸馏爆炸期</text>
+  <text x="514" y="66" text-anchor="middle" font-size="10" fill="#6B7280">2026-04 ~ 05</text>
+  <text x="838" y="52" text-anchor="middle" font-size="14" font-weight="bold" fill="#1E293B">阶段 3：意图识别期</text>
+  <text x="838" y="66" text-anchor="middle" font-size="10" fill="#6B7280">2026-04 ~ 05</text>
+  <text x="1162" y="52" text-anchor="middle" font-size="14" font-weight="bold" fill="#1E293B">阶段 4：UI Blocks 期</text>
+  <text x="1162" y="66" text-anchor="middle" font-size="10" fill="#6B7280">2026-05</text>
+  <text x="1486" y="52" text-anchor="middle" font-size="14" font-weight="bold" fill="#1E293B">阶段 5：大清理统一态</text>
+  <text x="1486" y="66" text-anchor="middle" font-size="10" fill="#6B7280">2026-06-17</text>
+  <text x="1810" y="52" text-anchor="middle" font-size="14" font-weight="bold" fill="#1E293B">阶段 6：专焦态</text>
+  <text x="1810" y="66" text-anchor="middle" font-size="10" fill="#6B7280">2026-06-23</text>
+
+  <!-- ===== Col1 Nodes (4, all NEW blue) ===== -->
+  <rect x="120" y="80" width="140" height="28" fill="white" stroke="#3B82F6" stroke-width="1.5" rx="6"/>
+  <text x="190" y="98" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">init_*.sh 脚本</text>
+  <rect x="120" y="114" width="140" height="28" fill="white" stroke="#3B82F6" stroke-width="1.5" rx="6"/>
+  <text x="190" y="132" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">hooks/ (3-4 shell)</text>
+  <rect x="120" y="148" width="140" height="28" fill="white" stroke="#3B82F6" stroke-width="1.5" rx="6"/>
+  <text x="190" y="166" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">CLAUDE.md/CODEX.md</text>
+  <rect x="120" y="182" width="140" height="28" fill="white" stroke="#3B82F6" stroke-width="1.5" rx="6"/>
+  <text x="190" y="200" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">docs/（初期）</text>
+
+  <!-- ===== Col2 Nodes (6: 4 continuing + 2 NEW red) ===== -->
+  <rect x="444" y="80" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="514" y="98" text-anchor="middle" font-size="11" fill="#475569">init_*.sh 脚本</text>
+  <rect x="444" y="114" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="514" y="132" text-anchor="middle" font-size="11" fill="#475569">hooks/</text>
+  <rect x="444" y="148" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="514" y="166" text-anchor="middle" font-size="11" fill="#475569">CLAUDE.md/CODEX.md</text>
+  <rect x="444" y="182" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="514" y="200" text-anchor="middle" font-size="11" fill="#475569">docs/</text>
+  <rect x="444" y="216" width="140" height="28" fill="white" stroke="#EF4444" stroke-width="1.5" rx="6"/>
+  <text x="514" y="234" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">skills/ (675 文件)</text>
+  <rect x="444" y="250" width="140" height="28" fill="white" stroke="#EF4444" stroke-width="1.5" rx="6"/>
+  <text x="514" y="268" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">_tag_catalog.json</text>
+
+  <!-- ===== Col3 Nodes (8: 6 continuing + 2 NEW red) ===== -->
+  <rect x="768" y="80" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="838" y="98" text-anchor="middle" font-size="11" fill="#475569">init_*.sh 脚本</text>
+  <rect x="768" y="114" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="838" y="132" text-anchor="middle" font-size="11" fill="#475569">hooks/</text>
+  <rect x="768" y="148" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="838" y="166" text-anchor="middle" font-size="11" fill="#475569">CLAUDE.md/CODEX.md</text>
+  <rect x="768" y="182" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="838" y="200" text-anchor="middle" font-size="11" fill="#475569">docs/</text>
+  <rect x="768" y="216" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="838" y="234" text-anchor="middle" font-size="11" fill="#475569">skills/ (675 文件)</text>
+  <rect x="768" y="250" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="838" y="268" text-anchor="middle" font-size="11" fill="#475569">_tag_catalog.json</text>
+  <rect x="768" y="284" width="140" height="28" fill="white" stroke="#EF4444" stroke-width="1.5" rx="6"/>
+  <text x="838" y="302" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">intent-enhancement/</text>
+  <rect x="768" y="318" width="140" height="28" fill="white" stroke="#EF4444" stroke-width="1.5" rx="6"/>
+  <text x="838" y="336" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">skill-matcher</text>
+
+  <!-- ===== Col4 Nodes (9: 8 continuing + 1 NEW red) ===== -->
+  <rect x="1092" y="80" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1162" y="98" text-anchor="middle" font-size="11" fill="#475569">init_*.sh 脚本</text>
+  <rect x="1092" y="114" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1162" y="132" text-anchor="middle" font-size="11" fill="#475569">hooks/</text>
+  <rect x="1092" y="148" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1162" y="166" text-anchor="middle" font-size="11" fill="#475569">CLAUDE.md/CODEX.md</text>
+  <rect x="1092" y="182" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1162" y="200" text-anchor="middle" font-size="11" fill="#475569">docs/</text>
+  <rect x="1092" y="216" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1162" y="234" text-anchor="middle" font-size="11" fill="#475569">skills/ (675 文件)</text>
+  <rect x="1092" y="250" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1162" y="268" text-anchor="middle" font-size="11" fill="#475569">_tag_catalog.json</text>
+  <rect x="1092" y="284" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1162" y="302" text-anchor="middle" font-size="11" fill="#475569">intent-enhancement/</text>
+  <rect x="1092" y="318" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1162" y="336" text-anchor="middle" font-size="11" fill="#475569">skill-matcher</text>
+  <rect x="1092" y="352" width="140" height="28" fill="white" stroke="#EF4444" stroke-width="1.5" rx="6"/>
+  <text x="1162" y="370" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">blocks/ (20+ 组件)</text>
+
+  <!-- ===== Col5 Nodes (11: 2 continuing + 5 NEW amber + 4 DELETED) ===== -->
+  <rect x="1416" y="80" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1486" y="98" text-anchor="middle" font-size="11" fill="#475569">init_opencode.sh</text>
+  <rect x="1416" y="114" width="140" height="28" fill="white" stroke="#F59E0B" stroke-width="1.5" rx="6"/>
+  <text x="1486" y="132" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">plugins/ (8 JS)</text>
+  <rect x="1416" y="148" width="140" height="28" fill="white" stroke="#F59E0B" stroke-width="1.5" rx="6"/>
+  <text x="1486" y="166" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">shared/ (hooks+policies)</text>
+  <rect x="1416" y="182" width="140" height="28" fill="white" stroke="#F59E0B" stroke-width="1.5" rx="6"/>
+  <text x="1486" y="200" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">vendor/ (3 子模块)</text>
+  <rect x="1416" y="216" width="140" height="28" fill="white" stroke="#F59E0B" stroke-width="1.5" rx="6"/>
+  <text x="1486" y="234" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">permission.json</text>
+  <rect x="1416" y="250" width="140" height="28" fill="white" stroke="#F59E0B" stroke-width="1.5" rx="6"/>
+  <text x="1486" y="268" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">四工具配置</text>
+  <rect x="1416" y="284" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1486" y="302" text-anchor="middle" font-size="11" fill="#475569">docs/knowledge/ (10+)</text>
+  <rect x="1416" y="318" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1486" y="336" text-anchor="middle" font-size="11" fill="#94A3B8" text-decoration="line-through">skills/ (675)</text>
+  <rect x="1416" y="352" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1486" y="370" text-anchor="middle" font-size="11" fill="#94A3B8" text-decoration="line-through">intent-enhancement/</text>
+  <rect x="1416" y="386" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1486" y="404" text-anchor="middle" font-size="11" fill="#94A3B8" text-decoration="line-through">blocks/</text>
+  <rect x="1416" y="420" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1486" y="438" text-anchor="middle" font-size="11" fill="#94A3B8" text-decoration="line-through">_tag_catalog.json</text>
+
+  <!-- ===== Col6 Nodes (14: 7 continuing + 6 NEW green + 1 DELETED) ===== -->
+  <rect x="1740" y="80" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1810" y="98" text-anchor="middle" font-size="11" fill="#475569">init_opencode.sh (773行)</text>
+  <rect x="1740" y="114" width="140" height="28" fill="white" stroke="#22C55E" stroke-width="1.5" rx="6"/>
+  <text x="1810" y="132" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">userconf/ (SSOT 单一源)</text>
+  <rect x="1740" y="148" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1810" y="166" text-anchor="middle" font-size="11" fill="#475569">9 插件 (commit/plan/review)</text>
+  <rect x="1740" y="182" width="140" height="28" fill="white" stroke="#22C55E" stroke-width="1.5" rx="6"/>
+  <text x="1810" y="200" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">session-journal 反模式</text>
+  <rect x="1740" y="216" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1810" y="234" text-anchor="middle" font-size="11" fill="#475569">shared/ (hooks+policies)</text>
+  <rect x="1740" y="250" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1810" y="268" text-anchor="middle" font-size="11" fill="#475569">superpowers v5.1.0 (16技能)</text>
+  <rect x="1740" y="284" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1810" y="302" text-anchor="middle" font-size="11" fill="#475569">cache-proxy (:48761)</text>
+  <rect x="1740" y="318" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1810" y="336" text-anchor="middle" font-size="11" fill="#475569">dynamic-workflow (DAG v3)</text>
+  <rect x="1740" y="352" width="140" height="28" fill="white" stroke="#22C55E" stroke-width="1.5" rx="6"/>
+  <text x="1810" y="370" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">AGENTS.md + reason.md</text>
+  <rect x="1740" y="386" width="140" height="28" fill="white" stroke="#22C55E" stroke-width="1.5" rx="6"/>
+  <text x="1810" y="404" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">异源评审 (4 provider)</text>
+  <rect x="1740" y="420" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1810" y="438" text-anchor="middle" font-size="11" fill="#475569">docs/knowledge/ (16篇)</text>
+  <rect x="1740" y="454" width="140" height="28" fill="white" stroke="#22C55E" stroke-width="1.5" rx="6"/>
+  <text x="1810" y="472" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">.workflow/ 动态工作流</text>
+  <rect x="1740" y="488" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1810" y="506" text-anchor="middle" font-size="11" fill="#475569">permission.json (多层级)</text>
+  <rect x="1740" y="522" width="140" height="28" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
+  <text x="1810" y="540" text-anchor="middle" font-size="11" fill="#94A3B8" text-decoration="line-through">claude/codex/qwen/</text>
+
+  <!-- ===== Evolution Arrows ===== -->
+  <line x1="330" y1="300" x2="374" y2="300" stroke="#6B7280" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="654" y1="300" x2="698" y2="300" stroke="#6B7280" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="978" y1="300" x2="1022" y2="300" stroke="#6B7280" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="1302" y1="300" x2="1346" y2="300" stroke="#6B7280" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="1626" y1="300" x2="1670" y2="300" stroke="#6B7280" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ===== Legend ===== -->
+  <rect x="860" y="582" width="280" height="28" fill="white" stroke="#E2E8F0" stroke-width="1" rx="6"/>
+  <circle cx="880" cy="596" r="5" fill="#3B82F6"/>
+  <text x="892" y="600" font-size="10" fill="#475569">新增组件</text>
+  <circle cx="960" cy="596" r="5" fill="#CBD5E1"/>
+  <text x="972" y="600" font-size="10" fill="#475569">持续存在</text>
+  <circle cx="1050" cy="596" r="5" fill="#94A3B8"/>
+  <text x="1062" y="600" font-size="10" fill="#475569">已删除</text>
+</svg>

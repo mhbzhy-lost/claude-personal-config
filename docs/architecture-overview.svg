@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 650" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#64748B"/>
+    </marker>
+    <marker id="arrow-dash" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#64748B"/>
+    </marker>
+  </defs>
+
+  <!-- Background Areas -->
+  <rect x="30" y="20" width="1340" height="100" rx="12" fill="#FEF2F2" stroke="none"/>
+  <rect x="30" y="140" width="650" height="240" rx="12" fill="#EFF6FF" stroke="none"/>
+  <rect x="720" y="140" width="650" height="240" rx="12" fill="#F5F3FF" stroke="none"/>
+  <rect x="30" y="400" width="1340" height="100" rx="12" fill="#F0FDF4" stroke="none"/>
+  <rect x="30" y="520" width="1340" height="100" rx="12" fill="#F9FAFB" stroke="none"/>
+
+  <!-- Area Titles -->
+  <text x="50" y="42" font-size="16" font-weight="bold" fill="#DC2626">用户工具层</text>
+  <text x="50" y="168" font-size="16" font-weight="bold" fill="#2563EB">主仓配置层</text>
+  <text x="740" y="168" font-size="16" font-weight="bold" fill="#7C3AED">Vendor 子模块层</text>
+  <text x="50" y="422" font-size="16" font-weight="bold" fill="#16A34A">部署目标</text>
+  <text x="50" y="548" font-size="16" font-weight="bold" fill="#475569">图例</text>
+
+  <!-- Red Area Nodes -->
+  <rect x="350" y="55" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
+  <rect x="600" y="55" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
+  <rect x="850" y="55" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
+
+  <text x="450" y="77" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">OpenCode</text>
+  <text x="450" y="93" font-size="10" fill="#6B7280" text-anchor="middle">AI 编码主力 IDE</text>
+  <text x="700" y="77" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">Claude Code</text>
+  <text x="700" y="93" font-size="10" fill="#6B7280" text-anchor="middle">Anthropic 原生</text>
+  <text x="950" y="77" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">Qwen Code</text>
+  <text x="950" y="93" font-size="10" fill="#6B7280" text-anchor="middle">通义千问编码</text>
+
+  <!-- Blue Area Nodes - Row 1 -->
+  <rect x="140" y="195" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <rect x="370" y="195" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+
+  <text x="240" y="217" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">插件系统（9 plugins）</text>
+  <text x="240" y="233" font-size="10" fill="#6B7280" text-anchor="middle">commit-gate / review-gate</text>
+  <text x="470" y="217" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">全局规则（AGENTS.md）</text>
+  <text x="470" y="233" font-size="10" fill="#6B7280" text-anchor="middle">TDD / Bugfix / Commit 规范</text>
+
+  <!-- Blue Area Nodes - Row 2 -->
+  <rect x="140" y="267" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <rect x="370" y="267" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+
+  <text x="240" y="289" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">共享资源（shared/）</text>
+  <text x="240" y="305" font-size="10" fill="#6B7280" text-anchor="middle">hooks + policies SSOT</text>
+  <text x="470" y="289" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">知识库（docs/）</text>
+  <text x="470" y="305" font-size="10" fill="#6B7280" text-anchor="middle">16 知识 + 60 Bug + 9 计划</text>
+
+  <!-- Purple Area Nodes -->
+  <rect x="945" y="180" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <rect x="945" y="250" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <rect x="945" y="320" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+
+  <text x="1045" y="202" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">superpowers v5.1.0</text>
+  <text x="1045" y="218" font-size="10" fill="#6B7280" text-anchor="middle">16 方法论技能 (TDD/SDD/Debug)</text>
+  <text x="1045" y="272" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">opencode-cache-proxy</text>
+  <text x="1045" y="288" font-size="10" fill="#6B7280" text-anchor="middle">API 缓存代理 :48761</text>
+  <text x="1045" y="342" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">opencode-dynamic-workflow</text>
+  <text x="1045" y="358" font-size="10" fill="#6B7280" text-anchor="middle">多 Agent DAG 编排引擎</text>
+
+  <!-- Green Area Nodes -->
+  <rect x="480" y="435" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#22C55E" stroke-width="1.5"/>
+  <rect x="720" y="435" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#22C55E" stroke-width="1.5"/>
+
+  <text x="580" y="457" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">~/.config/opencode/</text>
+  <text x="580" y="473" font-size="10" fill="#6B7280" text-anchor="middle">软链同步目标</text>
+  <text x="820" y="457" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">init_opencode.sh</text>
+  <text x="820" y="473" font-size="10" fill="#6B7280" text-anchor="middle">幂等初始化 (773行)</text>
+
+  <!-- Connection Lines -->
+  <!-- 工具层 → 部署目标: OpenCode bottom → green1 top (solid) -->
+  <line x1="450" y1="107" x2="580" y2="435" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- 主仓 → 部署目标: 共享资源 bottom → init_opencode.sh top (dashed) -->
+  <line x1="240" y1="319" x2="820" y2="435" stroke="#64748B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-dash)"/>
+  <!-- Vendor → 主仓: superpowers left → 全局规则 right (solid) -->
+  <line x1="945" y1="206" x2="570" y2="221" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- 插件 → 工具层: 插件系统 top → OpenCode bottom (solid) -->
+  <line x1="240" y1="195" x2="450" y2="107" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Legend Text -->
+  <text x="100" y="575" font-size="11" fill="#475569">实线箭头 = 加载/调用</text>
+  <text x="380" y="575" font-size="11" fill="#475569">虚线箭头 = 软链同步</text>
+  <text x="660" y="575" font-size="11" fill="#475569">背景色 = 功能分区</text>
+</svg>
