@@ -72,6 +72,10 @@ FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaS
 
 ## 修复记录
 
+修复代码位于 `vendor/opencode-cache-proxy` 子模块提交
+`d958f73 fix(auth): 处理非交互输入耗尽`，父仓仅记录子模块指针与本分析文档。
+该提交改动 `proxy/src/opencode-auth.mjs` 与 `proxy/test/opencode-auth.test.mjs`。
+
 - `opencode-auth.mjs` 中 `createBufferedQuestion` 闭包：buffer 耗尽时
   设置 `q.e = true` 并返回 `""`（而非触发 `||=` 重新 await promise）。
 - `selectOpenCodeProvider` 在消费 `question()` 返回值后检查 `question.e`，
@@ -96,4 +100,3 @@ node --test test/client-config.test.mjs   # 5/5 pass
 bash install-opencode.sh < /dev/null
 # exit code: 1（干净错误），stderr: "no provider selected (input exhausted)"
 ```
-
