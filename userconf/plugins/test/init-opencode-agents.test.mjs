@@ -210,6 +210,71 @@ describe("init_opencode agents sync", () => {
     }
   })
 
+  it("symlinks workflow-usage into shared agents skills and removes legacy OpenCode skill link", () => {
+    const root = mkdtempSync(join(tmpdir(), "workflow-skill-"))
+
+    try {
+      const skillsDir = join(root, "agents-skills")
+      const configDir = join(root, "opencode")
+      const legacyDir = join(configDir, "skills")
+      const legacyLink = join(legacyDir, "workflow-usage")
+      const workflowSource = join(repoRoot, "vendor", "opencode-dynamic-workflow", "skills", "workflow-usage")
+      mkdirSync(legacyDir, { recursive: true })
+      execFileSync("ln", ["-s", workflowSource, legacyLink])
+
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `AGENTS_SKILLS_DIR=${JSON.stringify(skillsDir)}`,
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "sync_shared_skills",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      const sharedTarget = execFileSync("readlink", [join(skillsDir, "workflow-usage")], { encoding: "utf8" }).trim()
+      assert.equal(sharedTarget, workflowSource)
+      assert.equal(existsSync(legacyLink), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("runs workflow submodule install only when workflow-usage is whitelisted", () => {
+    const root = mkdtempSync(join(tmpdir(), "workflow-whitelist-"))
+
+    try {
+      const withWorkflow = join(root, "with-workflow.list")
+      const withoutWorkflow = join(root, "without-workflow.list")
+      writeFileSync(withWorkflow, "external-llm-review\nworkflow-usage\n")
+      writeFileSync(withoutWorkflow, "external-llm-review\n")
+
+      const output = execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            `AGENTS_SKILLS_LIST=${JSON.stringify(withWorkflow)} should_install_workflow_usage && printf yes`,
+            "printf /",
+            `AGENTS_SKILLS_LIST=${JSON.stringify(withoutWorkflow)} should_install_workflow_usage || printf no`,
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      assert.equal(output, "yes/no")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("external-llm-review skill documentation points at userconf skill path", () => {
     const skill = readFileSync(join(repoRoot, "userconf", "skills", "external-llm-review", "SKILL.md"), "utf8")
 
@@ -227,6 +292,7 @@ describe("init_opencode agents sync", () => {
       const sources = [
         join(repoRoot, "userconf", "skills", skill, "SKILL.md"),
         join(repoRoot, "vendor", "superpowers", "skills", skill, "SKILL.md"),
+        join(repoRoot, "vendor", "opencode-dynamic-workflow", "skills", skill, "SKILL.md"),
       ]
 
       assert.ok(sources.some((path) => existsSync(path)), `${skill} should have a source SKILL.md`)

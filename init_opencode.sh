@@ -111,7 +111,8 @@ shared_skill_source() {
 
   for candidate in \
     "$SRC/userconf/skills/$skill_name" \
-    "$SRC/vendor/superpowers/skills/$skill_name"; do
+    "$SRC/vendor/superpowers/skills/$skill_name" \
+    "$SRC/vendor/opencode-dynamic-workflow/skills/$skill_name"; do
     if [ -d "$candidate" ] && [ -f "$candidate/SKILL.md" ]; then
       printf '%s\n' "$candidate"
       return 0
@@ -130,11 +131,29 @@ valid_skill_name() {
   esac
 }
 
+skill_list_contains() {
+  local expected_skill="$1"
+  local list_path="${2:-$AGENTS_SKILLS_LIST}"
+  local raw_line skill_name
+
+  [ -f "$list_path" ] || return 1
+  while IFS= read -r raw_line || [ -n "$raw_line" ]; do
+    skill_name="$(trim_skill_name "$raw_line")"
+    [ "$skill_name" = "$expected_skill" ] && return 0
+  done < "$list_path"
+
+  return 1
+}
+
+should_install_workflow_usage() {
+  skill_list_contains "workflow-usage" "$AGENTS_SKILLS_LIST"
+}
+
 is_managed_skill_target() {
   local target="$1"
 
   case "$target" in
-    "$SRC/userconf/skills/"*|"$SRC/vendor/superpowers/skills/"*|"$SRC/claude-skills/"*) return 0 ;;
+    "$SRC/userconf/skills/"*|"$SRC/vendor/superpowers/skills/"*|"$SRC/vendor/opencode-dynamic-workflow/skills/"*|"$SRC/claude-skills/"*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -148,6 +167,13 @@ sync_shared_skills() {
   fi
 
   mkdir -p "$AGENTS_SKILLS_DIR"
+
+  local legacy_workflow_skill="$OPENCODE_CONFIG_DIR/skills/workflow-usage"
+  local workflow_skill_source="$SRC/vendor/opencode-dynamic-workflow/skills/workflow-usage"
+  if [ -L "$legacy_workflow_skill" ] && [ "$(readlink "$legacy_workflow_skill")" = "$workflow_skill_source" ]; then
+    rm -f "$legacy_workflow_skill"
+    echo "[skill] legacy $legacy_workflow_skill 已迁移到 ~/.agents/skills，旧软链已移除"
+  fi
 
   local raw_line skill_name src_path dst_path current_target
   while IFS= read -r raw_line || [ -n "$raw_line" ]; do
@@ -691,8 +717,10 @@ sync_opencode_tui
 # install-opencode.sh 内含 npm install（网络操作），失败不应中断整个 init 流程。
 # 路径通过 OPENCODE_CONFIG_DIR 环境变量传递；脚本无参数。
 workflow_install="$SRC/vendor/opencode-dynamic-workflow/install-opencode.sh"
-if [ -f "$workflow_install" ]; then
-  if ! OPENCODE_CONFIG_DIR="$OPENCODE_CONFIG_DIR" bash "$workflow_install"; then
+if ! should_install_workflow_usage; then
+  echo "[skip]  workflow-usage 未列入 agents/skills.list，跳过 workflow 子模块配置"
+elif [ -f "$workflow_install" ]; then
+  if ! OPENCODE_CONFIG_DIR="$OPENCODE_CONFIG_DIR" AGENTS_SKILLS_DIR="$AGENTS_SKILLS_DIR" bash "$workflow_install"; then
     echo "[warn]  workflow 子模块安装失败，workflow-usage skill 将无法使用"
   fi
 else

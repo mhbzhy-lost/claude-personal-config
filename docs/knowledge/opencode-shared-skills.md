@@ -22,8 +22,10 @@ source: docs/bugs/bug-external-llm-review-stale-symlink.md
 - `~/.config/opencode/skills/` 只保留 OpenCode 专属技能或子模块安装入口，不作为本仓共享 skill 的主同步目标。
 - 本仓自维护 skill 源目录是 `userconf/skills/<name>`，不要再使用废弃的 `claude-skills/<name>`。
 - `agents/skills.list` 是共享 skill 白名单；`init_opencode.sh` 按该列表逐项软链到 `~/.agents/skills/`。
-- 源路径解析顺序：先 `userconf/skills/<name>`，再 `vendor/superpowers/skills/<name>`。
+- 白名单只在主仓初始化脚本中生效；子模块安装脚本不读取该列表。主仓未列入某个子模块 skill 时，不执行对应子模块初始化入口。
+- 源路径解析顺序：先 `userconf/skills/<name>`，再 `vendor/superpowers/skills/<name>`，最后 `vendor/opencode-dynamic-workflow/skills/<name>`。
 - `<name>` 只允许字母、数字、下划线和连字符；空值或包含路径分隔符的条目会被初始化脚本拒绝。
+- `workflow-usage` 统一暴露在 `~/.agents/skills/workflow-usage`；旧的 `~/.config/opencode/skills/workflow-usage` 本仓软链会被初始化脚本清理，避免 OpenCode 专属目录和共享目录重复。
 
 ## 原因
 
