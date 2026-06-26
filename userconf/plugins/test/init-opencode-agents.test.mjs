@@ -37,6 +37,58 @@ describe("init_opencode agents sync", () => {
     }
   })
 
+  it("does not sync retired session-journal plugin", () => {
+    const configDir = mkdtempSync(join(tmpdir(), "opencode-plugins-"))
+
+    try {
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "sync_opencode_plugins",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      assert.equal(existsSync(join(configDir, "plugins", "session-journal.js")), false)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it("removes retired session-journal symlinks from previous installs", () => {
+    const configDir = mkdtempSync(join(tmpdir(), "opencode-plugins-"))
+
+    try {
+      const pluginDir = join(configDir, "plugins")
+      execFileSync("mkdir", ["-p", pluginDir])
+      execFileSync("ln", ["-s", join(repoRoot, "userconf", "plugins", "session-journal.js"), join(pluginDir, "session-journal.js")])
+
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "sync_opencode_plugins",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      assert.equal(existsSync(join(pluginDir, "session-journal.js")), false)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
   it("symlinks userconf agents into the OpenCode global agents directory", () => {
     const configDir = mkdtempSync(join(tmpdir(), "opencode-agents-"))
 

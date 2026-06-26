@@ -260,6 +260,13 @@ ensure_opencode_installed() {
 #       · 真文件副本与仓内一致时静默升级为软链
 #       · 真文件副本与仓内不一致时警告保留（疑似用户本地改动）
 #       · 用户自管文件（不在仓内 opencode/plugins/ 中）原样不动
+is_retired_opencode_plugin() {
+  case "$1" in
+    session-journal.js) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 sync_opencode_plugins() {
   local src_path="$SRC/userconf/plugins"
   local dst_path="$OPENCODE_CONFIG_DIR/plugins"
@@ -293,9 +300,23 @@ sync_opencode_plugins() {
   # 是真目录 → per-file symlink 模式
   echo "[plugin] $dst_path 是真目录，进入 per-file symlink 模式"
 
+  local retired_file retired_target current_target
+  for retired_file in session-journal.js; do
+    retired_target="$dst_path/$retired_file"
+    if [ -L "$retired_target" ]; then
+      current_target=$(readlink "$retired_target")
+      case "$current_target" in
+        "$src_path/$retired_file")
+          rm -f "$retired_target"
+          echo "[plugin] $retired_file 已废除，移除旧软链"
+          ;;
+      esac
+    fi
+  done
+
   # 仓内 userconf/plugins/ 目前是平铺文件，不递归处理子目录；若未来添加
   # 子目录形态的 plugin，需要在此扩展递归逻辑。
-  local src_file dst_file basename current_target
+  local src_file dst_file basename
   for src_file in "$src_path"/*; do
     [ -e "$src_file" ] || continue
     if [ -d "$src_file" ]; then
@@ -305,6 +326,9 @@ sync_opencode_plugins() {
     fi
     [ -f "$src_file" ] || continue
     basename=$(basename "$src_file")
+    if is_retired_opencode_plugin "$basename"; then
+      continue
+    fi
     dst_file="$dst_path/$basename"
 
     # 已是正确软链 → 跳过
