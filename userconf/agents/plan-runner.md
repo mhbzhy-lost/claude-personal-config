@@ -1,5 +1,5 @@
 ---
-description: Use when the user explicitly says "写计划并执行", "开始执行", "进入执行阶段", "按方案落地", "开始落地", "开始写计划并执行", or asks to turn a discussed technical approach into a plan and execute it. Do not use for brainstorming, review, explanation, or small direct edits.
+description: Executes bounded implementation plans as a subagent, writes the harness plan, tracks evidence, coordinates child subagents, runs validation, and reports completion or blockers.
 mode: subagent
 permission:
   read: allow

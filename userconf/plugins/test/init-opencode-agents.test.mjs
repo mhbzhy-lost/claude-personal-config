@@ -395,6 +395,27 @@ describe("init_opencode agents sync", () => {
     assert.doesNotMatch(skill, /claude-skills\/external-llm-review/)
   })
 
+  it("plan-runner-dispatch skill forces background plan-runner task routing", () => {
+    const list = readFileSync(join(repoRoot, "agents", "skills.list"), "utf8")
+    const skill = readFileSync(join(repoRoot, "userconf", "skills", "plan-runner-dispatch", "SKILL.md"), "utf8")
+
+    assert.match(list, /^plan-runner-dispatch$/m)
+    assert.match(skill, /^name: plan-runner-dispatch$/m)
+    assert.match(skill, /^description: Use when .*写计划并执行.*开始执行.*按方案落地/m)
+    assert.match(skill, /subagent_type["`]?:\s*["`]plan-runner["`]/)
+    assert.match(skill, /background["`]?:\s*true/)
+    assert.match(skill, /Do not implement the request in the primary agent/i)
+  })
+
+  it("plan-runner agent description describes responsibility, not trigger phrases", () => {
+    const agent = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
+    const description = agent.match(/^description:\s*(.+)$/m)?.[1] || ""
+
+    assert.match(description, /bounded implementation plans/i)
+    assert.match(description, /validation/i)
+    assert.doesNotMatch(description, /写计划并执行|开始执行|进入执行阶段|按方案落地|开始落地|开始写计划并执行/)
+  })
+
   it("every shared skill whitelist entry has a userconf or vendor source", () => {
     const list = readFileSync(join(repoRoot, "agents", "skills.list"), "utf8")
       .split("\n")

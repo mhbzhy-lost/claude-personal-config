@@ -6,7 +6,7 @@ applies_to:
   - init_opencode.sh
   - agents/skills.list
   - userconf/skills/
-last_verified: 2026-06-25
+last_verified: 2026-06-26
 source: docs/bugs/bug-external-llm-review-stale-symlink.md
 ---
 
@@ -26,6 +26,7 @@ source: docs/bugs/bug-external-llm-review-stale-symlink.md
 - 源路径解析顺序：先 `userconf/skills/<name>`，再 `vendor/superpowers/skills/<name>`，最后 `vendor/opencode-dynamic-workflow/skills/<name>`。
 - `<name>` 只允许字母、数字、下划线和连字符；空值或包含路径分隔符的条目会被初始化脚本拒绝。
 - `workflow-usage` 统一暴露在 `~/.agents/skills/workflow-usage`；旧的 `~/.config/opencode/skills/workflow-usage` 本仓软链会被初始化脚本清理，避免 OpenCode 专属目录和共享目录重复。
+- `plan-runner-dispatch` 是给 OpenCode 主 agent 的召回 shim：触发词命中后只负责要求主 agent 后台派发 `plan-runner` subagent，不替代 `plan-runner` 本身。
 
 ## 原因
 
