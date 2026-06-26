@@ -1,7 +1,7 @@
 import { access, appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import { createHash, randomUUID } from "node:crypto"
 import { homedir } from "node:os"
-import { basename, dirname, join } from "node:path"
+import { basename, dirname, isAbsolute, join, normalize, relative } from "node:path"
 import { pathToFileURL } from "node:url"
 
 const STATE_VERSION = 1
@@ -349,6 +349,13 @@ async function handleTodoUpdated(stateDir, event) {
 }
 
 async function recordToolEvidence(stateDir, input, output) {
+  if (input.tool === "write" || input.tool === "edit") {
+    if (typeof input.args?.filePath === "string") {
+      await recordDiffEvidence(stateDir, { sessionID: input.sessionID, files: [input.args.filePath], eventID: `tool-after-${input.callID}` })
+    }
+    return
+  }
+
   const state = await readTaskStateForSession(stateDir, input.sessionID)
   if (!state || input.tool !== "bash") return
 
@@ -418,6 +425,20 @@ function diffFileName(entry) {
   return entry?.file || entry?.path || entry?.filename || entry?.name || null
 }
 
+function normalizeEvidenceFile(state, file) {
+  const text = String(file || "").trim()
+  if (!text) return null
+
+  const absolute = isAbsolute(text) ? normalize(text) : state.worktree ? normalize(join(state.worktree, text)) : null
+  if (state.plan_path && absolute === normalize(state.plan_path)) return null
+
+  if (state.worktree && absolute) {
+    const rel = relative(state.worktree, absolute)
+    if (rel && !rel.startsWith("..") && !isAbsolute(rel)) return rel
+  }
+  return text
+}
+
 async function recordDiffEvidence(stateDir, { sessionID, files, eventID }) {
   if (!sessionID) return
   const state = await readTaskStateForSession(stateDir, sessionID)
@@ -426,15 +447,16 @@ async function recordDiffEvidence(stateDir, { sessionID, files, eventID }) {
   const taskID = activeTodoTaskID(state.todo.last_seen, state.plan_contract.tasks)
   if (!taskID) return
 
-  if (files.length === 0) return
+  const normalizedFiles = [...new Set(files.map((file) => normalizeEvidenceFile(state, file)).filter(Boolean))]
+  if (normalizedFiles.length === 0) return
 
-  state.modified_files = [...new Set([...state.modified_files, ...files])]
+  state.modified_files = [...new Set([...state.modified_files, ...normalizedFiles])]
   const evidence = {
     id: `ev-diff-${eventID}`,
     type: "diff",
     task_ids: [taskID],
     event_ids: [eventID],
-    files,
+    files: normalizedFiles,
   }
   state.evidence = state.evidence.filter((item) => item.id !== evidence.id)
   state.evidence.push(evidence)
