@@ -142,7 +142,7 @@ normalize_symlink_target() {
     *) target_dir="$(dirname "$link_path")/$(dirname "$target")" ;;
   esac
 
-  if normalized_dir="$(cd "$target_dir" 2>/dev/null && pwd -P)"; then
+  if normalized_dir="$(cd -- "$target_dir" 2>/dev/null && pwd -P)"; then
     printf '%s/%s\n' "$normalized_dir" "$target_name"
     return 0
   fi
@@ -153,12 +153,13 @@ normalize_symlink_target() {
 managed_target_suffix_matches() {
   local target="$1"
   local managed_suffix="$2"
+  local suffix
 
   [ -n "$managed_suffix" ] || return 1
-  case "$target" in
-    "$managed_suffix"|*/"$managed_suffix") return 0 ;;
-    *) return 1 ;;
-  esac
+  [ "$target" = "$managed_suffix" ] && return 0
+
+  suffix="/$managed_suffix"
+  [ ${#target} -ge ${#suffix} ] && [ "${target: -${#suffix}}" = "$suffix" ]
 }
 
 symlink_target_matches() {
@@ -373,7 +374,7 @@ sync_opencode_plugins() {
   # 是真目录 → per-file symlink 模式
   echo "[plugin] $dst_path 是真目录，进入 per-file symlink 模式"
 
-  local retired_file retired_target current_target
+  local retired_file retired_target
   for retired_file in session-journal.js; do
     retired_target="$dst_path/$retired_file"
     if [ -L "$retired_target" ]; then
