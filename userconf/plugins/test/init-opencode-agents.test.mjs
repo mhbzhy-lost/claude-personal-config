@@ -1,12 +1,24 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
-import { join } from "node:path"
+import { join, relative } from "node:path"
 import { tmpdir } from "node:os"
 
 const repoRoot = new URL("../../..", import.meta.url).pathname
 const initScript = join(repoRoot, "init_opencode.sh")
+
+function pathExistsNoFollow(path) {
+  try {
+    lstatSync(path)
+    return true
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return false
+    }
+    throw error
+  }
+}
 
 describe("init_opencode agents sync", () => {
   it("symlinks userconf plugins including plan-runner harness", () => {
@@ -83,9 +95,43 @@ describe("init_opencode agents sync", () => {
         { encoding: "utf8" },
       )
 
-      assert.equal(existsSync(join(pluginDir, "session-journal.js")), false)
+      assert.equal(pathExistsNoFollow(join(pluginDir, "session-journal.js")), false)
     } finally {
       rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it("removes retired session-journal symlinks when target is relative", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-relative-retired-"))
+
+    try {
+      const fakeRepo = join(root, "repo")
+      const configDir = join(root, "config")
+      const pluginDir = join(configDir, "plugins")
+      const retiredLink = join(pluginDir, "session-journal.js")
+      const retiredSource = join(fakeRepo, "userconf", "plugins", "session-journal.js")
+      mkdirSync(join(fakeRepo, "userconf", "plugins"), { recursive: true })
+      mkdirSync(pluginDir, { recursive: true })
+      writeFileSync(join(fakeRepo, "init_opencode.sh"), readFileSync(initScript, "utf8"))
+      execFileSync("ln", ["-s", relative(pluginDir, retiredSource), retiredLink])
+
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(join(fakeRepo, "init_opencode.sh"))}`,
+            "sync_opencode_plugins",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      assert.equal(pathExistsNoFollow(retiredLink), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 
@@ -116,7 +162,7 @@ describe("init_opencode agents sync", () => {
         { encoding: "utf8" },
       )
 
-      assert.equal(existsSync(join(pluginDir, "session-journal.js")), false)
+      assert.equal(pathExistsNoFollow(join(pluginDir, "session-journal.js")), false)
       const dummyTarget = execFileSync("readlink", [join(pluginDir, "dummy-plugin.js")], { encoding: "utf8" }).trim()
       assert.equal(dummyTarget, join(fakeRepo, "userconf", "plugins", "dummy-plugin.js"))
     } finally {
@@ -220,7 +266,7 @@ describe("init_opencode agents sync", () => {
       const legacyLink = join(legacyDir, "workflow-usage")
       const workflowSource = join(repoRoot, "vendor", "opencode-dynamic-workflow", "skills", "workflow-usage")
       mkdirSync(legacyDir, { recursive: true })
-      execFileSync("ln", ["-s", workflowSource, legacyLink])
+      execFileSync("ln", ["-s", relative(legacyDir, workflowSource), legacyLink])
 
       execFileSync(
         "bash",
@@ -239,7 +285,7 @@ describe("init_opencode agents sync", () => {
 
       const sharedTarget = execFileSync("readlink", [join(skillsDir, "workflow-usage")], { encoding: "utf8" }).trim()
       assert.equal(sharedTarget, workflowSource)
-      assert.equal(existsSync(legacyLink), false)
+      assert.equal(pathExistsNoFollow(legacyLink), false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

@@ -131,6 +131,35 @@ valid_skill_name() {
   esac
 }
 
+normalize_symlink_target() {
+  local link_path="$1"
+  local target="$2"
+  local target_dir target_name normalized_dir
+
+  target_name=$(basename "$target")
+  case "$target" in
+    /*) target_dir=$(dirname "$target") ;;
+    *) target_dir="$(dirname "$link_path")/$(dirname "$target")" ;;
+  esac
+
+  if normalized_dir="$(cd "$target_dir" 2>/dev/null && pwd -P)"; then
+    printf '%s/%s\n' "$normalized_dir" "$target_name"
+    return 0
+  fi
+
+  printf '%s\n' "$target"
+}
+
+symlink_target_matches() {
+  local link_path="$1"
+  local expected_target="$2"
+  local current_target
+
+  current_target=$(readlink "$link_path") || return 1
+  [ "$current_target" = "$expected_target" ] && return 0
+  [ "$(normalize_symlink_target "$link_path" "$current_target")" = "$(normalize_symlink_target "$link_path" "$expected_target")" ]
+}
+
 skill_list_contains() {
   local expected_skill="$1"
   local list_path="${2:-$AGENTS_SKILLS_LIST}"
@@ -170,7 +199,7 @@ sync_shared_skills() {
 
   local legacy_workflow_skill="$OPENCODE_CONFIG_DIR/skills/workflow-usage"
   local workflow_skill_source="$SRC/vendor/opencode-dynamic-workflow/skills/workflow-usage"
-  if [ -L "$legacy_workflow_skill" ] && [ "$(readlink "$legacy_workflow_skill")" = "$workflow_skill_source" ]; then
+  if [ -L "$legacy_workflow_skill" ] && symlink_target_matches "$legacy_workflow_skill" "$workflow_skill_source"; then
     rm -f "$legacy_workflow_skill"
     echo "[skill] legacy $legacy_workflow_skill 已迁移到 ~/.agents/skills，旧软链已移除"
   fi
@@ -330,8 +359,7 @@ sync_opencode_plugins() {
   for retired_file in session-journal.js; do
     retired_target="$dst_path/$retired_file"
     if [ -L "$retired_target" ]; then
-      current_target=$(readlink "$retired_target")
-      if [ "$current_target" = "$src_path/$retired_file" ]; then
+      if symlink_target_matches "$retired_target" "$src_path/$retired_file"; then
         rm -f "$retired_target"
         echo "[plugin] $retired_file 已废除，移除旧软链"
       fi
