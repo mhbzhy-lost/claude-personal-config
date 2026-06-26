@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
@@ -86,6 +86,38 @@ describe("init_opencode agents sync", () => {
       assert.equal(existsSync(join(pluginDir, "session-journal.js")), false)
     } finally {
       rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it("removes retired plugin symlinks when repo path contains glob characters", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-[plugins]-"))
+
+    try {
+      const fakeRepo = join(root, "repo")
+      const configDir = join(root, "config")
+      const pluginDir = join(configDir, "plugins")
+      mkdirSync(join(fakeRepo, "userconf", "plugins"), { recursive: true })
+      mkdirSync(pluginDir, { recursive: true })
+      writeFileSync(join(fakeRepo, "init_opencode.sh"), readFileSync(initScript, "utf8"))
+      execFileSync("ln", ["-s", join(fakeRepo, "userconf", "plugins", "session-journal.js"), join(pluginDir, "session-journal.js")])
+
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(join(fakeRepo, "init_opencode.sh"))}`,
+            "sync_opencode_plugins",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      assert.equal(existsSync(join(pluginDir, "session-journal.js")), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 

@@ -305,12 +305,10 @@ sync_opencode_plugins() {
     retired_target="$dst_path/$retired_file"
     if [ -L "$retired_target" ]; then
       current_target=$(readlink "$retired_target")
-      case "$current_target" in
-        "$src_path/$retired_file")
-          rm -f "$retired_target"
-          echo "[plugin] $retired_file 已废除，移除旧软链"
-          ;;
-      esac
+      if [ "$current_target" = "$src_path/$retired_file" ]; then
+        rm -f "$retired_target"
+        echo "[plugin] $retired_file 已废除，移除旧软链"
+      fi
     fi
   done
 
