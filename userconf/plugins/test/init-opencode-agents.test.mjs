@@ -99,6 +99,7 @@ describe("init_opencode agents sync", () => {
       mkdirSync(join(fakeRepo, "userconf", "plugins"), { recursive: true })
       mkdirSync(pluginDir, { recursive: true })
       writeFileSync(join(fakeRepo, "init_opencode.sh"), readFileSync(initScript, "utf8"))
+      writeFileSync(join(fakeRepo, "userconf", "plugins", "dummy-plugin.js"), "export default async () => ({})\n")
       execFileSync("ln", ["-s", join(fakeRepo, "userconf", "plugins", "session-journal.js"), join(pluginDir, "session-journal.js")])
 
       execFileSync(
@@ -116,6 +117,8 @@ describe("init_opencode agents sync", () => {
       )
 
       assert.equal(existsSync(join(pluginDir, "session-journal.js")), false)
+      const dummyTarget = execFileSync("readlink", [join(pluginDir, "dummy-plugin.js")], { encoding: "utf8" }).trim()
+      assert.equal(dummyTarget, join(fakeRepo, "userconf", "plugins", "dummy-plugin.js"))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

@@ -315,8 +315,7 @@ sync_opencode_plugins() {
   # 仓内 userconf/plugins/ 目前是平铺文件，不递归处理子目录；若未来添加
   # 子目录形态的 plugin，需要在此扩展递归逻辑。
   local src_file dst_file basename
-  for src_file in "$src_path"/*; do
-    [ -e "$src_file" ] || continue
+  while IFS= read -r -d '' src_file; do
     if [ -d "$src_file" ]; then
       basename=$(basename "$src_file")
       echo "[plugin] 跳过仓内子目录 $basename/（per-file 模式只处理平铺文件）"
@@ -365,7 +364,7 @@ sync_opencode_plugins() {
     # 不存在 → 直接建软链
     ln -s "$src_file" "$dst_file"
     echo "[plugin] $basename → 软链（首次同步）"
-  done
+  done < <(find "$src_path" -mindepth 1 -maxdepth 1 -print0)
 
   # 扫描 dst 中指向本仓但本仓已无该文件的孤儿软链（仓内删 plugin 后 user
   # 环境的残留）。只 warn 不自动删——保守，让 user 自己决定；自动删可能
