@@ -44,10 +44,12 @@ OpenCode 托管 provider id 包括：
 - `openai-bailian-token-plan`：走 `@ai-sdk/openai-compatible`，上游为百炼
   token-plan compatible-mode。模型列表与 `openai-bailiab-api` 一致。
 - `openai-idealab`：走 `@ai-sdk/openai-compatible`，**经过本地 cache proxy**
-  （用于把 `-256k` context-size alias 改写成真实上游 model id），但 `x-cache-proxy-marker-strategy` 固定为 `none`，让 proxy 不注入 `cache_control` markers——缓存由 Idealab 上游自行处理。上游为 Idealab OpenAI endpoint
-  `https://idealab.alibaba-inc.com/api/openai/v1`。当前模型列表：
+  （用于把 `-300k` context-size alias 改写成真实上游 model id），与 bailian providers
+  使用相同的 `turn-stable` marker strategy，由 proxy 注入 `cache_control` markers。
+  上游为 Idealab OpenAI endpoint `https://idealab.alibaba-inc.com/api/openai/v1`。
+  当前模型列表：
   - `Qwen3.7-Max-DogFooding`（base，不设 `limit`，由上游 1M 窗口控制，opencode 不主动 compact）
-  - `Qwen3.7-Max-DogFooding-256k`（context-size alias，`limit: { context: 256000, output: 32768 }`，用于短对话较早触发 compact；proxy 层把 model id 改写成 `Qwen3.7-Max-DogFooding` 再转发）
+  - `Qwen3.7-Max-DogFooding-300k`（context-size alias，`limit: { context: 300000, output: 32768 }`，用于短对话较早触发 compact；proxy 层把 model id 改写成 `Qwen3.7-Max-DogFooding` 再转发）
 
   模型名来自 token-hub 的 `name` 字段；不要改成裸 `qwen3.7-max`，dogfooding AK 对
   裸模型会返回"该模型需要授权"。TUI 自动追加 "Default" variant 条目，所以
