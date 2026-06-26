@@ -37,6 +37,9 @@
 - `session.status` 会出现 `busy/idle`，随后有 `session.idle`；`session.idle` 的 properties 至少包含 `sessionID`。
 - 在 `session.idle` 后调用 `client.session.promptAsync(...)` 能把 validation 结果投递回同一 session，并触发 agent 继续执行。
 - `promptAsync` 必须只投递给目标 plan-runner session；不能对所有 idle session 广播。
+- 2026-06-26 在 OpenCode `1.17.11` 上用真实 `opencode serve` wrapper 探针验证：harness
+  可在 `session.idle(plan-runner)` 后通过 server 注入的 client 创建 audit child session，
+  并投递 `agent: plan-runner-audit` 的 `audit_review_required` prompt。
 
 ## 目录结构
 
@@ -772,11 +775,12 @@ rename
 
 ## 实施任务
 
-当前已落地：T1、T2、T3、T4、T5、T6、T7、T8、T9、T10、T15、T16 的首个最小切片。
+当前已落地：T1、T2、T3、T4、T5、T6、T7、T8、T9、T10、T11（audit child session 最小切片）、T15、T16。
 其中 T8 已记录 bash command evidence、`session.diff`、`message.updated.info.summary.diffs` 和 patch part diff evidence；T9 已要求完成项必须有 diff evidence，command-only evidence 不再满足 implementation 完成判断；T10 已在 deterministic check 前插入 verification-before-completion self-check re-entry。
+T11 目前落地 deterministic check 通过后由 harness 创建 audit child session，并用只读 `plan-runner-audit` agent 投递 `audit_review_required` prompt；audit 结果消费和完整 external review runner 仍未落地。
 state storage 已补充唯一 temp 文件名和坏 JSON 隔离，损坏 state 不再作为 active task 参与后续 gate。
 
-仍未落地：T11、T12、T13、T14，以及 stale/pre-push 相关 task 兜底等完整恢复路径。
+仍未落地：T12、T13、T14、T11 audit 结果消费，以及 stale/pre-push 相关 task 兜底等完整恢复路径。
 
 - Plan item T1: 调研并记录真实 hook payload 样本
 - Plan item T2: 实现 task-state 存储层

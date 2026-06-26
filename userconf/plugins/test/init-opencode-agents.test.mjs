@@ -416,6 +416,16 @@ describe("init_opencode agents sync", () => {
     assert.doesNotMatch(description, /写计划并执行|开始执行|进入执行阶段|按方案落地|开始落地|开始写计划并执行/)
   })
 
+  it("plan-runner audit agent is read-only and cannot dispatch child tasks", () => {
+    const agent = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner-audit.md"), "utf8")
+
+    assert.match(agent, /^mode:\s*subagent$/m)
+    assert.match(agent, /edit:\s*deny/)
+    assert.match(agent, /write:\s*deny/)
+    assert.match(agent, /task:\s*deny/)
+    assert.match(agent, /You are a plan-runner audit reviewer/i)
+  })
+
   it("every shared skill whitelist entry has a userconf or vendor source", () => {
     const list = readFileSync(join(repoRoot, "agents", "skills.list"), "utf8")
       .split("\n")

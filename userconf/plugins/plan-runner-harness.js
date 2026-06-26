@@ -420,6 +420,70 @@ function selfCheckPromptText() {
   ].join("\n")
 }
 
+function auditPromptText(state) {
+  const files = state.modified_files.length ? state.modified_files.map((file) => `- ${file}`) : ["- none recorded"]
+  return [
+    "Plan-runner audit_review_required: deterministic checks passed, but completion is not final until audit and external review pass.",
+    "- You are the harness-dispatched audit subagent. Do not modify files.",
+    "- Review the plan, todo status, evidence, modified files, validation commands, scope deviations, and remaining risks.",
+    "- Check whether external-llm-review or reviewer.py still needs to run against the current diff for this worktree.",
+    "- Return findings only: pass/fail, rejected tasks, unknown tasks, unmapped files, required fixes, and external review command recommendation.",
+    `- Harness Task ID: ${state.task_id}`,
+    `- Plan path: ${state.plan_path}`,
+    "- Modified files observed by harness:",
+    ...files,
+  ].join("\n")
+}
+
+function sessionIDFromCreateResult(result) {
+  const value = result?.data?.id ?? result?.data
+  return typeof value === "object" ? value?.id : value
+}
+
+async function dispatchAuditReview({ stateDir, client, directory, sessionID, state }) {
+  if (!client?.session?.create || !client?.session?.promptAsync) {
+    state.status = "interrupted"
+    state.updated_at = Date.now()
+    await writeTaskState(stateDir, state)
+    await appendEvent(stateDir, state.task_id, { type: "audit_dispatch_failed", session_id: sessionID, error: "session create/promptAsync unavailable" })
+    return
+  }
+
+  try {
+    const query = { directory: directory || state.worktree }
+    const created = await client.session.create({
+      query,
+      body: {
+        parentID: sessionID,
+        title: `plan-runner audit: ${state.task_id}`,
+      },
+    })
+    const auditSessionID = sessionIDFromCreateResult(created)
+    if (!auditSessionID) throw new Error("audit session id missing")
+
+    state.child_sessions = state.child_sessions.filter((item) => item.session_id !== auditSessionID)
+    state.child_sessions.push({ session_id: auditSessionID, role: "audit", status: "running" })
+    state.updated_at = Date.now()
+    await writeTaskState(stateDir, state)
+    await writeSessionIndex(stateDir, auditSessionID, state.task_id, "audit")
+
+    await client.session.promptAsync({
+      path: { id: auditSessionID },
+      query,
+      body: {
+        agent: "plan-runner-audit",
+        parts: [{ type: "text", text: auditPromptText(state) }],
+      },
+    })
+    await appendEvent(stateDir, state.task_id, { type: "audit_review_dispatched", session_id: sessionID, audit_session_id: auditSessionID })
+  } catch (error) {
+    state.status = "interrupted"
+    state.updated_at = Date.now()
+    await writeTaskState(stateDir, state)
+    await appendEvent(stateDir, state.task_id, { type: "audit_dispatch_failed", session_id: sessionID, error: String(error?.message || error) })
+  }
+}
+
 function diffFileName(entry) {
   if (typeof entry === "string") return entry
   return entry?.file || entry?.path || entry?.filename || entry?.name || null
@@ -550,6 +614,7 @@ async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
     state.updated_at = Date.now()
     await writeTaskState(stateDir, state)
     await appendEvent(stateDir, state.task_id, { type: "deterministic_check_passed", session_id: sessionID })
+    await dispatchAuditReview({ stateDir, client, directory, sessionID, state })
     return
   }
 

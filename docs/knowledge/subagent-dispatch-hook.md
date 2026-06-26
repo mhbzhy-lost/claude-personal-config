@@ -13,7 +13,7 @@ applies_to:
   - userconf/agents/plan-runner.md
   - userconf/plugins/plan-runner-harness.js
   - scripts/opencode-subagent-event-probe.mjs
-last_verified: 2026-06-25
+last_verified: 2026-06-26
 source: opencode plan-runner agent
 ---
 
@@ -72,6 +72,8 @@ subagent safety policy 保证 child 没有 `task` 权限。child 只能返回 ev
   evidence 索引；harness 自己生成的 `docs/plans/<task_id>.md` 不计入实现 diff evidence。
 - `session.idle(plan-runner)` 首次完成尝试时先通过 `client.session.promptAsync`
   投递 verification-before-completion self-check；下一次 idle 再做 deterministic check。
+  deterministic check 通过后不能只停在 `audit_review`，必须由 harness 直接创建 audit
+  child session，并用 `agent: plan-runner-audit` 后台投递 `audit_review_required` prompt。
 - task/session state 写入使用 `.tmp.<pid>.<uuid>` 后 rename；读到损坏 JSON 时移到
   `task-state/corrupt/<state-kind>/`，并把该 state 当作 inactive fail-open。
 - harness runtime I/O 使用 `node:fs/promises`；OpenCode server hook 不应在高频
@@ -108,8 +110,12 @@ tool/event hook 行为。
 - 临时 git workspace 实测 self-check re-entry 链路：`task(plan-runner)` -> `write_plan` ->
   `todowrite(T1 in_progress)` -> `write` -> `message.updated.summary.diffs` ->
   `bash` validation -> `todowrite(T1 completed)` -> `session.idle` -> self-check
-  re-entry -> 补充验证命令 evidence。第二次 idle 后进入 `audit_review` 的状态流由
-  harness 单测覆盖。
+  re-entry -> 补充验证命令 evidence。第二次 idle 后进入 `audit_review`，创建 audit
+  child session 并投递 `audit_review_required` prompt 的状态流已由 harness 单测覆盖。
+- 真实 `opencode serve` wrapper 探针（2026-06-26，OpenCode `1.17.11`）验证：server
+  能识别 `plan-runner-audit`，harness 在 `session.idle` 后写入
+  `self_check_completed`、`deterministic_check_passed`、`audit_review_dispatched`，并创建
+  `parentID == plan_runner_session_id` 的 audit child session。
 - 损坏 task state JSON 的恢复路径由单测覆盖：`session.idle` 不抛异常，坏文件会进入
   `corrupt/tasks/<task_id>.json`。
 

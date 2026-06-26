@@ -679,14 +679,26 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("prompts verification self-check before deterministic audit review", async () => {
+  it("prompts verification self-check before dispatching an audit subagent", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
       const stateDir = join(root, "state")
       const prompts = []
+      const createdSessions = []
       const hooks = await PlanRunnerHarnessPlugin(
-        { directory: workspace, client: { session: { promptAsync: async (payload) => prompts.push(payload) } } },
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async (payload) => {
+                createdSessions.push(payload)
+                return { data: { id: "ses_audit" } }
+              },
+              promptAsync: async (payload) => prompts.push(payload),
+            },
+          },
+        },
         { stateDir },
       )
 
@@ -723,7 +735,18 @@ describe("PlanRunnerHarnessPlugin", () => {
       state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
       assert.equal(state.status, "audit_review")
       assert.deepEqual(state.self_check, { status: "completed", round: 1 })
-      assert.equal(prompts.length, 1)
+      assert.equal(prompts.length, 2)
+      assert.equal(createdSessions.length, 1)
+      assert.equal(createdSessions[0].body.parentID, "ses_plan_runner")
+      assert.equal(createdSessions[0].query.directory, workspace)
+      assert.equal(prompts[1].path.id, "ses_audit")
+      assert.equal(prompts[1].body.agent, "plan-runner-audit")
+      assert.match(prompts[1].body.parts[0].text, /audit_review_required/i)
+      assert.match(prompts[1].body.parts[0].text, /external-llm-review|reviewer\.py/i)
+      assert.deepEqual(state.child_sessions, [{ session_id: "ses_audit", role: "audit", status: "running" }])
+
+      const events = readFileSync(join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl"), "utf8")
+      assert.match(events, /"type":"audit_review_dispatched"/)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
