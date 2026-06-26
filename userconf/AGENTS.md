@@ -116,7 +116,8 @@ repo says a one-line change is exempt from TDD, that exemption wins.
 
 Use the available skills list and load the relevant skill content through the
 native skill mechanism. In this repo, `~/.agents/skills` is the source for
-selected native skills.
+selected native skills. Read the current linked skill content before relying on
+memory of its workflow.
 
 **Do not** use plugin installation for `vendor/superpowers`. This repo
 deliberately exposes only selected skills by symlink. The selection is managed
@@ -128,15 +129,17 @@ by `agents/skills.list`; worker dispatch skills are excluded from
 ## The Rule
 
 **Use relevant or requested linked skills before acting.** If a linked skill
-clearly applies, load it and follow it. If no linked skill applies, proceed
-normally.
+clearly applies, load it and follow it before answering, asking clarifying
+questions, reading files, or making tool calls. If no linked skill applies,
+proceed normally.
 
-Currently linked Superpowers workflow skills in `~/.agents/skills`:
+Currently linked Superpowers skills in `~/.agents/skills`:
 
 - `systematic-debugging`
 - `test-driven-development`
 - `verification-before-completion`
 - `receiving-code-review`
+- `writing-skills`
 
 ## Red Flags
 
@@ -148,6 +151,7 @@ These thoughts mean STOP and check the linked skills:
 | "I'll write tests after" | Use `test-driven-development` first unless exempt. |
 | "I'll claim it works from inspection" | Use `verification-before-completion` before completion claims. |
 | "This review comment sounds right" | Use `receiving-code-review` to verify it first. |
+| "I'll create/edit a skill" | Use `writing-skills` first; it requires `test-driven-development` background. |
 | "I remember this skill" | Skills evolve. Read the current linked version. |
 | "Maybe another Superpowers skill exists" | If it is not linked into `~/.agents/skills`, do not rely on it. |
 
@@ -160,7 +164,10 @@ When multiple linked skills could apply, use this order:
    - review feedback: `receiving-code-review`
 2. **Implementation discipline second**:
    - code or behavior changes: `test-driven-development`
-3. **Delivery checks last**:
+3. **Skill authoring discipline when applicable**:
+   - creating, editing, or verifying skills: `writing-skills`
+   - `writing-skills` requires understanding `test-driven-development`
+4. **Delivery checks last**:
    - before saying work is complete: `verification-before-completion`
 
 Examples:
@@ -171,6 +178,8 @@ Examples:
   explicitly exempt it.
 - "Review says this is wrong" -> `receiving-code-review` before accepting or
   rejecting the feedback.
+- "Create a skill for this workflow" -> `test-driven-development` background,
+  then `writing-skills`.
 
 ## Skill Types
 
@@ -178,8 +187,8 @@ Examples:
 `verification-before-completion`): follow exactly unless user or repository rules
 explicitly override.
 
-**Structured** (`receiving-code-review`): follow the workflow, but adapt the
-level of detail to the task.
+**Structured** (`receiving-code-review`, `writing-skills`): follow the workflow,
+but adapt the level of detail to the task.
 
 ## User Instructions
 

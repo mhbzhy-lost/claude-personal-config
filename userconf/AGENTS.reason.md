@@ -108,6 +108,23 @@ skill 本身不可修改，原 reason 保留在下方备查：
 
 ---
 
+## Superpowers
+
+> **原因**：本仓不通过 `vendor/superpowers` plugin 暴露整包 skills，而是用
+> `agents/skills.list` 选择性软链到 `~/.agents/skills`。这样可以避免 OpenCode /
+> Codex 看到未治理的全部 Superpowers skills，也避免 duplicate skill warning。
+>
+> "先加载再行动"沿用 Superpowers `using-superpowers` 的核心约束：skill 是流程入口，
+> 不是事后参考资料。要求在回答、追问、读文件、tool call 前判断并加载，是为了防止
+> agent 先按默认习惯推进，再用 skill 为既有决策背书。
+>
+> 当前 linked 集合刻意只包含通用开发纪律：debugging、TDD、完成前验证、接收 code
+> review、skill authoring。`writing-skills` 被加入后需要显式说明其依赖
+> `test-driven-development` 背景，否则 agent 容易把它当成普通文档模板，而不是按
+> RED-GREEN-REFACTOR 验证行为变化的流程。
+
+---
+
 ## 修复卡壳熔断
 
 > **原因**：同一思路连续失败 3 次说明当前假设大概率有误，继续硬试是在错误方向
