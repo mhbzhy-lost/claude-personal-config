@@ -437,19 +437,72 @@ function auditPromptText(state) {
 }
 
 function sessionIDFromCreateResult(result) {
-  const value = result?.data?.id ?? result?.data
+  const value = result?.data?.id ?? result?.data ?? result?.id
   return typeof value === "object" ? value?.id : value
+}
+
+function cloneState(state) {
+  return JSON.parse(JSON.stringify(state))
+}
+
+function diagnosticValue(value) {
+  if (!value) return null
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function formatDiagnosticError(error) {
+  if (typeof error === "string") return error
+  const parts = []
+  if (error?.stack) parts.push(String(error.stack))
+  else if (error?.message) parts.push(String(error.message))
+
+  for (const value of [error?.response?.data, error?.data, error?.stderr, error?.body]) {
+    const text = diagnosticValue(value)
+    if (text && !parts.includes(text)) parts.push(text)
+  }
+
+  if (parts.length) return parts.join("\n")
+  return diagnosticValue(error) || "unknown error"
+}
+
+async function recordAuditDispatchFailure({ stateDir, sessionID, state, error, auditSessionID = null }) {
+  const failedState = cloneState(state)
+  failedState.status = "interrupted"
+  failedState.updated_at = Date.now()
+
+  if (auditSessionID) {
+    const childSessions = Array.isArray(failedState.child_sessions) ? failedState.child_sessions : []
+    failedState.child_sessions = childSessions.filter((item) => item.session_id !== auditSessionID)
+    failedState.child_sessions.push({ session_id: auditSessionID, role: "audit", status: "orphaned" })
+  }
+
+  const event = {
+    type: "audit_dispatch_failed",
+    session_id: sessionID,
+    error: formatDiagnosticError(error),
+  }
+  if (auditSessionID) event.orphan_session_id = auditSessionID
+
+  try {
+    await writeTaskState(stateDir, failedState)
+    await appendEvent(stateDir, state.task_id, event)
+  } catch (recordError) {
+    console.error("plan-runner audit failure recording failed", formatDiagnosticError(recordError))
+  }
 }
 
 async function dispatchAuditReview({ stateDir, client, directory, sessionID, state }) {
   if (!client?.session?.create || !client?.session?.promptAsync) {
-    state.status = "interrupted"
-    state.updated_at = Date.now()
-    await writeTaskState(stateDir, state)
-    await appendEvent(stateDir, state.task_id, { type: "audit_dispatch_failed", session_id: sessionID, error: "session create/promptAsync unavailable" })
+    await recordAuditDispatchFailure({ stateDir, sessionID, state, error: "session create/promptAsync unavailable" })
     return
   }
 
+  let auditSessionID = null
   try {
     const query = { directory: directory || state.worktree }
     const created = await client.session.create({
@@ -459,14 +512,15 @@ async function dispatchAuditReview({ stateDir, client, directory, sessionID, sta
         title: `plan-runner audit: ${state.task_id}`,
       },
     })
-    const auditSessionID = sessionIDFromCreateResult(created)
+    auditSessionID = sessionIDFromCreateResult(created)
     if (!auditSessionID) throw new Error("audit session id missing")
 
-    const childSessions = Array.isArray(state.child_sessions) ? state.child_sessions : []
-    state.child_sessions = childSessions.filter((item) => item.session_id !== auditSessionID)
-    state.child_sessions.push({ session_id: auditSessionID, role: "audit", status: "running" })
-    state.updated_at = Date.now()
-    await writeTaskState(stateDir, state)
+    const nextState = cloneState(state)
+    const childSessions = Array.isArray(nextState.child_sessions) ? nextState.child_sessions : []
+    nextState.child_sessions = childSessions.filter((item) => item.session_id !== auditSessionID)
+    nextState.child_sessions.push({ session_id: auditSessionID, role: "audit", status: "running" })
+    nextState.updated_at = Date.now()
+    await writeTaskState(stateDir, nextState)
     await writeSessionIndex(stateDir, auditSessionID, state.task_id, "audit")
 
     await client.session.promptAsync({
@@ -479,10 +533,7 @@ async function dispatchAuditReview({ stateDir, client, directory, sessionID, sta
     })
     await appendEvent(stateDir, state.task_id, { type: "audit_review_dispatched", session_id: sessionID, audit_session_id: auditSessionID })
   } catch (error) {
-    state.status = "interrupted"
-    state.updated_at = Date.now()
-    await writeTaskState(stateDir, state)
-    await appendEvent(stateDir, state.task_id, { type: "audit_dispatch_failed", session_id: sessionID, error: String(error?.message || error) })
+    await recordAuditDispatchFailure({ stateDir, sessionID, state, error, auditSessionID })
   }
 }
 

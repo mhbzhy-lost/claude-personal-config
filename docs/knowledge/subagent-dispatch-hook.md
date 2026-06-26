@@ -118,6 +118,8 @@ tool/event hook 行为。
   `parentID == plan_runner_session_id` 的 audit child session。
 - audit 派发读取持久化 task state 时，`modified_files` 和 `child_sessions` 缺失或不是数组
   按空数组处理；这是旧 state 兼容兜底，不代表新 state 可以省略这些字段。
+- audit 派发失败时，`audit_dispatch_failed` event 应保留已创建但未完成派发的
+  `orphan_session_id`，并记录 stack / response data / stderr 等 SDK 诊断上下文。
 - 损坏 task state JSON 的恢复路径由单测覆盖：`session.idle` 不抛异常，坏文件会进入
   `corrupt/tasks/<task_id>.json`。
 
