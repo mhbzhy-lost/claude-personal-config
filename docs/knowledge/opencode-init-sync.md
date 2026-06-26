@@ -22,6 +22,7 @@ source: docs/bugs/bug-init-plugin-glob-path-sync.md
 - 本仓托管 plugin 使用 per-file symlink，同步时只处理 `userconf/plugins/` 的平铺文件，不递归处理子目录。
 - 枚举源目录项不要用 shell glob 拼接路径；仓库路径可能包含 `[`, `]`, `*`, `?` 等字符，应使用按目录读取的方式，当前用 `find ... -print0`。
 - 清理废弃或迁移中的托管软链时，不要直接比较 `readlink` 原始字符串；历史软链可能保存相对 target，应先按软链所在目录解析后比较路径语义。若旧 target parent 已缺失，只能对明确传入的托管后缀做兜底匹配，避免误删用户自管软链。
+- 托管后缀兜底匹配必须按字符串长度比较，不要用 `case` pattern 承载变量后缀；解析 symlink target parent 时用 `cd -- "$target_dir"`，避免以连字符开头的路径被当成选项。
 - 断言软链是否被删除时，测试要用 `lstat` 语义，不要用会跟随 target 的 `existsSync`，否则 dangling symlink 会产生假阳性。
 
 ## 修改时注意
