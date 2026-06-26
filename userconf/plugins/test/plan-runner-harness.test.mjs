@@ -752,6 +752,63 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
+  it("dispatches audit review for older states missing optional array fields", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const prompts = []
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async () => ({ data: { id: "ses_audit" } }),
+              promptAsync: async (payload) => prompts.push(payload),
+            },
+          },
+        },
+        { stateDir },
+      )
+
+      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+      await hooks.tool.write_plan.execute(
+        {
+          title: "Legacy State Slice",
+          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
+          dag: [],
+          parallel_sets: [],
+        },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
+      )
+      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
+      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
+      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
+
+      const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
+      const legacyState = readJson(statePath)
+      delete legacyState.modified_files
+      delete legacyState.child_sessions
+      writeFileSync(statePath, JSON.stringify(legacyState, null, 2) + "\n")
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
+
+      const state = readJson(statePath)
+      assert.equal(state.status, "audit_review")
+      assert.deepEqual(state.child_sessions, [{ session_id: "ses_audit", role: "audit", status: "running" }])
+      assert.equal(prompts[1].body.agent, "plan-runner-audit")
+      assert.match(prompts[1].body.parts[0].text, /none recorded/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("does not treat command-only evidence as completed implementation evidence", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {

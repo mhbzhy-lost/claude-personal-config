@@ -421,7 +421,8 @@ function selfCheckPromptText() {
 }
 
 function auditPromptText(state) {
-  const files = state.modified_files.length ? state.modified_files.map((file) => `- ${file}`) : ["- none recorded"]
+  const modifiedFiles = Array.isArray(state.modified_files) ? state.modified_files : []
+  const files = modifiedFiles.length ? modifiedFiles.map((file) => `- ${file}`) : ["- none recorded"]
   return [
     "Plan-runner audit_review_required: deterministic checks passed, but completion is not final until audit and external review pass.",
     "- You are the harness-dispatched audit subagent. Do not modify files.",
@@ -461,7 +462,8 @@ async function dispatchAuditReview({ stateDir, client, directory, sessionID, sta
     const auditSessionID = sessionIDFromCreateResult(created)
     if (!auditSessionID) throw new Error("audit session id missing")
 
-    state.child_sessions = state.child_sessions.filter((item) => item.session_id !== auditSessionID)
+    const childSessions = Array.isArray(state.child_sessions) ? state.child_sessions : []
+    state.child_sessions = childSessions.filter((item) => item.session_id !== auditSessionID)
     state.child_sessions.push({ session_id: auditSessionID, role: "audit", status: "running" })
     state.updated_at = Date.now()
     await writeTaskState(stateDir, state)

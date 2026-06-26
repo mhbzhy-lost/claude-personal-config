@@ -116,6 +116,8 @@ tool/event hook 行为。
   能识别 `plan-runner-audit`，harness 在 `session.idle` 后写入
   `self_check_completed`、`deterministic_check_passed`、`audit_review_dispatched`，并创建
   `parentID == plan_runner_session_id` 的 audit child session。
+- audit 派发读取持久化 task state 时，`modified_files` 和 `child_sessions` 缺失或不是数组
+  按空数组处理；这是旧 state 兼容兜底，不代表新 state 可以省略这些字段。
 - 损坏 task state JSON 的恢复路径由单测覆盖：`session.idle` 不抛异常，坏文件会进入
   `corrupt/tasks/<task_id>.json`。
 
