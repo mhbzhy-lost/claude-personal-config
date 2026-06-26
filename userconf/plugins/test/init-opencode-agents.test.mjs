@@ -135,6 +135,40 @@ describe("init_opencode agents sync", () => {
     }
   })
 
+  it("removes retired session-journal symlinks when relative target parent is missing", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-stale-retired-"))
+
+    try {
+      const fakeRepo = join(root, "repo")
+      const configDir = join(root, "config")
+      const pluginDir = join(configDir, "plugins")
+      const retiredLink = join(pluginDir, "session-journal.js")
+      const staleManagedSource = join(root, "missing", "userconf", "plugins", "session-journal.js")
+      mkdirSync(join(fakeRepo, "userconf", "plugins"), { recursive: true })
+      mkdirSync(pluginDir, { recursive: true })
+      writeFileSync(join(fakeRepo, "init_opencode.sh"), readFileSync(initScript, "utf8"))
+      execFileSync("ln", ["-s", relative(pluginDir, staleManagedSource), retiredLink])
+
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(join(fakeRepo, "init_opencode.sh"))}`,
+            "sync_opencode_plugins",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      assert.equal(pathExistsNoFollow(retiredLink), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("removes retired plugin symlinks when repo path contains glob characters", () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-[plugins]-"))
 
@@ -285,6 +319,39 @@ describe("init_opencode agents sync", () => {
 
       const sharedTarget = execFileSync("readlink", [join(skillsDir, "workflow-usage")], { encoding: "utf8" }).trim()
       assert.equal(sharedTarget, workflowSource)
+      assert.equal(pathExistsNoFollow(legacyLink), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("removes legacy workflow-usage skill link when relative target parent is missing", () => {
+    const root = mkdtempSync(join(tmpdir(), "workflow-stale-skill-"))
+
+    try {
+      const skillsDir = join(root, "agents-skills")
+      const configDir = join(root, "opencode")
+      const legacyDir = join(configDir, "skills")
+      const legacyLink = join(legacyDir, "workflow-usage")
+      const staleManagedSource = join(root, "missing", "vendor", "opencode-dynamic-workflow", "skills", "workflow-usage")
+      mkdirSync(legacyDir, { recursive: true })
+      execFileSync("ln", ["-s", relative(legacyDir, staleManagedSource), legacyLink])
+
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `AGENTS_SKILLS_DIR=${JSON.stringify(skillsDir)}`,
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "sync_shared_skills",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
       assert.equal(pathExistsNoFollow(legacyLink), false)
     } finally {
       rmSync(root, { recursive: true, force: true })

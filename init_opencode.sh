@@ -150,14 +150,32 @@ normalize_symlink_target() {
   printf '%s\n' "$target"
 }
 
+managed_target_suffix_matches() {
+  local target="$1"
+  local managed_suffix="$2"
+
+  [ -n "$managed_suffix" ] || return 1
+  case "$target" in
+    "$managed_suffix"|*/"$managed_suffix") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 symlink_target_matches() {
   local link_path="$1"
   local expected_target="$2"
-  local current_target
+  local managed_suffix="${3:-}"
+  local current_target normalized_current normalized_expected
 
   current_target=$(readlink "$link_path") || return 1
   [ "$current_target" = "$expected_target" ] && return 0
-  [ "$(normalize_symlink_target "$link_path" "$current_target")" = "$(normalize_symlink_target "$link_path" "$expected_target")" ]
+
+  normalized_current=$(normalize_symlink_target "$link_path" "$current_target")
+  normalized_expected=$(normalize_symlink_target "$link_path" "$expected_target")
+  [ "$normalized_current" = "$normalized_expected" ] && return 0
+
+  managed_target_suffix_matches "$current_target" "$managed_suffix" && return 0
+  managed_target_suffix_matches "$normalized_current" "$managed_suffix"
 }
 
 skill_list_contains() {
@@ -199,7 +217,7 @@ sync_shared_skills() {
 
   local legacy_workflow_skill="$OPENCODE_CONFIG_DIR/skills/workflow-usage"
   local workflow_skill_source="$SRC/vendor/opencode-dynamic-workflow/skills/workflow-usage"
-  if [ -L "$legacy_workflow_skill" ] && symlink_target_matches "$legacy_workflow_skill" "$workflow_skill_source"; then
+  if [ -L "$legacy_workflow_skill" ] && symlink_target_matches "$legacy_workflow_skill" "$workflow_skill_source" "vendor/opencode-dynamic-workflow/skills/workflow-usage"; then
     rm -f "$legacy_workflow_skill"
     echo "[skill] legacy $legacy_workflow_skill 已迁移到 ~/.agents/skills，旧软链已移除"
   fi
@@ -359,7 +377,7 @@ sync_opencode_plugins() {
   for retired_file in session-journal.js; do
     retired_target="$dst_path/$retired_file"
     if [ -L "$retired_target" ]; then
-      if symlink_target_matches "$retired_target" "$src_path/$retired_file"; then
+      if symlink_target_matches "$retired_target" "$src_path/$retired_file" "userconf/plugins/$retired_file"; then
         rm -f "$retired_target"
         echo "[plugin] $retired_file 已废除，移除旧软链"
       fi
