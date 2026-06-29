@@ -135,9 +135,10 @@ async function readTaskState(stateDir, taskID) {
   return readJson(statePaths(stateDir, taskID).task)
 }
 
-async function readTaskStateForSession(stateDir, sessionID) {
+async function readTaskStateForSession(stateDir, sessionID, allowedRoles = ["plan-runner"]) {
   const index = await readSessionIndex(stateDir, sessionID)
   if (!index) return null
+  if (allowedRoles && !allowedRoles.includes(index.role)) return null
   return readTaskState(stateDir, index.task_id)
 }
 
@@ -373,7 +374,7 @@ async function handleTodoUpdated(stateDir, event) {
   if (!sessionID || !Array.isArray(todos)) return
 
   const index = await readSessionIndex(stateDir, sessionID)
-  if (!index) return
+  if (!index || index.role !== "plan-runner") return
   const state = await readTaskState(stateDir, index.task_id)
   if (!state) return
   state.todo.last_seen = todos
@@ -981,56 +982,7 @@ async function handleMessageDiff(stateDir, event) {
   }
 }
 
-async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
-  if (event.type !== "session.idle") return
-  const sessionID = event.properties?.sessionID
-  if (!sessionID) return
-  const index = await readSessionIndex(stateDir, sessionID)
-  if (!index || index.role !== "plan-runner") return
-
-  const state = await readTaskState(stateDir, index.task_id)
-  if (!state) return
-  if (state.plan_runner_session_id !== sessionID) return
-  if (!["waiting_for_todo", "ready_to_execute", "executing", "repairing", "self_checking"].includes(state.status)) return
-
-  if (state.status === "self_checking" && state.self_check?.status === "prompted") {
-    state.self_check.status = "completed"
-    state.updated_at = Date.now()
-    await writeTaskState(stateDir, state)
-    await appendEvent(stateDir, state.task_id, { type: "self_check_completed", session_id: sessionID })
-  } else if ((state.self_check?.status || "not_started") === "not_started" && isCompletionAttempt(state)) {
-    if (!client?.session?.promptAsync) {
-      state.status = "interrupted"
-      state.updated_at = Date.now()
-      await writeTaskState(stateDir, state)
-      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: "promptAsync unavailable" })
-      return
-    }
-
-    try {
-      await client.session.promptAsync({
-        path: { id: sessionID },
-        query: { directory: directory || state.worktree },
-        body: { parts: [{ type: "text", text: selfCheckPromptText() }] },
-      })
-      state.status = "self_checking"
-      state.self_check = {
-        status: "prompted",
-        round: (state.self_check?.round || 0) + 1,
-      }
-      state.updated_at = Date.now()
-      await writeTaskState(stateDir, state)
-      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_sent", session_id: sessionID })
-      return
-    } catch (error) {
-      state.status = "interrupted"
-      state.updated_at = Date.now()
-      await writeTaskState(stateDir, state)
-      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: String(error?.message || error) })
-      return
-    }
-  }
-
+async function continuePlanRunnerReview({ stateDir, client, directory, sessionID, state }) {
   if (state.reviews.round >= 2) {
     state.status = "blocked"
     state.updated_at = Date.now()
@@ -1078,6 +1030,79 @@ async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
     await writeTaskState(stateDir, state)
     await appendEvent(stateDir, state.task_id, { type: "repair_prompt_failed", session_id: sessionID, error: String(error?.message || error), reasons })
   }
+}
+
+async function completeSelfCheck({ stateDir, sessionID, state, boundary }) {
+  state.self_check.status = "completed"
+  state.updated_at = Date.now()
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, state.task_id, { type: "self_check_completed", session_id: sessionID, boundary })
+}
+
+async function readPlanRunnerBoundaryState(stateDir, event, allowedTypes) {
+  if (!allowedTypes.includes(event.type)) return null
+  const sessionID = event.properties?.sessionID
+  if (!sessionID) return null
+  const index = await readSessionIndex(stateDir, sessionID)
+  if (!index || index.role !== "plan-runner") return null
+  const state = await readTaskState(stateDir, index.task_id)
+  if (!state || state.plan_runner_session_id !== sessionID) return null
+  return { sessionID, state }
+}
+
+async function handlePlanRunnerSelfCheckTodoBoundary({ stateDir, client, directory, event }) {
+  const boundary = await readPlanRunnerBoundaryState(stateDir, event, ["todo.updated"])
+  if (!boundary) return
+  const { sessionID, state } = boundary
+  if (state.status !== "self_checking" || state.self_check?.status !== "prompted") return
+  if (!isCompletionAttempt(state)) return
+
+  await completeSelfCheck({ stateDir, sessionID, state, boundary: event.type })
+  await continuePlanRunnerReview({ stateDir, client, directory, sessionID, state })
+}
+
+async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
+  const boundary = await readPlanRunnerBoundaryState(stateDir, event, ["session.idle"])
+  if (!boundary) return
+  const { sessionID, state } = boundary
+  if (!["waiting_for_todo", "ready_to_execute", "executing", "repairing", "self_checking"].includes(state.status)) return
+
+  if (state.status === "self_checking" && state.self_check?.status === "prompted") {
+    await completeSelfCheck({ stateDir, sessionID, state, boundary: event.type })
+  } else if ((state.self_check?.status || "not_started") === "not_started" && isCompletionAttempt(state)) {
+    if (!client?.session?.promptAsync) {
+      state.status = "interrupted"
+      state.updated_at = Date.now()
+      await writeTaskState(stateDir, state)
+      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: "promptAsync unavailable" })
+      return
+    }
+
+    try {
+      await client.session.promptAsync({
+        path: { id: sessionID },
+        query: { directory: directory || state.worktree },
+        body: { parts: [{ type: "text", text: selfCheckPromptText() }] },
+      })
+      state.status = "self_checking"
+      state.self_check = {
+        status: "prompted",
+        round: (state.self_check?.round || 0) + 1,
+      }
+      state.updated_at = Date.now()
+      await writeTaskState(stateDir, state)
+      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_sent", session_id: sessionID })
+      return
+    } catch (error) {
+      state.status = "interrupted"
+      state.updated_at = Date.now()
+      await writeTaskState(stateDir, state)
+      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: String(error?.message || error) })
+      return
+    }
+  }
+
+  await continuePlanRunnerReview({ stateDir, client, directory, sessionID, state })
 }
 
 async function writePlanTool(args, context, stateDir) {
@@ -1198,6 +1223,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
     event: async ({ event }) => enqueueEvent(async () => {
       if (shouldCheckExpiredTasks(event)) await markExpiredTasks(stateDir)
       await handleTodoUpdated(stateDir, event)
+      await handlePlanRunnerSelfCheckTodoBoundary({ stateDir, client, directory: worktree, event })
       await handleSessionDiff(stateDir, event)
       await handleMessageDiff(stateDir, event)
       await handleAuditReviewMessage(stateDir, event)

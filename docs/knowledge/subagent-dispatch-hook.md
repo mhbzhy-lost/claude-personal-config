@@ -133,6 +133,11 @@ tool/event hook 行为。
 - harness 的 `event` hook 在 plugin instance 内用 Promise 链串行化。原因是各 handler
   都会 read-modify-write 同一 task state；并发 `message.updated` / `session.diff` 否则会
   丢 evidence 或 modified_files。
+- phase gate、todo 更新和 evidence 记录只消费 role 为 `plan-runner` 的 session。parent
+  session 只用于路由，不应被 active plan-runner task 阻断，也不应污染 task evidence。
+- completion self-check 首选由 `session.idle(plan-runner)` 推进；后台 task 场景下如果
+  promptAsync 后只出现完成态 `todo.updated`，也把它作为 self-check 完成边界并继续
+  deterministic check / audit dispatch。
 - 损坏 task state JSON 的恢复路径由单测覆盖：`session.idle` 不抛异常，坏文件会进入
   `corrupt/tasks/<task_id>.json`。
 

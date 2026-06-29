@@ -770,6 +770,8 @@ T11 已落地 deterministic check 通过后由 harness 创建 audit child sessio
 T12/T13 已落地最小闭环：`reviewer.py` 支持 `WORKTREE` diff，harness 默认命令 runner 调用 `reviewer.py <git_base> WORKTREE --worktree <worktree> --spec <plan_path>`，并将 pass/issues/unavailable 写入 `reviews.external`。external pass 后运行 final completeness check，满足条件时写 `status = validated`。
 state storage 已补充唯一 temp 文件名、坏 JSON 隔离和 lease 过期 stale 标记；损坏 state 不再作为 active task 参与后续 gate。
 event hook 已在 plugin instance 内串行化，避免并发 message/session diff 事件 read-modify-write 覆盖 state。
+phase gate / evidence recorder 已限制为 `plan-runner` child session；parent session 不参与执行阶段约束。
+self-check 后续推进同时支持第二次 `session.idle` 和完成态 `todo.updated`，覆盖后台 task 只回传 todo 更新、不再触发 idle 的情况。
 
 仍未落地：T14 取消，不再实施；pre-push 与 plan-runner task-state 解耦，保留独立 bash hook 检测 push 命令。后续只剩真实 TUI/长耗时 external review 的运行稳定性观察。
 
