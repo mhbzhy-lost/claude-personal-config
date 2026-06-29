@@ -730,7 +730,7 @@ updated_at
 恢复策略：
 
 ```text
-下次任意 hook/event 触发时，如果 task lease 过期，标 stale。
+下次低频边界事件（`session.idle` / `todo.updated`）触发时，如果 task lease 过期，标 stale。
 stale 用于 plan-runner 自身 debug / repair / 状态展示。
 stale 不影响 git push gate。
 ```
@@ -769,6 +769,7 @@ rename
 T11 已落地 deterministic check 通过后由 harness 创建 audit child session，并用只读 `plan-runner-audit` agent 投递 `audit_review_required` prompt；audit session idle 后会解析 JSON，失败回流 repair，通过进入 external review。
 T12/T13 已落地最小闭环：`reviewer.py` 支持 `WORKTREE` diff，harness 默认命令 runner 调用 `reviewer.py <git_base> WORKTREE --worktree <worktree> --spec <plan_path>`，并将 pass/issues/unavailable 写入 `reviews.external`。external pass 后运行 final completeness check，满足条件时写 `status = validated`。
 state storage 已补充唯一 temp 文件名、坏 JSON 隔离和 lease 过期 stale 标记；损坏 state 不再作为 active task 参与后续 gate。
+event hook 已在 plugin instance 内串行化，避免并发 message/session diff 事件 read-modify-write 覆盖 state。
 
 仍未落地：T14 取消，不再实施；pre-push 与 plan-runner task-state 解耦，保留独立 bash hook 检测 push 命令。后续只剩真实 TUI/长耗时 external review 的运行稳定性观察。
 

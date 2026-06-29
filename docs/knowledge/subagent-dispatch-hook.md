@@ -127,8 +127,12 @@ tool/event hook 行为。
   `reviewer.py <git_base> WORKTREE --worktree <worktree> --spec <plan_path>`，将输出归一为
   `pass` / `issues` / `unavailable` 写入 `reviews.external`。只有 external pass 且 final
   completeness check 通过时，task 才写 `status = validated`。
-- task lease 过期后，下次任意 hook/event 会把 active task 标为 `stale`；stale 只服务
-  plan-runner 自身 debug / repair / 状态展示，不影响独立 git push gate。
+- task lease 过期后，下次低频边界事件（`session.idle` / `todo.updated`）会把 active
+  task 标为 `stale`；stale 只服务 plan-runner 自身 debug / repair / 状态展示，不影响
+  独立 git push gate。不要在 `message.updated` / token 级事件上全量扫描 task-state。
+- harness 的 `event` hook 在 plugin instance 内用 Promise 链串行化。原因是各 handler
+  都会 read-modify-write 同一 task state；并发 `message.updated` / `session.diff` 否则会
+  丢 evidence 或 modified_files。
 - 损坏 task state JSON 的恢复路径由单测覆盖：`session.idle` 不抛异常，坏文件会进入
   `corrupt/tasks/<task_id>.json`。
 

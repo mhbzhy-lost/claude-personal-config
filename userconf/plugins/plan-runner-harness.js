@@ -594,12 +594,13 @@ function markdownSectionHasIssues(text, header) {
   const pattern = new RegExp(`#{1,4}\\s*${header}.*?\\n([\\s\\S]*?)(?=\\n#{1,4}\\s|$)`, "i")
   const match = String(text || "").match(pattern)
   if (!match) return false
-  const firstLine = match[1]
+  const meaningfulLines = match[1]
     .split("\n")
     .map((line) => line.trim())
-    .find(Boolean) || ""
-  const normalized = firstLine.replace(/^[-*+]\s*/, "").replace(/^[`*_\s]+|[`*_\s]+$/g, "")
-  return !/^(none\.?|n\/?a|no\s+(\w+\s+)?issues(\s+found)?|nothing\s+to\s+report|✅|无)$/i.test(normalized)
+    .map((line) => line.replace(/^[-*+]\s*/, "").replace(/^[`*_\s]+|[`*_\s]+$/g, ""))
+    .filter(Boolean)
+    .filter((line) => !/^(none\.?|n\/?a|no\s+(\w+\s+)?issues(\s+found)?|nothing\s+to\s+report|✅|无)$/i.test(line))
+  return meaningfulLines.length > 0
 }
 
 function reviewTextHasBlockingIssues(text) {
@@ -840,6 +841,10 @@ async function handleAuditReviewIdle({ stateDir, client, directory, event, exter
 
   await appendEvent(stateDir, state.task_id, { type: "audit_review_passed" })
   await runExternalReview({ stateDir, client, directory, state: nextState, externalReview })
+}
+
+function shouldCheckExpiredTasks(event) {
+  return event?.type === "session.idle" || event?.type === "todo.updated"
 }
 
 async function recordAuditDispatchFailure({ stateDir, sessionID, state, error, auditSessionID = null }) {
@@ -1117,6 +1122,13 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
   const worktree = ctx.directory || process.cwd()
   const client = ctx.client
   const externalReview = options.externalReview || ((state) => runExternalReviewCommand(state, options))
+  let eventQueue = Promise.resolve()
+
+  function enqueueEvent(handler) {
+    const run = eventQueue.then(handler)
+    eventQueue = run.catch(() => {})
+    return run
+  }
 
   return {
     tool: {
@@ -1183,15 +1195,15 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       await appendEvent(stateDir, taskID, { type: "plan_runner_bound", session_id: childSessionID, call_id: input.callID })
     },
 
-    event: async ({ event }) => {
-      await markExpiredTasks(stateDir)
+    event: async ({ event }) => enqueueEvent(async () => {
+      if (shouldCheckExpiredTasks(event)) await markExpiredTasks(stateDir)
       await handleTodoUpdated(stateDir, event)
       await handleSessionDiff(stateDir, event)
       await handleMessageDiff(stateDir, event)
       await handleAuditReviewMessage(stateDir, event)
       await handleAuditReviewIdle({ stateDir, client, directory: worktree, event, externalReview })
       await handlePlanRunnerIdle({ stateDir, client, directory: worktree, event })
-    },
+    }),
   }
 }
 
