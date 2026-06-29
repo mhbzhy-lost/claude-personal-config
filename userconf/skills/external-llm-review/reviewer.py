@@ -555,6 +555,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_git_diff_command(worktree: str, base_sha: str, head_sha: str) -> list[str]:
+    diff_target = base_sha if head_sha == "WORKTREE" else f"{base_sha}..{head_sha}"
+    return ["git", "-C", worktree, "diff", "--diff-filter=ACM", diff_target]
+
+
 async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
     legacy_format = os.environ.get("EXTERNAL_LLM_API_FORMAT", "").strip()
     if legacy_format and legacy_format.lower() != "chat":
@@ -608,7 +613,7 @@ async def run_review(*, args: argparse.Namespace, skill_dir: Path) -> int:
     try:
         # Exclude deletions (D) and renames (R) to avoid bloating diff with mass file removals
         diff = subprocess.check_output(
-            ["git", "-C", args.worktree, "diff", "--diff-filter=ACM", f"{args.base_sha}..{args.head_sha}"],
+            build_git_diff_command(args.worktree, args.base_sha, args.head_sha),
             text=True,
         )
     except subprocess.CalledProcessError as e:

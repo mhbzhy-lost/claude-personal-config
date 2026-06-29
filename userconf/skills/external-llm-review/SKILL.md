@@ -86,7 +86,7 @@ uv run --no-project \
 
 **参数：**
 - `BASE_SHA` —— 同族评审看的同一个 base
-- `HEAD_SHA` —— subagent 实施后的 HEAD
+- `HEAD_SHA` —— subagent 实施后的 HEAD；传 `WORKTREE` 时审查 `git diff <BASE_SHA>`，包含当前未提交工作区改动
 - `--worktree` —— 默认 `.`；评 worktree 时填 `.worktrees/<task>`
 - `--provider` —— 默认从 `EXTERNAL_LLM_REVIEW_PROVIDER` 读，不设时退到 `idealab-anthropic`
 - `--spec` —— 把 spec 文件附给模型做"对契约"评审
@@ -98,6 +98,18 @@ uv run --no-project \
 - `--api-timeout-seconds` —— provider API 调用外层硬超时，默认 `180`。设 `<=0` 时不关闭超时，而是退回底层默认（约 600s）
 
 **stdout 输出**：模型返回的 review markdown（Strengths / Critical / Important / Minor / Checklist Coverage / Assessment）。**stderr** 是诊断信息。
+
+未提交工作区评审（plan-runner harness 使用）：
+
+```bash
+uv run --no-project \
+  --with httpx --with python-dotenv --with pyyaml \
+  python ${CLAUDE_CONFIG_HOME}/userconf/skills/external-llm-review/reviewer.py \
+  HEAD WORKTREE \
+  --worktree . \
+  --review-depth exhaustive \
+  --review-round 1
+```
 
 ## Fallback（仅限 push hook）
 

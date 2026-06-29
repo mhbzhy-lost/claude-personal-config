@@ -18,6 +18,9 @@ export EXTERNAL_LLM_REVIEW_PROVIDER=idealab-openai
 # CLI 参数
 python reviewer.py HEAD^ HEAD --provider bailian
 
+# 审查当前未提交工作区 diff（plan-runner harness 使用）
+python reviewer.py HEAD WORKTREE --worktree . --provider bailian
+
 # 默认 idealab-anthropic
 ```
 
@@ -32,3 +35,5 @@ python reviewer.py HEAD^ HEAD --provider bailian
 - Bailian 必须 streaming（300s 非流式硬超时），`send_chat` 用 `async with client.stream(...)`
 - Idealab Anthropic 网关月度配额耗尽时返回 400 `IRC-001`，下月自动恢复，不需要改 key
 - `.env` 必须 gitignored（已在 `.gitignore` 里）
+- `head_sha=WORKTREE` 是特殊值：`reviewer.py` 会执行 `git diff <base_sha>`，用于包含当前
+  未提交工作区改动；普通 push gate 继续使用 `<base>..<HEAD>` commit range。

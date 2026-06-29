@@ -120,6 +120,15 @@ tool/event hook 行为。
   按空数组处理；这是旧 state 兼容兜底，不代表新 state 可以省略这些字段。
 - audit 派发失败时，`audit_dispatch_failed` event 应保留已创建但未完成派发的
   `orphan_session_id`，并记录 stack / response data / stderr 等 SDK 诊断上下文。
+- audit child session idle 后，harness 消费最新 audit message 文本并要求 JSON 结构；JSON
+  不可解析或 `result != pass`、`rejected_tasks` / `unknown_tasks` / `unmapped_files` 非空时，
+  通过 `promptAsync(plan_runner_session_id)` 回流 repair。
+- audit pass 后进入 external review：默认命令 runner 调用
+  `reviewer.py <git_base> WORKTREE --worktree <worktree> --spec <plan_path>`，将输出归一为
+  `pass` / `issues` / `unavailable` 写入 `reviews.external`。只有 external pass 且 final
+  completeness check 通过时，task 才写 `status = validated`。
+- task lease 过期后，下次任意 hook/event 会把 active task 标为 `stale`；stale 只服务
+  plan-runner 自身 debug / repair / 状态展示，不影响独立 git push gate。
 - 损坏 task state JSON 的恢复路径由单测覆盖：`session.idle` 不抛异常，坏文件会进入
   `corrupt/tasks/<task_id>.json`。
 

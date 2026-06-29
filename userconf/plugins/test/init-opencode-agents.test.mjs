@@ -426,6 +426,19 @@ describe("init_opencode agents sync", () => {
     assert.match(agent, /You are a plan-runner audit reviewer/i)
   })
 
+  it("plan-runner audit agent returns the JSON contract consumed by the harness", () => {
+    const agent = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner-audit.md"), "utf8")
+
+    assert.match(agent, /Return only a JSON object/i)
+    assert.match(agent, /"result": "pass" \| "fail"/)
+    assert.match(agent, /"verified_tasks": \["T1"\]/)
+    assert.match(agent, /"rejected_tasks": \[\]/)
+    assert.match(agent, /"unknown_tasks": \[\]/)
+    assert.match(agent, /"unmapped_files": \[\]/)
+    assert.match(agent, /"required_fixes": \[\]/)
+    assert.doesNotMatch(agent, /Audit result:\s*pass \| fail/i)
+  })
+
   it("every shared skill whitelist entry has a userconf or vendor source", () => {
     const list = readFileSync(join(repoRoot, "agents", "skills.list"), "utf8")
       .split("\n")

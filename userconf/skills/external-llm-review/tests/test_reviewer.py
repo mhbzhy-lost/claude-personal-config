@@ -53,6 +53,18 @@ class ReviewerProtocolAndBackendTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             parser.parse_args(["base", "head", "--review-round", "3"])
 
+    def test_build_git_diff_command_supports_worktree_head(self):
+        self.assertEqual(
+            reviewer.build_git_diff_command("/repo", "abc123", "WORKTREE"),
+            ["git", "-C", "/repo", "diff", "--diff-filter=ACM", "abc123"],
+        )
+
+    def test_build_git_diff_command_keeps_commit_range_for_regular_head(self):
+        self.assertEqual(
+            reviewer.build_git_diff_command("/repo", "abc123", "def456"),
+            ["git", "-C", "/repo", "diff", "--diff-filter=ACM", "abc123..def456"],
+        )
+
     def test_review_provider_defaults_to_idealab_anthropic(self):
         args = Namespace(provider=None)
         self.assertEqual(reviewer.resolve_provider(args, env={}), "idealab-anthropic")
