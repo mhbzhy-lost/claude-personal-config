@@ -22,7 +22,7 @@
 - `todowrite` 是执行 UI，不是 validation contract。
 - 所有完成判断基于 harness 观察到的 tool/event evidence。
 - 最终完成判断由 completeness checker 扫描 `task_state` 推导，不维护额外 gate 列表。
-- `session.idle(plan-runner)` 是 validation 触发点，不是可信完成点。
+- `finish_plan` 是 validation 触发点；`session.idle(plan-runner)` 不是可信完成点，也不再触发 terminal gate。
 
 ## OpenCode 事件实测结论
 
@@ -35,11 +35,25 @@
 - `session.created` 事件包含 `properties.info.parentID`、`agent`、`directory`，可作为 child session 绑定 fallback。
 - `message.part.updated` 会流出 tool part 的 `pending/running/completed/error` 状态，可补充记录被 before hook 阻断的错误。
 - `session.status` 会出现 `busy/idle`，随后有 `session.idle`；`session.idle` 的 properties 至少包含 `sessionID`。
-- 在 `session.idle` 后调用 `client.session.promptAsync(...)` 能把 validation 结果投递回同一 session，并触发 agent 继续执行。
-- `promptAsync` 必须只投递给目标 plan-runner session；不能对所有 idle session 广播。
+- 历史实测：`client.session.promptAsync(...)` 能把 validation 结果投递回同一 session，但当前
+  `finish_plan` 生命周期不再使用 promptAsync repair；repair findings 直接作为 tool result 返回给 plan-runner。
+- 新建 audit child session 必须使用同步 `client.session.prompt(...)` 启动。
+- hey-api/OpenCode SDK 的失败路径可能返回 `{ error: ... }` 而不是 throw；harness 记录 dispatched 前必须检查返回对象。
 - 2026-06-26 在 OpenCode `1.17.11` 上用真实 `opencode serve` wrapper 探针验证：harness
-  可在 `session.idle(plan-runner)` 后通过 server 注入的 client 创建 audit child session，
+  可通过 server 注入的 client 创建 audit child session，
   并投递 `agent: plan-runner-audit` 的 `audit_review_required` prompt。
+- 2026-06-30 用 `scripts/opencode-subagent-event-probe.mjs --mode audit-child --audit-agent plan-runner-audit`
+  验证：`client.session.prompt` 启动 audit child 后，同一 plugin event hook 能观察到该 child
+  的 `message.updated` 和 `session.idle`。该 probe 只证明事件回流机制，不替代完整
+  plan-runner smoke 的 `validated` 终态验证。
+- 2026-06-30 live smoke 进一步验证：audit child 的最终 JSON 文本可能只出现在
+  `message.part.updated` 的 text part 中，`message.updated.info` 可能没有 text/parts。
+  因此 audit result 消费必须监听 text part，且空 `message.updated` 不能清空已收集文本。
+- 2026-06-30 live smoke 还验证：audit prompt 不能暴露 external review/reviewer 信息。
+  External review 是 audit pass 后的独立 harness gate；audit 只审 plan/todo/modified files/实现完整性。
+- 2026-06-30 live smoke 验证默认 `idealab-anthropic` 可能因月度配额返回 `IRC-001`。
+  plan-runner harness 的 external review runner 需要 provider fallback，避免单 provider 不可用时
+  阻断整个 terminal gate。
 
 ## 目录结构
 
@@ -82,6 +96,7 @@ docs/plans/<task_id>.md
   "dispatch_call_id": "call-task",
   "plan_runner_session_id": null,
   "worktree": "/repo",
+  "base_commit": "abc123",
   "git_base": "abc123",
   "updated_at": 1760000000,
   "lease_expires_at": 1760000600,
@@ -92,8 +107,7 @@ docs/plans/<task_id>.md
       {
         "id": "T1",
         "title": "...",
-        "completion_criteria": ["..."],
-        "evidence_required": ["diff"]
+        "completion_criteria": ["..."]
       }
     ],
     "dag": [],
@@ -126,7 +140,6 @@ planning_required
 waiting_for_todo
 ready_to_execute
 executing
-self_checking
 deterministic_check
 audit_review
 external_review
@@ -143,14 +156,15 @@ Task state 只保留后续流程会消费的字段。完整语义计划只写入
 
 | 字段 | 来源 | 消费方式 |
 |---|---|---|
-| `version` | harness | state schema 迁移和兼容判断 |
+| `version` | harness | state schema 校验和调试定位 |
 | `task_id` | harness，根据 `parent_session_id + dispatch_call_id` 生成 | state 文件主键、event/review/session 索引、日志关联 |
-| `status` | harness 状态机 | phase gate、idle validation、repair loop、final validation |
+| `status` | harness 状态机 | phase gate、`finish_plan` validation、repair loop、final validation |
 | `parent_session_id` | `tool.execute.before(task).input.sessionID` | 绑定 `plan-runner` child session；识别主 session 归属 |
 | `dispatch_call_id` | `tool.execute.before(task).input.callID` | 生成 `task_id`；区分同一父 session 内并发 task 派发 |
-| `plan_runner_session_id` | `tool.execute.after(task).output.metadata.sessionId`；fallback 为 `session.created.info.parentID` | 路由 plan-runner 工具调用、监听 idle、投递 repair prompt |
+| `plan_runner_session_id` | `tool.execute.after(task).output.metadata.sessionId`；fallback 为 `session.created.info.parentID` | 路由 plan-runner 工具调用、`finish_plan` 和 audit child 归属 |
 | `worktree` | plugin/runtime context | 派生 `plan_path`；审计/external review 的工作目录上下文 |
-| `git_base` | harness git command | diff 计算基线；审计/external review 上下文 |
+| `base_commit` | harness dispatch preflight | plan-runner 本次运行的 Git commit range 起点；external review 范围来源 |
+| `git_base` | harness git command | 旧字段兼容；新 state 使用 `base_commit` 表达 commit boundary |
 | `updated_at` | harness event refresh | stale/lease 计算；debug 最近活动 |
 | `lease_expires_at` | harness lease policy | 非正常中断后标记 stale，避免残留 state 污染后续任务 |
 | `plan_path` | harness 根据 worktree 和 task_id 派生 | 检查计划文档存在；审计/external review 输入 |
@@ -158,7 +172,6 @@ Task state 只保留后续流程会消费的字段。完整语义计划只写入
 | `plan_contract.tasks[].id` | harness 生成 `T1/T2/...` | 校验 todowrite 覆盖所有 task；evidence 与 task 绑定 |
 | `plan_contract.tasks[].title` | `write_plan` 参数，经 harness 校验 | 生成 markdown；审计/external review 上下文 |
 | `plan_contract.tasks[].completion_criteria` | `write_plan` 参数，经 harness 校验 | 审计/external review 上下文；不作为完成事实 |
-| `plan_contract.tasks[].evidence_required` | harness 统一生成 | completeness checker 判断 claimed task 是否有对应 evidence |
 | `plan_contract.dag` | `write_plan` 参数，经 harness 校验 | 审计/external review 上下文；phase 1 不做确定性顺序 gate |
 | `plan_contract.parallel_sets` | `write_plan` 参数，经 harness 校验 | 审计/external review 上下文；phase 1 不做确定性并发完成 gate |
 | `todo.mirrored` | harness 对齐检查 | phase gate 从 `waiting_for_todo` 进入 `ready_to_execute` 的条件 |
@@ -167,10 +180,10 @@ Task state 只保留后续流程会消费的字段。完整语义计划只写入
 | `modified_files` | harness 从 evidence/message diff/session.diff/git diff 维护的索引 | 审计输入；检查是否有未映射文件变更 |
 | `child_sessions` | `session.created.parentID == plan_runner_session_id` | 等待 child idle；判断并发节点是否结束；审计输入 |
 | `reviews.round` | harness 计数 | repair loop 上限，两轮失败后 blocked |
-| `reviews.audit` | harness 记录审计 subagent JSON 结果 | final completeness check；repair prompt 输入 |
-| `reviews.external` | harness 记录 external review JSON 结果 | final completeness check；repair prompt 输入 |
-| `self_check.status` | harness 在首次完成尝试时写入 | `session.idle` re-entry 判断：`not_started` 时先投递 self-check，`prompted` 的下一次 idle 才允许 deterministic check |
-| `self_check.round` | harness 在投递 self-check prompt 后递增 | 限制当前切片只做一次 completion self-check，避免同一完成尝试反复自检而不进入确定性检查 |
+| `reviews.audit` | harness 记录审计 subagent JSON 结果 | final completeness check；`finish_plan` repair_required 输入 |
+| `reviews.external` | harness 记录 external review JSON 结果 | final completeness check；`finish_plan` repair_required 输入 |
+| `self_check.status` | harness 在首次完成尝试时写入 | completion attempt 的一次性终态门禁标记；新流程直接写 `completed` |
+| `self_check.round` | harness 在首次完成尝试时递增 | 记录进入终态门禁次数，避免同一完成尝试反复自检而不进入确定性检查 |
 
 不进入 task state 的字段：`project_id`、`workspace_id`、`directory`、`branch`、`created_at`、`goal`、`approach`、`non_goals`、`stop_conditions`、`affected_files`、`kind`、`harness_gates`。
 
@@ -183,7 +196,8 @@ Task state 只保留后续流程会消费的字段。完整语义计划只写入
 - 生成 `task_id`。
 - 记录 `parent_session_id`。
 - 记录 `dispatch_call_id`。
-- 记录 `git_base` 和 worktree。
+- 在 Git repo 中检查不是 linked worktree 且 repo clean；失败时写 blocked state 和 `dispatch_blocked` event，阻断 task 派发。
+- 记录 `base_commit`、兼容字段 `git_base` 和 worktree。
 - 创建 `tasks/<task_id>.json`。
 - 创建 `events/<task_id>.jsonl`。
 - 写 `sessions/<parent_session_id>.json`。
@@ -260,7 +274,6 @@ harness 负责：
 - 校验 task title 非空。
 - 校验 `completion_criteria` 非空。
 - 校验 DAG 引用存在。
-- 按 implementation task 统一生成 `evidence_required`。
 - 生成 markdown plan。
 - 写 `docs/plans/<task_id>.md`。
 - 从参数中抽取 `plan_contract` 并更新 `tasks/<task_id>.json`。
@@ -306,6 +319,10 @@ T3: 跑插件测试
 - `completed` 只等于 `claimed_done`。
 - 如果 todos 与 `plan_contract.tasks` 对齐，status 从 `waiting_for_todo` 进入 `ready_to_execute`。
 
+`write_plan.tasks[]` 不接受 agent 主动提交的 evidence 契约。harness 只保存
+`title` 和 `completion_criteria`，并从实际工具事件中裁定 diff evidence；command
+记录只作为验证日志，不作为 per-task 完成条件。
+
 ## Phase Gate
 
 `tool.execute.before` 根据 session 所属 task state 决定放行。
@@ -318,6 +335,7 @@ glob
 grep
 webfetch
 question
+skill
 write_plan
 ```
 
@@ -329,6 +347,7 @@ glob
 grep
 webfetch
 question
+skill
 todowrite
 ```
 
@@ -340,16 +359,20 @@ glob
 grep
 webfetch
 question
+skill
 edit
 write
+apply_patch
 bash
 task
 todowrite
 ```
 
-执行类工具在 `ready_to_execute` / `executing` / `repairing` 阶段还必须满足：当前 `todowrite` 中恰好有一个 `in_progress` task。harness 将该 task 作为当前执行上下文，把后续 edit/write/bash/task 事件绑定到这个 task；如果没有 `in_progress` 或存在多个 `in_progress`，则 block 执行类工具。
+执行类工具在 `ready_to_execute` / `executing` 阶段还必须满足：当前 `todowrite` 中恰好有一个 `in_progress` task。harness 将该 task 作为当前执行上下文，把后续 edit/write/apply_patch/bash/task 事件绑定到这个 task；如果没有 `in_progress` 或存在多个 `in_progress`，则 block 执行类工具。`skill` 是只读上下文工具，不要求 active todo。
 
-`self_checking` 允许执行类工具，用于 agent 在自检后补证据或重开 todo。`deterministic_check`、`audit_review`、`external_review` 默认禁止 plan-runner/child agent 的执行类工具。
+`repairing` 允许小修工具继续执行，但禁止 `todowrite` 重新规划 todo；repair diff evidence 不再依赖 active todo，而是由 harness 从缺失 diff evidence 的 completed task、最新 audit rejected/unknown task 或 completed task 集合中推导绑定目标。
+
+新 completion attempt 不再回投 self-check prompt 给 agent；`audit_review`、`external_review` 由 terminal gate 接管，禁止 plan-runner 工具调用。
 
 harness-owned 操作不走 agent phase gate，包括：
 
@@ -357,12 +380,12 @@ harness-owned 操作不走 agent phase gate，包括：
 派发 audit subagent
 调用 reviewDiff
 读取 git diff / task state
-向 plan_runner_session_id 调用 promptAsync
+返回 finish_plan repair_required / validated 结果
 ```
 
 这些操作必须写 `harness_action` event，避免和 agent tool evidence 混淆。
 
-`repairing` 允许执行类工具，但必须记录 review round。
+`repairing` 允许执行类小修，但必须记录 review round，且不能使用 `todowrite` 新增、重排或重开 plan todo。
 
 ## Child Subagent Gate
 
@@ -509,20 +532,18 @@ info.directory
 
 最终完成判断只扫描现有 `evidence` 和 `reviews`：不新增独立的 `checks`、`task_evidence` 或 `harness_gates` 状态。
 
-## Plan Runner Idle Validation
+## Plan Runner Completion Gate
 
-`event(session.idle)` 且 session 是 `plan_runner_session_id` 时触发。
+`finish_plan` custom tool 且 session 是 `plan_runner_session_id` 时触发。
 
-第一步 self-check re-entry：
+第一步 terminal gate 接管：
 
-- 当 `self_check.status == not_started` 且当前状态像完成尝试时，harness 先向 `plan_runner_session_id` 投递 verification-before-completion self-check prompt。
-- prompt 发送成功后：`status = self_checking`，`self_check.status = prompted`，`self_check.round += 1`。
-- prompt 发送失败后：`status = interrupted`。
-- agent 收到 self-check 后必须复核计划、todo、diff evidence 和验证命令；证据不足则重开 todo，补证据后再完成。
+- 当 `self_check.status == not_started` 且当前状态像完成尝试时，harness 不再向 `plan_runner_session_id` 投递 verification-before-completion self-check prompt。
+- harness 直接写入 `self_check.status = completed`、`self_check.round += 1`，记录 `self_check_completed` event，然后继续 deterministic check。
 
 第二步 deterministic check：
 
-当 `self_check.status == prompted` 且同一 plan-runner session 再次 idle 时，harness 将 `self_check.status` 标记为 `completed`，随后执行原 deterministic check：
+terminal gate 接管后，harness 执行 deterministic check：
 
 - `plan_written == true`
 - `plan_written` 是派生条件：`plan_path` 存在、`plan_sha256` 匹配、`plan_contract.tasks.length > 0`
@@ -531,7 +552,7 @@ info.directory
 - 没有 pending / in_progress todo
 - completed todo 只作为 claimed_done
 - `claimed_done` 从 `todo.last_seen` 中 status 为 completed 的条目派生
-- 每个 claimed_done 有 evidence
+- 每个 claimed_done 有 harness-observed diff evidence
 - evidence 引用真实 tool event
 - implementation task 有非测试代码 diff；只新增或修改测试不能单独证明完成
 - modified files 能通过工具事件时间和 `in_progress` todo 映射到 plan task
@@ -542,25 +563,29 @@ info.directory
 失败处理：
 
 ```text
-检查 plan_runner_session_id 是否仍存在且可接收 prompt
-调用 client.session.promptAsync(plan_runner_session_id, repair prompt)
-promptAsync 成功后：status = repairing，reviews.round += 1
-promptAsync 失败后：status = interrupted 或 blocked
+finish_plan 返回 Result: repair_required，并附带 deterministic/audit/external review reasons
+plan-runner 在同一 session 内修复后再次调用 finish_plan
+第二轮 external review 仍失败后：status = blocked
 round > 2 则 status = blocked
 ```
 
-实测 `session.idle` 后 `promptAsync` 能恢复同一 session 继续执行；因此“agent 已经 stop 进入 idle”不是问题。真正不可恢复的是 session 被删除、server 不可达、promptAsync 返回错误或 lease 过期。
+`finish_plan` 是唯一 completion boundary。`session.idle(plan-runner)` 和 completed assistant
+`message.updated` 不再自动推进 terminal gate，避免主会话先收到未经过门禁的 final report。
 
 成功处理：
 
 ```text
 status = audit_review
-进入审计 subagent 阶段
+如果尚未审计，进入审计 subagent 阶段；如果已有 audit 结果，直接进入 external review
 ```
 
 ## Harness 派发审计 Subagent
 
 审计 subagent 由 harness 派发，不由 plan-runner 派发。
+
+派发成功必须以 SDK 返回对象无 `error` 为前置条件。若 `session.create` 或
+`session.prompt` 返回 `{ error: ... }`，按派发失败处理，已创建的 audit session 标记为
+`orphaned`，不得写 `audit_review_dispatched`。
 
 输入：
 
@@ -570,20 +595,17 @@ status = audit_review
 - todowrite snapshots
 - event log summary
 - git diff
-- command evidence
-- child session evidence
+- command log
+- child session outcome
 - deterministic check result
 
-`command evidence` 只供审计参考，不是确定性完成条件。没有命令 evidence 不能单独导致 fail；有命令 evidence 也不能单独证明完成。
+command log 只供审计参考，不是确定性完成条件。没有命令日志不能单独导致 fail；有命令日志也不能单独证明完成。
 
 输出要求 JSON：
 
 ```json
 {
-  "round": 1,
-  "kind": "audit",
   "result": "pass",
-  "verified_tasks": ["T1", "T2"],
   "rejected_tasks": [],
   "unknown_tasks": [],
   "unmapped_files": [],
@@ -598,15 +620,20 @@ harness 规则：
 - `rejected_tasks` 非空则 fail。
 - `unmapped_files` 非空则 fail。
 - `unknown_tasks` 非空则 fail。
+- audit 结果只记录一次；已有 `reviews.audit` 后不再派发新的 audit child。
+- audit 文本来源优先包括 audit session 的 `message.part.updated` text part；`message.updated`
+  只作为兼容路径，不能用空文本覆盖已收到的 text part。
+- audit prompt 不包含 external review/reviewer 信息；external review 由 harness 在 audit pass 后启动。
 
 审计失败：
 
 ```text
-调用 promptAsync(plan_runner_session_id, audit findings)
-promptAsync 成功后 status = repairing，round += 1
-promptAsync 失败则 status = interrupted 或 blocked
+finish_plan 返回 Result: repair_required，并附带 audit findings
+plan-runner 修复后再次调用 finish_plan
 超过 2 轮则 blocked
 ```
+
+repair 后 deterministic check 再次通过时直接进入 external review，不再次触发 audit。
 
 审计通过：
 
@@ -622,18 +649,24 @@ status = external_review
 建议改造：
 
 ```text
-reviewer.py 支持 head=WORKTREE，用于审查 plan-runner 未提交工作区 diff。
 push hook 继续调用 reviewer.py base..HEAD。
-plan-runner harness 调用 reviewer.py base..WORKTREE，并把输出归一为 pass/issues/unavailable。
+plan-runner harness 调用 reviewer.py base_commit..HEAD，并把输出归一为 pass/issues/unavailable。
+plan-runner harness 禁止使用 WORKTREE dirty diff 作为 external review 范围。
 ```
+
+默认 provider chain 为 `idealab-anthropic -> bailian -> idealab-openai`。若设置
+`EXTERNAL_LLM_REVIEW_PROVIDER`，只使用该 provider；若设置
+`OPENCODE_PLAN_RUNNER_EXTERNAL_REVIEW_PROVIDERS`，按该逗号或空白分隔链路执行。
+某个 provider 命令失败或无输出时，harness 用同一 review round 尝试下一个 provider；
+只有成功输出后才根据 Critical / Important section 判定 pass/issues。
 
 异源评审输入：
 
-- git diff
+- Git commit range diff: `base_commit..HEAD`
 - plan path
 - `plan_contract`
 - audit result
-- command evidence
+- command log
 
 `reviewDiff` 返回三态：
 
@@ -648,9 +681,8 @@ push hook 可以对 `unavailable` fail-open；plan-runner harness 不能把 `una
 异源评审失败：
 
 ```text
-调用 promptAsync(plan_runner_session_id, external review findings)
-promptAsync 成功后 status = repairing，round += 1
-promptAsync 失败则 status = interrupted 或 blocked
+finish_plan 返回 Result: repair_required，并附带 external review findings
+plan-runner 修复后再次调用 finish_plan
 超过 2 轮则 blocked
 ```
 
@@ -660,6 +692,8 @@ promptAsync 失败则 status = interrupted 或 blocked
 写 reviews/<task_id>/external-round-N.json
 运行 final completeness check
 ```
+
+`reviewer.py --review-round` 的 N 只由 `reviews.external.length + 1` 推导，最多为 2；不要复用 `reviews.round`，后者只是 harness repair loop 次数。
 
 ## Final Completeness Check
 
@@ -675,7 +709,7 @@ promptAsync 失败则 status = interrupted 或 blocked
 - 每个 claimed task 都能在 `evidence` 中找到对应 diff evidence
 - `modified_files` 中没有未映射到 task 的文件
 - `child_sessions` 全部 idle 或已有失败记录且已进入 repair 轮次处理
-- `reviews.audit` 最新一轮 result 为 pass
+- `reviews.audit` 已有一次结果；该结果不要求 pass，因为 audit fail 后只触发一次 repair，避免 LLM 审计循环不收敛
 - `reviews.external` 最新一轮 result 为 pass
 - `reviews.round <= 2`
 
@@ -689,9 +723,8 @@ updated_at = now
 失败后：
 
 ```text
-调用 promptAsync(plan_runner_session_id, completeness check reasons)
-promptAsync 成功后 status = repairing，round += 1
-promptAsync 失败则 status = interrupted 或 blocked
+finish_plan 返回 Result: repair_required，并附带 completeness check reasons
+plan-runner 修复后再次调用 finish_plan
 超过 2 轮则 blocked
 ```
 
@@ -765,13 +798,13 @@ rename
 ## 实施任务
 
 当前已落地：T1、T2、T3、T4、T5、T6、T7、T8、T9、T10、T11、T12、T13、T15、T16。
-其中 T8 已记录 bash command evidence、`session.diff`、`message.updated.info.summary.diffs` 和 patch part diff evidence；T9 已要求完成项必须有 diff evidence，command-only evidence 不再满足 implementation 完成判断；T10 已在 deterministic check 前插入 verification-before-completion self-check re-entry。
+其中 T8 已记录 bash command log、`session.diff`、`message.updated.info.summary.diffs` 和 patch part diff evidence；T9 已要求完成项必须有 diff evidence，command-only evidence 不再满足 implementation 完成判断；T10 已改为 terminal gate 直接接管 completion attempt，不再把 self-check prompt 回投给 agent。
 T11 已落地 deterministic check 通过后由 harness 创建 audit child session，并用只读 `plan-runner-audit` agent 投递 `audit_review_required` prompt；audit session idle 后会解析 JSON，失败回流 repair，通过进入 external review。
-T12/T13 已落地最小闭环：`reviewer.py` 支持 `WORKTREE` diff，harness 默认命令 runner 调用 `reviewer.py <git_base> WORKTREE --worktree <worktree> --spec <plan_path>`，并将 pass/issues/unavailable 写入 `reviews.external`。external pass 后运行 final completeness check，满足条件时写 `status = validated`。
+T12/T13 已落地最小闭环：harness 默认命令 runner 调用 `reviewer.py <base_commit> HEAD --worktree <worktree> --spec <plan_path>`，并将 pass/issues/unavailable 写入 `reviews.external`。external pass 后运行 final completeness check，满足条件时写 `status = validated`。`WORKTREE` dirty diff 不再作为 plan-runner external review 范围。
 state storage 已补充唯一 temp 文件名、坏 JSON 隔离和 lease 过期 stale 标记；损坏 state 不再作为 active task 参与后续 gate。
 event hook 已在 plugin instance 内串行化，避免并发 message/session diff 事件 read-modify-write 覆盖 state。
 phase gate / evidence recorder 已限制为 `plan-runner` child session；parent session 不参与执行阶段约束。
-self-check 后续推进同时支持第二次 `session.idle` 和完成态 `todo.updated`，覆盖后台 task 只回传 todo 更新、不再触发 idle 的情况。
+新任务必须通过 `finish_plan` 进入 deterministic / audit；旧 `self_checking/prompted` 运行态不再兼容推进，残留磁盘 state 直接清理。
 
 仍未落地：T14 取消，不再实施；pre-push 与 plan-runner task-state 解耦，保留独立 bash hook 检测 push 命令。后续只剩真实 TUI/长耗时 external review 的运行稳定性观察。
 
@@ -783,8 +816,8 @@ self-check 后续推进同时支持第二次 `session.idle` 和完成态 `todo.u
 - Plan item T6: 实现 phase gate
 - Plan item T7: 实现 todowrite 对齐 gate
 - Plan item T8: 实现 evidence recorder
-- Plan item T9: 实现 plan-runner idle deterministic check
-- Plan item T10: 实现 repair prompt re-entry
+- Plan item T9: 实现 plan-runner `finish_plan` deterministic check
+- Plan item T10: 实现 `finish_plan` repair_required re-entry
 - Plan item T11: 实现 harness 派发审计 subagent
 - Plan item T12: 抽取 external review 共享函数
 - Plan item T13: 接入 external review 到 validation harness
@@ -833,9 +866,9 @@ T15 -> T16
 - Test item: waiting_for_todo 阶段 todowrite 必须覆盖所有 task ids
 - Test item: plan-runner child task 只允许 default/general 且 background true
 - Test item: completed todo 只映射 claimed_done
-- Test item: session.idle 首次完成尝试先投递 self-check prompt
-- Test item: self-check 后 deterministic check 缺 evidence 时失败
-- Test item: self-check 后 deterministic check 成功进入 audit_review
+- Test item: `session.idle` 不触发 terminal gate，必须调用 `finish_plan`
+- Test item: terminal gate deterministic check 缺 evidence 时 `finish_plan` 返回 repair_required
+- Test item: terminal gate deterministic check 成功进入 audit_review
 - Test item: audit JSON 不可解析时失败
 - Test item: external review fail 后 re-entry repair
 - Test item: 两轮失败后 blocked
@@ -870,7 +903,7 @@ python3 -m pytest shared/hooks/test_plan_runner_state.py
 
 ```text
 tasks/<task_id>.json status == validated
-audit review pass
+audit review completed once
 external review pass
 final completeness check pass
 ```

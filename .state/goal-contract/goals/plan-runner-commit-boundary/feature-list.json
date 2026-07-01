@@ -1,0 +1,74 @@
+[
+  {
+    "id": "S1",
+    "description": "Dispatch preflight blocks dirty main repo and linked worktree before child session creation.",
+    "status": "completed",
+    "priority": 1,
+    "verification": "RED/GREEN node tests in userconf/plugins/test/plan-runner-harness.test.mjs",
+    "evidence": [
+      "Automated harness tests passed in node --test run with 186 pass / 0 fail, including dirty repo and linked worktree dispatch blockers.",
+      "Live smoke task-state records git.status_porcelain as empty and is_linked_worktree as false before plan-runner execution."
+    ],
+    "evidence_lane": "test",
+    "stage": "preflight",
+    "blocker": null
+  },
+  {
+    "id": "S2",
+    "description": "finish_plan requires clean repo and commit range before audit/external review.",
+    "status": "completed",
+    "priority": 1,
+    "verification": "RED/GREEN node tests for deterministic failures and commit range success",
+    "evidence": [
+      "Automated harness tests passed for finish_plan requiring a committed clean git repo before audit review.",
+      "Live smoke events include deterministic_check_passed followed by audit/external review and task_validated."
+    ],
+    "evidence_lane": "test",
+    "stage": "terminal_gate",
+    "blocker": null
+  },
+  {
+    "id": "S3",
+    "description": "External review receives base_commit..HEAD and never WORKTREE for plan-runner review scope.",
+    "status": "completed",
+    "priority": 1,
+    "verification": "RED/GREEN node test inspects external review command args",
+    "evidence": [
+      "Automated harness tests passed for base commit to HEAD external review args instead of WORKTREE.",
+      "Live smoke task-state external review passed with provider idealab-openai after commit boundary validation."
+    ],
+    "evidence_lane": "test",
+    "stage": "external_review",
+    "blocker": null
+  },
+  {
+    "id": "S4",
+    "description": "Agent/runbook/knowledge docs describe commit boundary and no-snapshot rule.",
+    "status": "completed",
+    "priority": 2,
+    "verification": "source diff inspection and existing init-opencode agent tests",
+    "evidence": [
+      "Agent, runbook, knowledge, and plan docs updated to require local commit, no push, clean repo, and commit-range review scope.",
+      "init_opencode agent sync tests passed, including finish_plan lifecycle and plan-runner instruction coverage."
+    ],
+    "evidence_lane": "source",
+    "stage": "docs",
+    "blocker": null
+  },
+  {
+    "id": "S5",
+    "description": "Automated verification and live smoke prove validated commit-boundary flow.",
+    "status": "completed",
+    "priority": 1,
+    "verification": "full node tests, node --check, git diff --check, live smoke task-state/events/DB",
+    "evidence": [
+      "Full node test command passed with 186 pass / 0 fail.",
+      "node --check passed for plan-runner-harness.js and opencode-subagent-event-probe.mjs.",
+      "git diff --check passed.",
+      "Live smoke task-state status is validated and DB query confirms audit-child message=4, part=14, session_input=0."
+    ],
+    "evidence_lane": "runtime",
+    "stage": "verification",
+    "blocker": null
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "schema_version": "goal_contract.registry.v1",
+  "state_root": ".state/goal-contract",
+  "active_goal_ids": [],
+  "goals": {
+    "plan-runner-commit-boundary": {
+      "goal_id": "plan-runner-commit-boundary",
+      "contract_dir": ".state/goal-contract/goals/plan-runner-commit-boundary",
+      "recovery": ".state/goal-contract/goals/plan-runner-commit-boundary/recovery.md",
+      "state": ".state/goal-contract/goals/plan-runner-commit-boundary/state.json",
+      "feature_list": ".state/goal-contract/goals/plan-runner-commit-boundary/feature-list.json",
+      "evidence": ".state/goal-contract/goals/plan-runner-commit-boundary/evidence.jsonl",
+      "status": "completed"
+    }
+  }
+}

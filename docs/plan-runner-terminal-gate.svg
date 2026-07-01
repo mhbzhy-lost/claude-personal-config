@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 750" font-family="system-ui, -apple-system, sans-serif">
+  <!-- Arrow markers -->
+  <defs>
+    <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#10B981"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#F97316"/>
+    </marker>
+  </defs>
+
+  <!-- Main flow nodes (w=220, h=48) -->
+  <!-- Node 1: Skill dispatch (cyan) -->
+  <rect x="170" y="35" width="220" height="48" fill="#CFFAFE" stroke="#06B6D4" stroke-width="1.5" rx="8"/>
+  <!-- Node 2: Agent planning (indigo) -->
+  <rect x="170" y="115" width="220" height="48" fill="#E0E7FF" stroke="#6366F1" stroke-width="1.5" rx="8"/>
+  <!-- Node 3: Agent execution (indigo) -->
+  <rect x="170" y="195" width="220" height="48" fill="#E0E7FF" stroke="#6366F1" stroke-width="1.5" rx="8"/>
+  <!-- Node 4: Deterministic Check (amber) -->
+  <rect x="170" y="275" width="220" height="48" fill="#FEF3C7" stroke="#F59E0B" stroke-width="1.5" rx="8"/>
+  <!-- Node 5: Audit Review (violet) -->
+  <rect x="170" y="355" width="220" height="48" fill="#F3E8FF" stroke="#7C3AED" stroke-width="1.5" rx="8"/>
+  <!-- Node 6: External Review (pink) -->
+  <rect x="170" y="435" width="220" height="48" fill="#FCE7F3" stroke="#EC4899" stroke-width="1.5" rx="8"/>
+  <!-- Node 7: Final Completeness (green) -->
+  <rect x="170" y="515" width="220" height="48" fill="#ECFDF5" stroke="#10B981" stroke-width="1.5" rx="8"/>
+
+  <!-- Repair node (w=220, h=48) -->
+  <rect x="620" y="355" width="220" height="48" fill="#FFF7ED" stroke="#F97316" stroke-width="1.5" rx="8"/>
+
+  <!-- Terminal nodes (w=140, h=36) -->
+  <rect x="210" y="595" width="140" height="36" fill="#10B981" stroke="none" rx="8"/>
+  <rect x="660" y="443" width="140" height="36" fill="#EF4444" stroke="none" rx="8"/>
+  <rect x="660" y="519" width="140" height="36" fill="#6B7280" stroke="none" rx="8"/>
+
+  <!-- Legend background (w=950, h=36) -->
+  <rect x="50" y="680" width="950" height="36" fill="#F8FAFC" stroke="none" rx="8"/>
+
+  <!-- Vertical pass lines (green) -->
+  <line x1="280" y1="83" x2="280" y2="115" stroke="#10B981" stroke-width="2"/>
+  <line x1="280" y1="163" x2="280" y2="195" stroke="#10B981" stroke-width="2"/>
+  <line x1="280" y1="243" x2="280" y2="275" stroke="#10B981" stroke-width="2"/>
+  <line x1="280" y1="323" x2="280" y2="355" stroke="#10B981" stroke-width="2"/>
+  <line x1="280" y1="403" x2="280" y2="435" stroke="#10B981" stroke-width="2"/>
+  <line x1="280" y1="483" x2="280" y2="515" stroke="#10B981" stroke-width="2"/>
+  <line x1="280" y1="563" x2="280" y2="595" stroke="#10B981" stroke-width="2"/>
+
+  <!-- Horizontal fail line: Audit right → Repair left (orange) -->
+  <line x1="390" y1="379" x2="620" y2="379" stroke="#F97316" stroke-width="1.5" stroke-dasharray="6,3"/>
+
+  <!-- Fail paths from other gates to repair (path elements, dashed orange) -->
+  <path d="M 390 299 C 505 299 505 379 620 379" fill="none" stroke="#F97316" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <path d="M 390 459 C 505 459 505 379 620 379" fill="none" stroke="#F97316" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <path d="M 390 539 C 505 539 505 379 620 379" fill="none" stroke="#F97316" stroke-width="1.5" stroke-dasharray="6,3"/>
+
+  <!-- Repair loop back to Agent Execution (node 3 right center) -->
+  <path d="M 730 355 C 730 219 500 219 390 219" fill="none" stroke="#F97316" stroke-width="1.5" marker-end="url(#arrowOrange)"/>
+
+  <!-- Repair to blocked/interrupted (red/gray paths) -->
+  <path d="M 840 379 C 900 379 900 461 800 461" fill="none" stroke="#EF4444" stroke-width="1.5"/>
+  <path d="M 840 391 C 920 410 920 537 800 537" fill="none" stroke="#6B7280" stroke-width="1.5"/>
+
+  <!-- Node 1 text: Skill -->
+  <text x="280" y="55" font-size="12" font-weight="bold" fill="#0E7490" text-anchor="middle">plan-runner-dispatch Skill</text>
+  <text x="280" y="71" font-size="9.5" fill="#6B7280" text-anchor="middle">父 Agent 触发 · 路由派发 · 创建 child session</text>
+
+  <!-- Node 2 text: Agent Planning -->
+  <text x="280" y="135" font-size="12" font-weight="bold" fill="#3730A3" text-anchor="middle">Agent: 计划编写 + Todo同步</text>
+  <text x="280" y="151" font-size="9.5" fill="#6B7280" text-anchor="middle">write_plan → DAG验证 → todowrite → mirrored</text>
+
+  <!-- Node 3 text: Agent Execution -->
+  <text x="280" y="215" font-size="12" font-weight="bold" fill="#3730A3" text-anchor="middle">Agent: 任务执行 + 证据收集</text>
+  <text x="280" y="231" font-size="9.5" fill="#6B7280" text-anchor="middle">bash/edit/write → evidence(diff|command) 自动归属</text>
+
+  <!-- Node 4 text: Det Check -->
+  <text x="280" y="295" font-size="12" font-weight="bold" fill="#92400E" text-anchor="middle">Deterministic Check 自检</text>
+  <text x="280" y="311" font-size="9.5" fill="#6B7280" text-anchor="middle">5项: plan完整 · todo同步清空 · 证据覆盖 · DAG</text>
+
+  <!-- Node 5 text: Audit -->
+  <text x="280" y="375" font-size="12" font-weight="bold" fill="#5B21B6" text-anchor="middle">Audit Review 审计</text>
+  <text x="280" y="391" font-size="9.5" fill="#6B7280" text-anchor="middle">child session → plan/files/evidence → JSON pass|fail</text>
+
+  <!-- Node 6 text: External -->
+  <text x="280" y="455" font-size="12" font-weight="bold" fill="#9D174D" text-anchor="middle">External Review 外审</text>
+  <text x="280" y="471" font-size="9.5" fill="#6B7280" text-anchor="middle">reviewer.py --spec plan --depth exhaustive → pass|issues</text>
+
+  <!-- Node 7 text: Completeness -->
+  <text x="280" y="535" font-size="12" font-weight="bold" fill="#065F46" text-anchor="middle">Final Completeness 完整性</text>
+  <text x="280" y="551" font-size="9.5" fill="#6B7280" text-anchor="middle">9项: hash一致 · sessions完成 · 审计外审均pass</text>
+
+  <!-- Repair node text -->
+  <text x="730" y="375" font-size="12" font-weight="bold" fill="#C2410C" text-anchor="middle">promptRepair 修复循环</text>
+  <text x="730" y="391" font-size="9.5" fill="#6B7280" text-anchor="middle">回投 plan-runner session · round++</text>
+
+  <!-- Terminal text -->
+  <text x="280" y="617" font-size="13" font-weight="bold" fill="#FFFFFF" text-anchor="middle">VALIDATED ✓</text>
+
+  <text x="730" y="459" font-size="11" font-weight="bold" fill="#FFFFFF" text-anchor="middle">BLOCKED ✗</text>
+  <text x="730" y="473" font-size="9" fill="#FECACA" text-anchor="middle">round ≥ 2</text>
+
+  <text x="730" y="535" font-size="11" font-weight="bold" fill="#FFFFFF" text-anchor="middle">INTERRUPTED ✗</text>
+  <text x="730" y="549" font-size="9" fill="#D1D5DB" text-anchor="middle">promptAsync 不可用</text>
+
+  <!-- Legend -->
+  <circle cx="90" cy="698" r="5" fill="#06B6D4"/>
+  <text x="102" y="702" font-size="10" fill="#374151">Skill 入口</text>
+  <circle cx="200" cy="698" r="5" fill="#6366F1"/>
+  <text x="212" y="702" font-size="10" fill="#374151">Agent 执行</text>
+  <circle cx="320" cy="698" r="5" fill="#F59E0B"/>
+  <text x="332" y="702" font-size="10" fill="#374151">Harness 门禁</text>
+  <circle cx="460" cy="698" r="5" fill="#F97316"/>
+  <text x="472" y="702" font-size="10" fill="#374151">修复路径</text>
+  <circle cx="580" cy="698" r="5" fill="#10B981"/>
+  <text x="592" y="702" font-size="10" fill="#374151">通过</text>
+  <circle cx="650" cy="698" r="5" fill="#EF4444"/>
+  <text x="662" y="702" font-size="10" fill="#374151">终止</text>
+  <circle cx="720" cy="698" r="5" fill="#6B7280"/>
+  <text x="732" y="702" font-size="10" fill="#374151">中断</text>
+  <text x="820" y="702" font-size="10" fill="#374151">最多2轮修复</text>
+</svg>

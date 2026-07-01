@@ -431,11 +431,15 @@ describe("init_opencode agents sync", () => {
 
     assert.match(agent, /Return only a JSON object/i)
     assert.match(agent, /"result": "pass" \| "fail"/)
-    assert.match(agent, /"verified_tasks": \["T1"\]/)
     assert.match(agent, /"rejected_tasks": \[\]/)
     assert.match(agent, /"unknown_tasks": \[\]/)
     assert.match(agent, /"unmapped_files": \[\]/)
     assert.match(agent, /"required_fixes": \[\]/)
+    assert.match(agent, /todo list/i)
+    assert.match(agent, /interface shell|stub|only satisfy tests/i)
+    assert.doesNotMatch(agent, /"verified_tasks"/)
+    assert.doesNotMatch(agent, /"round"/)
+    assert.doesNotMatch(agent, /"kind"/)
     assert.doesNotMatch(agent, /Audit result:\s*pass \| fail/i)
   })
 
@@ -497,14 +501,24 @@ describe("init_opencode agents sync", () => {
     assert.match(prompt, /task:\s*allow/)
     assert.match(prompt, /default child subagent/i)
     assert.match(prompt, /do not use custom agents/i)
-    assert.match(prompt, /return evidence only/i)
+    assert.doesNotMatch(prompt, /return evidence only/i)
   })
 
-  it("plan-runner uses write_plan as the harness plan entrypoint", () => {
+  it("plan-runner uses write_plan and finish_plan as harness lifecycle entrypoints", () => {
     const prompt = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
 
     assert.match(prompt, /write_plan:\s*allow/)
+    assert.match(prompt, /finish_plan:\s*allow/)
     assert.match(prompt, /call `write_plan`/i)
+    assert.match(prompt, /create a local git commit/i)
+    assert.match(prompt, /Do not push/i)
+    assert.match(prompt, /repo is clean/i)
+    assert.match(prompt, /call `finish_plan` before writing any final report/i)
+    assert.match(prompt, /Only after `finish_plan` returns `validated`/i)
+    assert.match(prompt, /Do not create a plan task for the final report/i)
+    assert.doesNotMatch(prompt, /evidence_required/)
+    assert.doesNotMatch(prompt, /provide evidence/i)
+    assert.doesNotMatch(prompt, /claimed_done.*evidence/i)
     assert.doesNotMatch(prompt, /TODO:\s*\/\s*DONE:/)
     assert.doesNotMatch(prompt, /Every plan step must use `TODO:`/)
   })

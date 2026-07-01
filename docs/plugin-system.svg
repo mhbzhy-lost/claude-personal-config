@@ -19,9 +19,9 @@
   <text x="220" y="45" text-anchor="middle" font-size="15" font-weight="bold" fill="#DC2626">触发源</text>
   <text x="220" y="62" text-anchor="middle" font-size="9.5" fill="#6B7280">OpenCode 工具调用</text>
   <text x="700" y="48" text-anchor="middle" font-size="15" font-weight="bold" fill="#2563EB">Before Hooks</text>
-  <text x="700" y="65" text-anchor="middle" font-size="9.5" fill="#6B7280">执行前拦截 · 7 plugins</text>
+  <text x="700" y="65" text-anchor="middle" font-size="9.5" fill="#6B7280">执行前拦截 · 6 plugins</text>
   <text x="700" y="360" text-anchor="middle" font-size="15" font-weight="bold" fill="#059669">After Hooks</text>
-  <text x="700" y="377" text-anchor="middle" font-size="9.5" fill="#6B7280">执行后处理 · 2 plugins</text>
+  <text x="700" y="377" text-anchor="middle" font-size="9.5" fill="#6B7280">执行后处理 · 2 plugins + 1 harness</text>
   <text x="1180" y="45" text-anchor="middle" font-size="15" font-weight="bold" fill="#7C3AED">数据源</text>
   <text x="1180" y="62" text-anchor="middle" font-size="9.5" fill="#6B7280">shared/policies/</text>
 
@@ -72,18 +72,19 @@
   <text x="730" y="160" font-size="12" font-weight="bold" fill="#1E293B">rm-workspace-guard</text>
   <text x="730" y="176" font-size="9.5" fill="#6B7280">防删工作区外路径</text>
 
-  <rect x="720" y="200" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
-  <text x="730" y="220" font-size="12" font-weight="bold" fill="#1E293B">coding-guard</text>
-  <text x="730" y="236" font-size="9.5" fill="#6B7280">路径+权限双检查</text>
 
   <!-- After hooks (x=490/700, y=411, w=160, h=48) -->
   <rect x="490" y="411" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#10B981" stroke-width="1.5"/>
-  <text x="500" y="431" font-size="12" font-weight="bold" fill="#1E293B">session-journal</text>
-  <text x="500" y="447" font-size="9.5" fill="#6B7280">记录到 .workflow/events/</text>
+  <text x="500" y="431" font-size="12" font-weight="bold" fill="#1E293B">coding-guard</text>
+  <text x="500" y="447" font-size="9.5" fill="#6B7280">编辑后追加 TDD 提醒</text>
 
   <rect x="700" y="411" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#10B981" stroke-width="1.5"/>
   <text x="710" y="431" font-size="12" font-weight="bold" fill="#1E293B">event-probe</text>
   <text x="710" y="447" font-size="9.5" fill="#6B7280">事件探针（测试用）</text>
+
+  <rect x="595" y="448" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#7C3AED" stroke-width="1.5"/>
+  <text x="605" y="468" font-size="12" font-weight="bold" fill="#1E293B">plan-runner-harness</text>
+  <text x="605" y="484" font-size="9.5" fill="#6B7280">DAG 编排·自检·修复</text>
 
   <!-- Right nodes: data sources (x=1100, w=160, h=48) -->
   <rect x="1100" y="161" width="160" height="48" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
@@ -115,5 +116,7 @@
   <text x="702" y="538" font-size="9.5" fill="#475569">After Hook</text>
   <circle cx="800" cy="534" r="5" fill="#8B5CF6"/>
   <text x="812" y="538" font-size="9.5" fill="#475569">数据源</text>
-  <text x="890" y="538" font-size="9.5" fill="#64748B">— 触发  - - - 读取</text>
+  <circle cx="880" cy="534" r="5" fill="#7C3AED"/>
+  <text x="892" y="538" font-size="9.5" fill="#475569">Plan Runner</text>
+  <text x="975" y="538" font-size="9.5" fill="#64748B">— 触发  - - - 读取</text>
 </svg>

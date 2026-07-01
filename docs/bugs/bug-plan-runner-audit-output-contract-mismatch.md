@@ -7,7 +7,7 @@
 ## 根因 (6 要素)
 
 1. **触发条件**：deterministic check 通过，harness 派发 `plan-runner-audit`，audit agent 按自身 prompt 返回旧 text 格式。
-2. **期望链路**：audit agent 的输出契约必须与 `normalizeAuditReview()` 一致，返回包含 `result`、`verified_tasks`、`rejected_tasks`、`unknown_tasks`、`unmapped_files`、`required_fixes` 的 JSON。
+2. **期望链路**：audit agent 的输出契约必须与 `normalizeAuditReview()` 一致，返回 harness 消费的 JSON 字段：`result`、`rejected_tasks`、`unknown_tasks`、`unmapped_files`、`required_fixes`。
 3. **实际链路**：`userconf/agents/plan-runner-audit.md` 仍写着 `Return concise findings in this format:` 并给出 text block，而 harness 只接受 JSON。
 4. **关键假设失效**：实现 audit JSON 消费时只更新了 harness 测试和知识文档，没有同步更新 audit agent 的直接行为契约。
 5. **旁证**：agent 文档第 24 行开始仍包含 `Audit result: pass | fail` text 模板；harness 对非 JSON 文本会写入 `required_fixes: audit review must return valid JSON`。

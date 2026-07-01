@@ -6,11 +6,12 @@ import { basename, dirname, isAbsolute, join, normalize, relative } from "node:p
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const STATE_VERSION = 1
-const PLANNING_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "write_plan"])
-const TODO_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "todowrite"])
-const EXECUTION_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "edit", "write", "bash", "task", "todowrite"])
-const EXECUTION_CONTEXT_TOOLS = new Set(["edit", "write", "bash", "task"])
-const ACTIVE_STATUSES = new Set(["dispatching", "planning_required", "waiting_for_todo", "ready_to_execute", "executing", "self_checking", "audit_review", "external_review", "repairing", "interrupted"])
+const PLANNING_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "write_plan"])
+const TODO_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "todowrite"])
+const EXECUTION_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "edit", "write", "apply_patch", "bash", "task", "todowrite", "finish_plan"])
+const EXECUTION_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash", "task"])
+const ACTIVE_STATUSES = new Set(["dispatching", "planning_required", "waiting_for_todo", "ready_to_execute", "executing", "audit_review", "external_review", "repairing", "interrupted"])
+const COMPLETION_GATE_RESULT_STATUSES = new Set(["validated", "repairing", "blocked", "interrupted", "stale"])
 
 function defaultStateDir() {
   return join(homedir(), ".config", "opencode", "task-state")
@@ -229,6 +230,64 @@ async function currentGitHead(worktree) {
   }
 }
 
+async function gitCommand(worktree, args) {
+  const { stdout } = await execFileAsync("git", ["-C", worktree, ...args], { timeout: 10000 })
+  return stdout.trim()
+}
+
+async function inspectGitWorktree(worktree) {
+  try {
+    const repoRoot = await gitCommand(worktree, ["rev-parse", "--show-toplevel"])
+    const gitDir = await gitCommand(worktree, ["rev-parse", "--absolute-git-dir"])
+    const gitCommonDir = await gitCommand(worktree, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
+    const head = await gitCommand(worktree, ["rev-parse", "HEAD"])
+    const statusPorcelain = await gitCommand(worktree, ["status", "--porcelain=v1"])
+    return {
+      is_git_repo: true,
+      repo_root: normalize(repoRoot),
+      git_dir: normalize(gitDir),
+      git_common_dir: normalize(gitCommonDir),
+      head,
+      status_porcelain: statusPorcelain,
+      is_linked_worktree: normalize(gitDir) !== normalize(gitCommonDir),
+    }
+  } catch {
+    return { is_git_repo: false }
+  }
+}
+
+function planRunnerDispatchBlocker(gitInfo) {
+  if (!gitInfo?.is_git_repo) return null
+  if (gitInfo.is_linked_worktree) {
+    return {
+      code: "plan_runner_disallowed_linked_worktree",
+      message: "plan-runner must start from the primary repo checkout, not a linked git worktree",
+      repo_root: gitInfo.repo_root,
+      git_dir: gitInfo.git_dir,
+      git_common_dir: gitInfo.git_common_dir,
+    }
+  }
+  if (gitInfo.status_porcelain) {
+    return {
+      code: "plan_runner_requires_clean_repo",
+      message: "plan-runner requires a clean repo at dispatch; commit or clear existing changes first",
+      repo_root: gitInfo.repo_root,
+      status_porcelain: gitInfo.status_porcelain,
+    }
+  }
+  return null
+}
+
+async function blockPlanRunnerDispatch({ stateDir, state, parentSessionID, blocker }) {
+  state.status = "blocked"
+  state.blocker = blocker
+  state.updated_at = Date.now()
+  await writeTaskState(stateDir, state)
+  await writeSessionIndex(stateDir, parentSessionID, state.task_id, "parent")
+  await appendEvent(stateDir, state.task_id, { type: "dispatch_blocked", code: blocker.code, blocker })
+  throw new Error(`${blocker.code}: ${blocker.message}`)
+}
+
 function validateDag(taskIDs, dag = []) {
   const edges = new Map()
   for (const id of taskIDs) edges.set(id, [])
@@ -313,7 +372,6 @@ function buildPlanContract(input) {
     id: `T${index + 1}`,
     title: task.title,
     completion_criteria: task.completion_criteria,
-    evidence_required: ["diff"],
   }))
   const taskIDs = new Set(tasks.map((task) => task.id))
   const dag = input.dag || []
@@ -336,6 +394,29 @@ function activeTodoTaskID(todos = [], tasks = []) {
   return tasks.find((task) => content.includes(task.id))?.id || null
 }
 
+function repairEvidenceTaskIDs(state) {
+  const completed = new Set(completedTaskIDs(state))
+  const missingEvidenceTasks = state.plan_contract.tasks
+    .filter((task) => completed.has(task.id) && taskEvidenceFailures(state, task).length > 0)
+    .map((task) => task.id)
+  if (missingEvidenceTasks.length) return missingEvidenceTasks
+
+  const taskIDs = new Set(state.plan_contract.tasks.map((task) => task.id))
+  const latestAudit = state.reviews?.audit?.at(-1) || {}
+  const auditTasks = [...(latestAudit.rejected_tasks || []), ...(latestAudit.unknown_tasks || [])]
+    .filter((taskID) => taskIDs.has(taskID))
+  if (auditTasks.length) return [...new Set(auditTasks)]
+
+  return completedTaskIDs(state)
+}
+
+function evidenceTaskIDs(state) {
+  if (state.status === "repairing") return repairEvidenceTaskIDs(state)
+  const activeTaskID = activeTodoTaskID(state.todo.last_seen, state.plan_contract.tasks)
+  if (activeTaskID) return [activeTaskID]
+  return []
+}
+
 function todosCoverTasks(todos = [], tasks = []) {
   return tasks.every((task) => todos.some((todo) => String(todo.content || "").includes(task.id)))
 }
@@ -354,9 +435,14 @@ async function enforcePhaseGate(stateDir, input) {
     return
   }
 
-  if (state.status === "ready_to_execute" || state.status === "executing" || state.status === "repairing" || state.status === "self_checking") {
+  if (state.status === "audit_review" || state.status === "external_review") {
+    throw new Error(`plan-runner terminal gate: ${input.tool} is not allowed during ${state.status}`)
+  }
+
+  if (state.status === "ready_to_execute" || state.status === "executing" || state.status === "repairing") {
+    if (state.status === "repairing" && input.tool === "todowrite") throw new Error("plan-runner phase gate: todowrite is not allowed during repairing")
     if (!EXECUTION_TOOLS.has(input.tool)) throw new Error(`plan-runner phase gate: ${input.tool} is not allowed during ${state.status}`)
-    if (EXECUTION_CONTEXT_TOOLS.has(input.tool) && countInProgressTodos(state.todo.last_seen) !== 1) {
+    if (state.status !== "repairing" && EXECUTION_CONTEXT_TOOLS.has(input.tool) && countInProgressTodos(state.todo.last_seen) !== 1) {
       throw new Error("plan-runner phase gate: exactly one in_progress todo is required for execution tools")
     }
     if (state.status === "ready_to_execute" && EXECUTION_CONTEXT_TOOLS.has(input.tool)) {
@@ -386,24 +472,23 @@ async function handleTodoUpdated(stateDir, event) {
 }
 
 async function recordToolEvidence(stateDir, input, output) {
-  if (input.tool === "write" || input.tool === "edit") {
-    if (typeof input.args?.filePath === "string") {
-      await recordDiffEvidence(stateDir, { sessionID: input.sessionID, files: [input.args.filePath], eventID: `tool-after-${input.callID}` })
-    }
+  if (input.tool === "write" || input.tool === "edit" || input.tool === "apply_patch") {
+    const files = input.tool === "apply_patch" ? patchFileNames(input.args?.patchText) : [input.args?.filePath].filter((file) => typeof file === "string")
+    if (files.length) await recordDiffEvidence(stateDir, { sessionID: input.sessionID, files, eventID: `tool-after-${input.callID}` })
     return
   }
 
   const state = await readTaskStateForSession(stateDir, input.sessionID)
   if (!state || input.tool !== "bash") return
 
-  const taskID = activeTodoTaskID(state.todo.last_seen, state.plan_contract.tasks)
-  if (!taskID) return
+  const taskIDs = evidenceTaskIDs(state)
+  if (!taskIDs.length) return
 
   const exitCode = output.metadata?.exit ?? null
   const evidence = {
     id: `ev-command-${input.callID}`,
     type: "command",
-    task_ids: [taskID],
+    task_ids: taskIDs,
     event_ids: [`tool-after-${input.callID}`],
     command: input.args?.command || "",
     success: exitCode === 0,
@@ -430,11 +515,38 @@ function findDeterministicCheckFailures(state) {
   if (state.todo.last_seen.some((todo) => todo.status === "pending" || todo.status === "in_progress")) reasons.push("todo list still has pending or in_progress items")
 
   for (const taskID of completedTaskIDs(state)) {
-    const hasDiffEvidence = state.evidence.some((item) => item.type === "diff" && item.task_ids?.includes(taskID))
-    if (!hasDiffEvidence) reasons.push(`${taskID} has no diff evidence`)
+    const task = state.plan_contract.tasks.find((item) => item.id === taskID)
+    reasons.push(...taskEvidenceFailures(state, task || { id: taskID }))
   }
 
   return reasons
+}
+
+async function gitCommitBoundaryFailures(state) {
+  const baseCommit = state.base_commit || state.git_base
+  if (!baseCommit) return []
+
+  const gitInfo = await inspectGitWorktree(state.worktree)
+  if (!gitInfo.is_git_repo) return []
+
+  const reasons = []
+  if (gitInfo.is_linked_worktree) reasons.push("plan_runner_disallowed_linked_worktree: plan-runner cannot finish from a linked git worktree")
+  if (gitInfo.status_porcelain) reasons.push(`plan_runner_requires_clean_repo_before_review: ${gitInfo.status_porcelain}`)
+  if (gitInfo.head === baseCommit) reasons.push(`plan_runner_requires_commit_range: HEAD equals base commit ${baseCommit}`)
+  if (gitInfo.head !== baseCommit) {
+    try {
+      const changedFiles = await gitCommand(state.worktree, ["diff", "--name-only", `${baseCommit}..HEAD`])
+      if (!changedFiles) reasons.push(`plan_runner_requires_commit_range: ${baseCommit}..HEAD contains no diff`)
+    } catch (error) {
+      reasons.push(`plan_runner_requires_commit_range: ${formatDiagnosticError(error)}`)
+    }
+  }
+  return reasons
+}
+
+function taskEvidenceFailures(state, task) {
+  if (!state.evidence.some((item) => item.type === "diff" && item.task_ids?.includes(task.id))) return [`${task.id} has no diff evidence`]
+  return []
 }
 
 function isCompletionAttempt(state) {
@@ -444,30 +556,32 @@ function isCompletionAttempt(state) {
   return !state.todo.last_seen.some((todo) => todo.status === "pending" || todo.status === "in_progress")
 }
 
-function selfCheckPromptText() {
-  return [
-    "Plan-runner self_check_required: perform verification-before-completion self-check before claiming completion.",
-    "- Re-read the plan tasks and current todo status.",
-    "- For every completed todo, cite concrete evidence from this run.",
-    "- For file or code changes, ensure diff evidence exists.",
-    "- For validation, cite command, exit/result, and output excerpt.",
-    "- Do not say should/probably/seems as completion evidence.",
-    "- If evidence is missing, do not claim complete; reopen the relevant todo, gather evidence, then mark it completed again.",
-    "- After this self-check, provide the final report again.",
-  ].join("\n")
-}
-
 function auditPromptText(state) {
   const modifiedFiles = Array.isArray(state.modified_files) ? state.modified_files : []
   const files = modifiedFiles.length ? modifiedFiles.map((file) => `- ${file}`) : ["- none recorded"]
+  const tasks = state.plan_contract.tasks.length
+    ? state.plan_contract.tasks.map((task) => `- ${task.id}: ${task.title}; completion: ${task.completion_criteria.join("; ")}`)
+    : ["- none recorded"]
+  const todos = state.plan_contract.tasks.length
+    ? state.plan_contract.tasks.map((task) => {
+      const todo = state.todo.last_seen.find((item) => String(item.content || "").includes(task.id))
+      const status = todo?.status || "missing"
+      return `- ${task.id}: ${status} - ${task.title}`
+    })
+    : ["- none recorded"]
   return [
-    "Plan-runner audit_review_required: deterministic checks passed, but completion is not final until audit and external review pass.",
+    "Plan-runner audit_review_required: deterministic checks passed; audit the completed scope before the harness continues.",
     "- You are the harness-dispatched audit subagent. Do not modify files.",
-    "- Review the plan, todo status, evidence, modified files, validation commands, scope deviations, and remaining risks.",
-    "- Check whether external-llm-review or reviewer.py still needs to run against the current diff for this worktree.",
-    "- Return findings only: pass/fail, rejected tasks, unknown tasks, unmapped files, required fixes, and external review command recommendation.",
+    "- You must consume the Todo state observed by harness below; do not pass work that merely marks todos complete.",
+    "- Check whether each completed todo has a complete implementation, not just an interface shell, stub, mock, or code that only satisfy tests.",
+    "- Review the plan path, task contract, todo state, modified files, and observed validation context.",
+    "- Return only fields consumed by the harness: result, rejected_tasks, unknown_tasks, unmapped_files, required_fixes.",
     `- Harness Task ID: ${state.task_id}`,
     `- Plan path: ${state.plan_path}`,
+    "- Task contract:",
+    ...tasks,
+    "- Todo state observed by harness:",
+    ...todos,
     "- Modified files observed by harness:",
     ...files,
   ].join("\n")
@@ -507,11 +621,23 @@ function formatDiagnosticError(error) {
   return diagnosticValue(error) || "unknown error"
 }
 
+function throwIfSdkError(result, context) {
+  if (!result?.error) return
+  const errData = result.error?.data || result.error
+  const message = errData?.message || errData?.name || diagnosticValue(errData) || "unknown SDK error"
+  throw new Error(`${context}: ${message}`)
+}
+
 function extractTextFromMessageInfo(info = {}) {
   const parts = Array.isArray(info.parts) ? info.parts : []
   const texts = parts.map((part) => part?.text || part?.content).filter(Boolean)
   if (texts.length) return texts.join("\n")
   return info.text || info.content || info.summary?.text || ""
+}
+
+function extractTextFromMessagePart(part = {}) {
+  if (part.type !== "text") return ""
+  return part.text || part.content || ""
 }
 
 function extractJsonObject(text) {
@@ -544,10 +670,7 @@ function normalizeAuditReview(text) {
   try {
     const parsed = extractJsonObject(text)
     return {
-      round: Number(parsed.round || 1),
-      kind: parsed.kind || "audit",
       result: parsed.result === "pass" ? "pass" : "fail",
-      verified_tasks: normalizeStringArray(parsed.verified_tasks),
       rejected_tasks: normalizeStringArray(parsed.rejected_tasks),
       unknown_tasks: normalizeStringArray(parsed.unknown_tasks),
       unmapped_files: normalizeStringArray(parsed.unmapped_files),
@@ -555,10 +678,7 @@ function normalizeAuditReview(text) {
     }
   } catch (error) {
     return {
-      round: 1,
-      kind: "audit",
       result: "fail",
-      verified_tasks: [],
       rejected_tasks: [],
       unknown_tasks: [],
       unmapped_files: [],
@@ -599,6 +719,7 @@ function markdownSectionHasIssues(text, header) {
     .split("\n")
     .map((line) => line.trim())
     .map((line) => line.replace(/^[-*+]\s*/, "").replace(/^[`*_\s]+|[`*_\s]+$/g, ""))
+    .map((line) => line.replace(/[。．.!！?？]+$/u, "").trim())
     .filter(Boolean)
     .filter((line) => !/^(none\.?|n\/?a|no\s+(\w+\s+)?issues(\s+found)?|nothing\s+to\s+report|✅|无)$/i.test(line))
   return meaningfulLines.length > 0
@@ -606,6 +727,22 @@ function markdownSectionHasIssues(text, header) {
 
 function reviewTextHasBlockingIssues(text) {
   return markdownSectionHasIssues(text, "Critical") || markdownSectionHasIssues(text, "Important")
+}
+
+const DEFAULT_EXTERNAL_REVIEW_PROVIDERS = ["idealab-anthropic", "bailian", "idealab-openai"]
+
+function parseProviderList(value) {
+  return String(value || "").split(/[\s,]+/).map((item) => item.trim()).filter(Boolean)
+}
+
+function externalReviewProviders(options = {}) {
+  if (Array.isArray(options.externalReviewProviders)) return options.externalReviewProviders.filter(Boolean)
+  if (options.externalReviewCommand) return []
+  const configuredChain = parseProviderList(process.env.OPENCODE_PLAN_RUNNER_EXTERNAL_REVIEW_PROVIDERS)
+  if (configuredChain.length) return configuredChain
+  const configuredProvider = parseProviderList(process.env.EXTERNAL_LLM_REVIEW_PROVIDER)
+  if (configuredProvider.length) return configuredProvider
+  return DEFAULT_EXTERNAL_REVIEW_PROVIDERS
 }
 
 async function defaultReviewerPath() {
@@ -640,89 +777,188 @@ async function defaultReviewerCommand() {
 }
 
 async function runExternalReviewCommand(state, options = {}) {
-  if (!state.git_base) {
-    return { result: "unavailable", provider: "command", findings: "git_base is missing" }
+  const reviewRound = nextExternalReviewRound(state)
+  const baseCommit = state.base_commit || state.git_base
+  if (!baseCommit) {
+    return { round: reviewRound, result: "unavailable", provider: "command", findings: "base_commit is missing" }
   }
 
   const reviewCommand = options.externalReviewCommand || await defaultReviewerCommand()
-  const args = [
+  const baseArgs = [
     ...(reviewCommand.args || []),
-    state.git_base,
-    "WORKTREE",
+    baseCommit,
+    "HEAD",
     "--worktree",
     state.worktree,
     "--review-depth",
     "exhaustive",
     "--review-round",
-    String(Math.min((state.reviews?.round || 0) + 1, 2)),
+    String(reviewRound),
     "--max-issues",
     "25",
   ]
-  if (state.plan_path) args.push("--spec", state.plan_path)
+  if (state.plan_path) baseArgs.push("--spec", state.plan_path)
 
-  try {
-    const { stdout, stderr } = await execFileAsync(reviewCommand.command, args, {
-      cwd: state.worktree,
-      timeout: Number(process.env.OPENCODE_PLAN_RUNNER_EXTERNAL_REVIEW_TIMEOUT_MS || 540000),
-      maxBuffer: 10 * 1024 * 1024,
-    })
-    const findings = [stdout, stderr].filter(Boolean).join("\n")
-    if (!findings.trim()) return { result: "unavailable", provider: "command", findings: "external review produced no output" }
-    return {
-      result: reviewTextHasBlockingIssues(findings) ? "issues" : "pass",
-      provider: "command",
-      findings,
+  const providers = externalReviewProviders(options)
+  const attempts = providers.length ? providers : [null]
+  const failures = []
+  for (const provider of attempts) {
+    const args = [...baseArgs]
+    if (provider) args.push("--provider", provider)
+
+    try {
+      const { stdout, stderr } = await execFileAsync(reviewCommand.command, args, {
+        cwd: state.worktree,
+        timeout: Number(process.env.OPENCODE_PLAN_RUNNER_EXTERNAL_REVIEW_TIMEOUT_MS || 540000),
+        maxBuffer: 10 * 1024 * 1024,
+      })
+      const findings = [stdout, stderr].filter(Boolean).join("\n")
+      if (!findings.trim()) {
+        failures.push(`${provider || "command"}: external review produced no output`)
+        continue
+      }
+      return {
+        result: reviewTextHasBlockingIssues(findings) ? "issues" : "pass",
+        round: reviewRound,
+        provider: provider || "command",
+        findings,
+      }
+    } catch (error) {
+      failures.push(`${provider || "command"}: ${formatDiagnosticError({ ...error, stderr: error?.stderr, body: error?.stdout })}`)
     }
-  } catch (error) {
-    return {
-      result: "unavailable",
-      provider: "command",
-      findings: formatDiagnosticError({ ...error, stderr: error?.stderr, body: error?.stdout }),
-    }
+  }
+  return {
+    result: "unavailable",
+    round: reviewRound,
+    provider: providers.at(-1) || "command",
+    findings: failures.join("\n\n") || "external review unavailable",
   }
 }
 
-function repairPromptText(source, reasons) {
-  return [
-    `Plan-runner ${source} failed. Continue in this same session and repair the following issues:`,
-    ...reasons.map((reason) => `- ${reason}`),
-  ].join("\n")
+function nextExternalReviewRound(state) {
+  return Math.min(((state.reviews?.external || []).length) + 1, 2)
 }
 
-async function promptRepair({ stateDir, client, directory, state, source, reasons }) {
+function completionGateActive(state) {
+  return state.completion_gate?.mode === "finish_plan"
+}
+
+function rememberCompletionGateResult(state, status, source, reasons) {
+  if (!completionGateActive(state)) return
+  state.completion_gate = {
+    ...state.completion_gate,
+    status,
+    source,
+    reasons,
+    updated_at: Date.now(),
+  }
+}
+
+async function promptRepair({ stateDir, state, source, reasons }) {
   const nextState = cloneState(state)
-  if (nextState.reviews.round >= 2) {
+  const completionGateExhausted = completionGateActive(nextState) && source === "external_review" && (nextState.reviews.external || []).length >= 2
+  if (nextState.reviews.round >= 2 || completionGateExhausted) {
     nextState.status = "blocked"
+    rememberCompletionGateResult(nextState, "blocked", source, reasons)
     nextState.updated_at = Date.now()
     await writeTaskState(stateDir, nextState)
     await appendEvent(stateDir, state.task_id, { type: `${source}_blocked`, reasons })
     return
   }
 
-  if (!client?.session?.promptAsync) {
-    nextState.status = "interrupted"
-    nextState.updated_at = Date.now()
-    await writeTaskState(stateDir, nextState)
-    await appendEvent(stateDir, state.task_id, { type: `${source}_repair_prompt_failed`, error: "promptAsync unavailable", reasons })
-    return
+  nextState.status = "repairing"
+  nextState.reviews.round += 1
+  rememberCompletionGateResult(nextState, "repair_required", source, reasons)
+  nextState.updated_at = Date.now()
+  await writeTaskState(stateDir, nextState)
+  await appendEvent(stateDir, state.task_id, { type: `${source}_repair_required`, reasons })
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function waitForCompletionGateState(stateDir, taskID, { pollMs, timeoutMs }) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    const state = await readTaskState(stateDir, taskID)
+    if (!state) return null
+    if (COMPLETION_GATE_RESULT_STATUSES.has(state.status)) return state
+    await sleep(pollMs)
   }
 
-  try {
-    await client.session.promptAsync({
-      path: { id: nextState.plan_runner_session_id },
-      query: { directory: directory || nextState.worktree },
-      body: { parts: [{ type: "text", text: repairPromptText(source.replaceAll("_", " "), reasons) }] },
-    })
-    nextState.status = "repairing"
-    nextState.reviews.round += 1
+  const state = await readTaskState(stateDir, taskID)
+  if (!state) return null
+  state.status = "interrupted"
+  rememberCompletionGateResult(state, "interrupted", "completion_gate", [`finish_plan timed out after ${timeoutMs}ms`])
+  state.updated_at = Date.now()
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, taskID, { type: "finish_plan_timeout", timeout_ms: timeoutMs })
+  return state
+}
+
+function completionGateResultText(state) {
+  const gate = state?.completion_gate || {}
+  const status = state?.status === "validated"
+    ? "validated"
+    : state?.status === "repairing"
+      ? "repair_required"
+      : state?.status || "interrupted"
+  const lines = [
+    `Result: ${status}`,
+    "",
+    `Harness Task ID: ${state?.task_id || "unknown"}`,
+  ]
+  if (gate.source) lines.push(`Source: ${String(gate.source).replaceAll("_", " ")}`)
+  if (Array.isArray(gate.reasons) && gate.reasons.length) {
+    lines.push("", "Reasons:", ...gate.reasons.map((reason) => `- ${reason}`))
+  }
+  if (state?.reviews?.audit?.length || state?.reviews?.external?.length) {
+    lines.push("", "Reviews:")
+    if (state.reviews.audit.length) lines.push(`- audit: ${state.reviews.audit.at(-1).result}`)
+    if (state.reviews.external.length) {
+      const latest = state.reviews.external.at(-1)
+      lines.push(`- external: ${latest.result}${latest.provider ? ` (${latest.provider})` : ""}`)
+    }
+  }
+  return lines.join("\n")
+}
+
+async function finishPlanTool(args, context, stateDir, { client, directory, externalReview, pollMs, timeoutMs }) {
+  if (context.agent !== "plan-runner") throw new Error("finish_plan is only available to the plan-runner agent")
+  const sessionID = context.sessionID
+  const state = await readTaskStateForSession(stateDir, sessionID)
+  if (!state) throw new Error("finish_plan task state is not readable")
+  if (state.plan_runner_session_id !== sessionID) throw new Error("finish_plan must run in the bound plan-runner session")
+
+  const nextState = cloneState(state)
+  nextState.completion_gate = {
+    mode: "finish_plan",
+    status: "running",
+    started_at: Date.now(),
+  }
+  if ((nextState.self_check?.status || "not_started") === "not_started" && isCompletionAttempt(nextState)) {
+    nextState.self_check = {
+      status: "completed",
+      round: (nextState.self_check?.round || 0) + 1,
+    }
+    await completeSelfCheck({ stateDir, sessionID, state: nextState, boundary: "finish_plan" })
+  } else {
     nextState.updated_at = Date.now()
     await writeTaskState(stateDir, nextState)
-    await appendEvent(stateDir, state.task_id, { type: `${source}_repair_prompt_sent`, reasons })
-  } catch (error) {
-    nextState.status = "interrupted"
-    nextState.updated_at = Date.now()
-    await writeTaskState(stateDir, nextState)
-    await appendEvent(stateDir, state.task_id, { type: `${source}_repair_prompt_failed`, error: formatDiagnosticError(error), reasons })
+  }
+
+  await continuePlanRunnerReview({ stateDir, client, directory, sessionID, state: nextState, externalReview })
+  const finishedState = await waitForCompletionGateState(stateDir, nextState.task_id, { pollMs, timeoutMs })
+  if (!finishedState) throw new Error("finish_plan task state disappeared while waiting for completion gate")
+
+  return {
+    output: completionGateResultText(finishedState),
+    metadata: {
+      task_id: finishedState.task_id,
+      status: finishedState.status,
+      completion_gate: finishedState.completion_gate || null,
+    },
   }
 }
 
@@ -743,15 +979,14 @@ async function finalCompletenessFailures(state) {
   const completed = new Set(completedTaskIDs(state))
   for (const task of state.plan_contract.tasks) {
     if (!completed.has(task.id)) reasons.push(`${task.id} has no completed todo`)
-    const hasDiffEvidence = state.evidence.some((item) => item.type === "diff" && item.task_ids?.includes(task.id))
-    if (!hasDiffEvidence) reasons.push(`${task.id} has no diff evidence`)
+    reasons.push(...taskEvidenceFailures(state, task))
   }
   const evidenceFiles = new Set(state.evidence.filter((item) => item.type === "diff").flatMap((item) => item.files || []))
   for (const file of state.modified_files || []) {
     if (!evidenceFiles.has(file)) reasons.push(`modified file is not mapped to evidence: ${file}`)
   }
   if (state.child_sessions?.some((child) => child.status === "running")) reasons.push("child sessions are still running")
-  if (state.reviews.audit.at(-1)?.result !== "pass") reasons.push("latest audit review did not pass")
+  if (!state.reviews.audit.length) reasons.push("audit review did not run")
   if (state.reviews.external.at(-1)?.result !== "pass") reasons.push("latest external review did not pass")
   if (state.reviews.round > 2) reasons.push("review repair round limit exceeded")
   return reasons
@@ -760,12 +995,13 @@ async function finalCompletenessFailures(state) {
 async function finalizeIfComplete({ stateDir, client, directory, state }) {
   const reasons = await finalCompletenessFailures(state)
   if (reasons.length) {
-    await promptRepair({ stateDir, client, directory, state, source: "completeness_check", reasons })
+    await promptRepair({ stateDir, state, source: "completeness_check", reasons })
     return
   }
 
   const nextState = cloneState(state)
   nextState.status = "validated"
+  rememberCompletionGateResult(nextState, "validated", "terminal_gate", [])
   nextState.updated_at = Date.now()
   await writeTaskState(stateDir, nextState)
   await appendEvent(stateDir, state.task_id, { type: "task_validated" })
@@ -792,7 +1028,7 @@ async function runExternalReview({ stateDir, client, directory, state, externalR
 
   if (review.result !== "pass") {
     await appendEvent(stateDir, state.task_id, { type: "external_review_failed", result: review.result })
-    await promptRepair({ stateDir, client, directory, state: reviewedState, source: "external_review", reasons: [review.findings || `external review ${review.result}`] })
+    await promptRepair({ stateDir, state: reviewedState, source: "external_review", reasons: [review.findings || `external review ${review.result}`] })
     return
   }
 
@@ -801,7 +1037,7 @@ async function runExternalReview({ stateDir, client, directory, state, externalR
 }
 
 async function handleAuditReviewMessage(stateDir, event) {
-  if (event.type !== "message.updated") return
+  if (event.type !== "message.updated" && event.type !== "message.part.updated") return
   const sessionID = event.properties?.sessionID
   if (!sessionID) return
   const index = await readSessionIndex(stateDir, sessionID)
@@ -809,7 +1045,11 @@ async function handleAuditReviewMessage(stateDir, event) {
 
   const state = await readTaskState(stateDir, index.task_id)
   if (!state || state.status !== "audit_review") return
-  state.reviews.pending_audit_text = extractTextFromMessageInfo(event.properties?.info)
+  const text = event.type === "message.part.updated"
+    ? extractTextFromMessagePart(event.properties?.part)
+    : extractTextFromMessageInfo(event.properties?.info)
+  if (!text) return
+  state.reviews.pending_audit_text = text
   state.updated_at = Date.now()
   await writeTaskState(stateDir, state)
 }
@@ -836,7 +1076,7 @@ async function handleAuditReviewIdle({ stateDir, client, directory, event, exter
   const reasons = auditFailureReasons(audit)
   if (reasons.length) {
     await appendEvent(stateDir, state.task_id, { type: "audit_review_failed", reasons })
-    await promptRepair({ stateDir, client, directory, state: nextState, source: "audit_review", reasons })
+    await promptRepair({ stateDir, state: nextState, source: "audit_review", reasons })
     return
   }
 
@@ -875,8 +1115,8 @@ async function recordAuditDispatchFailure({ stateDir, sessionID, state, error, a
 }
 
 async function dispatchAuditReview({ stateDir, client, directory, sessionID, state }) {
-  if (!client?.session?.create || !client?.session?.promptAsync) {
-    await recordAuditDispatchFailure({ stateDir, sessionID, state, error: "session create/promptAsync unavailable" })
+  if (!client?.session?.create || !client?.session?.prompt) {
+    await recordAuditDispatchFailure({ stateDir, sessionID, state, error: "session create/prompt unavailable" })
     return
   }
 
@@ -890,6 +1130,7 @@ async function dispatchAuditReview({ stateDir, client, directory, sessionID, sta
         title: `plan-runner audit: ${state.task_id}`,
       },
     })
+    throwIfSdkError(created, "audit session create failed")
     auditSessionID = sessionIDFromCreateResult(created)
     if (!auditSessionID) throw new Error("audit session id missing")
 
@@ -901,7 +1142,7 @@ async function dispatchAuditReview({ stateDir, client, directory, sessionID, sta
     await writeTaskState(stateDir, nextState)
     await writeSessionIndex(stateDir, auditSessionID, state.task_id, "audit")
 
-    await client.session.promptAsync({
+    const prompted = await client.session.prompt({
       path: { id: auditSessionID },
       query,
       body: {
@@ -909,6 +1150,7 @@ async function dispatchAuditReview({ stateDir, client, directory, sessionID, sta
         parts: [{ type: "text", text: auditPromptText(state) }],
       },
     })
+    throwIfSdkError(prompted, "audit prompt dispatch failed")
     await appendEvent(stateDir, state.task_id, { type: "audit_review_dispatched", session_id: sessionID, audit_session_id: auditSessionID })
   } catch (error) {
     await recordAuditDispatchFailure({ stateDir, sessionID, state, error, auditSessionID })
@@ -918,6 +1160,16 @@ async function dispatchAuditReview({ stateDir, client, directory, sessionID, sta
 function diffFileName(entry) {
   if (typeof entry === "string") return entry
   return entry?.file || entry?.path || entry?.filename || entry?.name || null
+}
+
+function patchFileNames(patchText) {
+  if (typeof patchText !== "string") return []
+  const files = []
+  for (const line of patchText.split("\n")) {
+    const match = line.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/) || line.match(/^\*\*\* Move to: (.+)$/)
+    if (match?.[1]?.trim()) files.push(match[1].trim())
+  }
+  return [...new Set(files)]
 }
 
 function normalizeEvidenceFile(state, file) {
@@ -939,17 +1191,17 @@ async function recordDiffEvidence(stateDir, { sessionID, files, eventID }) {
   const state = await readTaskStateForSession(stateDir, sessionID)
   if (!state) return
 
-  const taskID = activeTodoTaskID(state.todo.last_seen, state.plan_contract.tasks)
-  if (!taskID) return
+  const taskIDs = evidenceTaskIDs(state)
+  if (!taskIDs.length) return
 
   const normalizedFiles = [...new Set(files.map((file) => normalizeEvidenceFile(state, file)).filter(Boolean))]
   if (normalizedFiles.length === 0) return
 
-  state.modified_files = [...new Set([...state.modified_files, ...normalizedFiles])]
+  state.modified_files = [...new Set([...(state.modified_files || []), ...normalizedFiles])]
   const evidence = {
     id: `ev-diff-${eventID}`,
     type: "diff",
-    task_ids: [taskID],
+    task_ids: taskIDs,
     event_ids: [eventID],
     files: normalizedFiles,
   }
@@ -982,16 +1234,23 @@ async function handleMessageDiff(stateDir, event) {
   }
 }
 
-async function continuePlanRunnerReview({ stateDir, client, directory, sessionID, state }) {
+async function continuePlanRunnerReview({ stateDir, client, directory, sessionID, state, externalReview }) {
   if (state.reviews.round >= 2) {
     state.status = "blocked"
+    rememberCompletionGateResult(state, "blocked", "review_round_limit", ["review repair round limit exceeded"])
     state.updated_at = Date.now()
     await writeTaskState(stateDir, state)
     return
   }
 
-  const reasons = findDeterministicCheckFailures(state)
+  const reasons = [...findDeterministicCheckFailures(state), ...await gitCommitBoundaryFailures(state)]
   if (reasons.length === 0) {
+    if ((state.reviews.audit || []).length) {
+      await appendEvent(stateDir, state.task_id, { type: "deterministic_check_passed", session_id: sessionID })
+      await runExternalReview({ stateDir, client, directory, state, externalReview })
+      return
+    }
+
     state.status = "audit_review"
     state.updated_at = Date.now()
     await writeTaskState(stateDir, state)
@@ -1000,36 +1259,12 @@ async function continuePlanRunnerReview({ stateDir, client, directory, sessionID
     return
   }
 
-  if (!client?.session?.promptAsync) {
-    state.status = "interrupted"
-    state.updated_at = Date.now()
-    await writeTaskState(stateDir, state)
-    await appendEvent(stateDir, state.task_id, { type: "repair_prompt_failed", session_id: sessionID, error: "promptAsync unavailable", reasons })
-    return
-  }
-
-  const text = [
-    "Plan-runner validation failed. Continue in this same session and repair the following issues:",
-    ...reasons.map((reason) => `- ${reason}`),
-  ].join("\n")
-
-  try {
-    await client.session.promptAsync({
-      path: { id: sessionID },
-      query: { directory: directory || state.worktree },
-      body: { parts: [{ type: "text", text }] },
-    })
-    state.status = "repairing"
-    state.reviews.round += 1
-    state.updated_at = Date.now()
-    await writeTaskState(stateDir, state)
-    await appendEvent(stateDir, state.task_id, { type: "repair_prompt_sent", session_id: sessionID, reasons })
-  } catch (error) {
-    state.status = "interrupted"
-    state.updated_at = Date.now()
-    await writeTaskState(stateDir, state)
-    await appendEvent(stateDir, state.task_id, { type: "repair_prompt_failed", session_id: sessionID, error: String(error?.message || error), reasons })
-  }
+  state.status = "repairing"
+  state.reviews.round += 1
+  rememberCompletionGateResult(state, "repair_required", "deterministic_check", reasons)
+  state.updated_at = Date.now()
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, state.task_id, { type: "repair_required", session_id: sessionID, reasons })
 }
 
 async function completeSelfCheck({ stateDir, sessionID, state, boundary }) {
@@ -1037,72 +1272,6 @@ async function completeSelfCheck({ stateDir, sessionID, state, boundary }) {
   state.updated_at = Date.now()
   await writeTaskState(stateDir, state)
   await appendEvent(stateDir, state.task_id, { type: "self_check_completed", session_id: sessionID, boundary })
-}
-
-async function readPlanRunnerBoundaryState(stateDir, event, allowedTypes) {
-  if (!allowedTypes.includes(event.type)) return null
-  const sessionID = event.properties?.sessionID
-  if (!sessionID) return null
-  const index = await readSessionIndex(stateDir, sessionID)
-  if (!index || index.role !== "plan-runner") return null
-  const state = await readTaskState(stateDir, index.task_id)
-  if (!state || state.plan_runner_session_id !== sessionID) return null
-  return { sessionID, state }
-}
-
-async function handlePlanRunnerSelfCheckTodoBoundary({ stateDir, client, directory, event }) {
-  const boundary = await readPlanRunnerBoundaryState(stateDir, event, ["todo.updated"])
-  if (!boundary) return
-  const { sessionID, state } = boundary
-  if (state.status !== "self_checking" || state.self_check?.status !== "prompted") return
-  if (!isCompletionAttempt(state)) return
-
-  await completeSelfCheck({ stateDir, sessionID, state, boundary: event.type })
-  await continuePlanRunnerReview({ stateDir, client, directory, sessionID, state })
-}
-
-async function handlePlanRunnerIdle({ stateDir, client, directory, event }) {
-  const boundary = await readPlanRunnerBoundaryState(stateDir, event, ["session.idle"])
-  if (!boundary) return
-  const { sessionID, state } = boundary
-  if (!["waiting_for_todo", "ready_to_execute", "executing", "repairing", "self_checking"].includes(state.status)) return
-
-  if (state.status === "self_checking" && state.self_check?.status === "prompted") {
-    await completeSelfCheck({ stateDir, sessionID, state, boundary: event.type })
-  } else if ((state.self_check?.status || "not_started") === "not_started" && isCompletionAttempt(state)) {
-    if (!client?.session?.promptAsync) {
-      state.status = "interrupted"
-      state.updated_at = Date.now()
-      await writeTaskState(stateDir, state)
-      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: "promptAsync unavailable" })
-      return
-    }
-
-    try {
-      await client.session.promptAsync({
-        path: { id: sessionID },
-        query: { directory: directory || state.worktree },
-        body: { parts: [{ type: "text", text: selfCheckPromptText() }] },
-      })
-      state.status = "self_checking"
-      state.self_check = {
-        status: "prompted",
-        round: (state.self_check?.round || 0) + 1,
-      }
-      state.updated_at = Date.now()
-      await writeTaskState(stateDir, state)
-      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_sent", session_id: sessionID })
-      return
-    } catch (error) {
-      state.status = "interrupted"
-      state.updated_at = Date.now()
-      await writeTaskState(stateDir, state)
-      await appendEvent(stateDir, state.task_id, { type: "self_check_prompt_failed", session_id: sessionID, error: String(error?.message || error) })
-      return
-    }
-  }
-
-  await continuePlanRunnerReview({ stateDir, client, directory, sessionID, state })
 }
 
 async function writePlanTool(args, context, stateDir) {
@@ -1147,6 +1316,8 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
   const worktree = ctx.directory || process.cwd()
   const client = ctx.client
   const externalReview = options.externalReview || ((state) => runExternalReviewCommand(state, options))
+  const completionGatePollMs = Number(options.completionGatePollMs || process.env.OPENCODE_PLAN_RUNNER_COMPLETION_GATE_POLL_MS || 1000)
+  const completionGateTimeoutMs = Number(options.completionGateTimeoutMs || process.env.OPENCODE_PLAN_RUNNER_COMPLETION_GATE_TIMEOUT_MS || 1800000)
   let eventQueue = Promise.resolve()
 
   function enqueueEvent(handler) {
@@ -1174,6 +1345,17 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
         },
         execute: (args, context) => writePlanTool(args, context, stateDir),
       }),
+      finish_plan: tool({
+        description: "Run and wait for the plan-runner terminal gate before returning a final report.",
+        args: {},
+        execute: (args, context) => finishPlanTool(args, context, stateDir, {
+          client,
+          directory: worktree,
+          externalReview,
+          pollMs: completionGatePollMs,
+          timeoutMs: completionGateTimeoutMs,
+        }),
+      }),
     },
 
     "tool.execute.before": async (input, output) => {
@@ -1189,7 +1371,14 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
         dispatchCallID: input.callID,
         worktree,
       })
-      state.git_base = await currentGitHead(worktree)
+      const gitInfo = await inspectGitWorktree(worktree)
+      const blocker = planRunnerDispatchBlocker(gitInfo)
+      state.git = gitInfo
+      state.base_commit = gitInfo.head || null
+      state.git_base = gitInfo.head || await currentGitHead(worktree)
+      if (blocker) {
+        await blockPlanRunnerDispatch({ stateDir, state, parentSessionID: input.sessionID, blocker })
+      }
       await writeTaskState(stateDir, state)
       await writeSessionIndex(stateDir, input.sessionID, taskID, "parent")
       await appendEvent(stateDir, taskID, { type: "dispatch_started", session_id: input.sessionID, call_id: input.callID })
@@ -1223,12 +1412,10 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
     event: async ({ event }) => enqueueEvent(async () => {
       if (shouldCheckExpiredTasks(event)) await markExpiredTasks(stateDir)
       await handleTodoUpdated(stateDir, event)
-      await handlePlanRunnerSelfCheckTodoBoundary({ stateDir, client, directory: worktree, event })
       await handleSessionDiff(stateDir, event)
       await handleMessageDiff(stateDir, event)
       await handleAuditReviewMessage(stateDir, event)
       await handleAuditReviewIdle({ stateDir, client, directory: worktree, event, externalReview })
-      await handlePlanRunnerIdle({ stateDir, client, directory: worktree, event })
     }),
   }
 }

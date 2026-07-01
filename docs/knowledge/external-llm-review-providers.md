@@ -24,6 +24,18 @@ python reviewer.py HEAD WORKTREE --worktree . --provider bailian
 # 默认 idealab-anthropic
 ```
 
+## plan-runner harness fallback
+
+`reviewer.py` 直接 CLI 仍是单 provider；plan-runner harness 在调用默认 reviewer
+时会做 provider fallback，默认链路：
+
+```text
+idealab-anthropic -> bailian -> idealab-openai
+```
+
+运行时可用 `OPENCODE_PLAN_RUNNER_EXTERNAL_REVIEW_PROVIDERS` 覆盖链路，值支持逗号或空白分隔。
+如果设置 `EXTERNAL_LLM_REVIEW_PROVIDER`，harness 只使用该 provider，便于显式锁定某个网关。
+
 ## 新增 provider 步骤
 1. `providers/<name>.yaml`：写配置，敏感字段用 `${API_KEY_VAR}`
 2. `.env.example`：加一行说明 API key 变量名

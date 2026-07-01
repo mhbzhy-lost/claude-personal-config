@@ -1,0 +1,43 @@
+{
+  "schema_version": "goal_contract.v1.1",
+  "slug": "plan-runner-commit-boundary",
+  "status": "completed",
+  "phase": "completed",
+  "current_slice": null,
+  "next_action": "No further implementation action for this goal. Restart long-running OpenCode processes before relying on the updated plugin and agent instructions.",
+  "contract_path": ".state/goal-contract/goals/plan-runner-commit-boundary/goal-contract.md",
+  "feature_list_path": ".state/goal-contract/goals/plan-runner-commit-boundary/feature-list.json",
+  "evidence_path": ".state/goal-contract/goals/plan-runner-commit-boundary/evidence.jsonl",
+  "recovery_path": ".state/goal-contract/goals/plan-runner-commit-boundary/recovery.md",
+  "amendments_path": ".state/goal-contract/goals/plan-runner-commit-boundary/amendments.jsonl",
+  "blocked_reason": null,
+  "last_verified_at": "2026-07-01T10:20:44Z",
+  "practice_profile": {
+    "schema_version": "goal_contract.practice_profile.v1",
+    "source_projects": ["claude-config"],
+    "evidence_lanes": [
+      {"id": "source", "purpose": "Code, diff, design, and repository artifact evidence."},
+      {"id": "test", "purpose": "Automated RED/GREEN and regression test evidence."},
+      {"id": "runtime", "purpose": "OpenCode task-state, event, DB, and smoke evidence."},
+      {"id": "review", "purpose": "Audit and external review evidence."},
+      {"id": "environment", "purpose": "Git repo/worktree and OpenCode restart state evidence."}
+    ],
+    "authority_ladder": [
+      {"id": "runtime_state", "rank": 1, "lane": "runtime", "allowed_claims": ["live flow validated", "child session created or blocked"], "notes": "task-state/events/DB from live smoke."},
+      {"id": "automated_test", "rank": 2, "lane": "test", "allowed_claims": ["harness behavior", "review command args"], "notes": "node tests with RED/GREEN evidence."},
+      {"id": "source_artifact", "rank": 3, "lane": "source", "allowed_claims": ["implementation shape", "documentation update"], "notes": "source diff and docs."},
+      {"id": "review_text", "rank": 4, "lane": "review", "allowed_claims": ["review assessment"], "notes": "audit/external review text."}
+    ],
+    "drift_detectors": [
+      {"id": "no-worktree-target", "invalid_when": "External review receives WORKTREE for plan-runner scope.", "action": "Mark scope drift and stop."},
+      {"id": "no-custom-snapshot", "invalid_when": "Implementation stores file contents to reconstruct a task-scoped patch.", "action": "Mark scope drift and stop."},
+      {"id": "no-dirty-dispatch", "invalid_when": "Dirty repo dispatch creates a plan-runner child session.", "action": "Mark blocker scope_conflict."}
+    ],
+    "slice_ordering_gate": [
+      {"id": "preflight-before-review", "requires": ["dispatch preflight RED/GREEN tests"], "before": ["external review range change"], "reason": "The run boundary must be valid before review range is trusted."},
+      {"id": "tests-before-live-smoke", "requires": ["automated tests", "OpenCode restart"], "before": ["live smoke"], "reason": "Live smoke should validate loaded plugin behavior, not discover basic regressions."}
+    ],
+    "blocker_taxonomy": ["environment_auth", "toolchain", "external_service", "missing_evidence", "scope_conflict", "review_rejected"],
+    "completion_rule": "Do not mark complete until every DoD item has authority-appropriate evidence."
+  }
+}

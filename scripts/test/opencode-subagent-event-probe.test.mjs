@@ -4,7 +4,8 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { buildRunArgs, createProbeWorkspace, formatServeNotReadyError, readTextFromOffset, shouldWaitForRepairEvidence, summarizeProbeEvents } from "../opencode-subagent-event-probe.mjs"
+import * as probe from "../opencode-subagent-event-probe.mjs"
+import { buildRunArgs, createAuditChildProbeWorkspace, createProbeWorkspace, formatServeNotReadyError, parseArgs, readTextFromOffset, shouldWaitForRepairEvidence, summarizeAuditChildProbe, summarizeProbeEvents } from "../opencode-subagent-event-probe.mjs"
 
 describe("opencode subagent event probe", () => {
   it("creates a self-contained OpenCode probe workspace", () => {
@@ -26,6 +27,32 @@ describe("opencode subagent event probe", () => {
       const agent = readFileSync(paths.agentPath, "utf8")
       assert.ok(agent.includes("mode: subagent"))
       assert.ok(agent.includes("bash: allow"))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("creates a self-contained audit-child prompt probe workspace", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-audit-child-probe-test-"))
+    try {
+      const paths = createAuditChildProbeWorkspace({ root })
+
+      const config = JSON.parse(readFileSync(paths.configPath, "utf8"))
+      assert.deepEqual(config.plugin, ["./plugins/audit-child-probe.js"])
+      assert.equal(config.permission, "allow")
+
+      const plugin = readFileSync(paths.pluginPath, "utf8")
+      assert.ok(plugin.includes("client.session.create"))
+      assert.ok(plugin.includes("client.session.prompt"))
+      assert.ok(plugin.includes("probe-audit"))
+      assert.ok(plugin.includes("audit.prompt.error"))
+      assert.ok(plugin.includes("audit.child.message_updated"))
+      assert.ok(plugin.includes("audit.child.idle"))
+
+      const agent = readFileSync(paths.agentPath, "utf8")
+      assert.ok(agent.includes("mode: subagent"))
+      assert.ok(agent.includes("probe-audit"))
+      assert.ok(agent.includes("write: deny"))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -61,6 +88,73 @@ describe("opencode subagent event probe", () => {
 
     assert.equal(summary.promptAsyncOk, true)
     assert.equal(summary.repairCommandObserved, true)
+  })
+
+  it("summarizes audit-child prompt, database counts, and serve log excerpt", () => {
+    const summary = summarizeAuditChildProbe({
+      events: [
+        { kind: "audit.create.ok", sessionID: "ses_child", result: { data: { id: "ses_child" } } },
+        { kind: "audit.prompt.error", sessionID: "ses_child", error: "Unexpected server error" },
+      ],
+      dbRows: {
+        session: 1,
+        message: 0,
+        part: 0,
+        session_input: 0,
+      },
+      serveLogText: "stack before\nUnexpected server error\nstack after",
+    })
+
+    assert.equal(summary.create, "ok")
+    assert.equal(summary.prompt, "error")
+    assert.equal(summary.prompt_error, "Unexpected server error")
+    assert.equal(summary.child_session_id, "ses_child")
+    assert.deepEqual(summary.db, { session: 1, message: 0, part: 0, session_input: 0, error: null })
+    assert.match(summary.log_excerpt, /Unexpected server error/)
+  })
+
+  it("preserves audit-child database read errors in the summary", () => {
+    const summary = summarizeAuditChildProbe({
+      events: [
+        { kind: "audit.create.ok", sessionID: "ses_child", result: { data: { id: "ses_child" } } },
+      ],
+      dbRows: {
+        error: "spawnSync sqlite3 ENOENT",
+      },
+    })
+
+    assert.deepEqual(summary.db, { session: 0, message: 0, part: 0, session_input: 0, error: "spawnSync sqlite3 ENOENT" })
+  })
+
+  it("resolves audit-child database path from XDG_DATA_HOME before HOME", () => {
+    assert.equal(typeof probe.opencodeDbPathFromEnv, "function")
+    assert.equal(
+      probe.opencodeDbPathFromEnv({ XDG_DATA_HOME: "/tmp/xdg-data", HOME: "/tmp/home" }),
+      join("/tmp/xdg-data", "opencode", "opencode.db"),
+    )
+    assert.equal(
+      probe.opencodeDbPathFromEnv({ HOME: "/tmp/home" }),
+      join("/tmp/home", ".local", "share", "opencode", "opencode.db"),
+    )
+  })
+
+  it("rejects probe CLI options that are missing required values", () => {
+    assert.throws(() => parseArgs(["--mode"]), /Missing value for --mode/)
+    assert.throws(() => parseArgs(["--mode", "--dry-run"]), /Missing value for --mode/)
+  })
+
+  it("summarizes audit-child event backflow for message update and idle", () => {
+    const summary = summarizeAuditChildProbe({
+      events: [
+        { kind: "audit.create.ok", sessionID: "ses_child", result: { data: { id: "ses_child" } } },
+        { kind: "audit.prompt.ok", sessionID: "ses_child", result: {} },
+        { kind: "event", event: { type: "message.updated", properties: { info: { sessionID: "ses_child" } } } },
+        { kind: "event", event: { type: "session.idle", properties: { sessionID: "ses_child" } } },
+      ],
+    })
+
+    assert.equal(summary.backflow.message_updated, true)
+    assert.equal(summary.backflow.idle, true)
   })
 
   it("includes serve log path when reporting server startup failure", () => {
