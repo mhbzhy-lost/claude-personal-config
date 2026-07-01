@@ -575,6 +575,56 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
+  it("allows todowrite during repairing so deterministic todo findings can be fixed", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
+
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+      await hooks.tool.write_plan.execute(
+        {
+          title: "Repair Todo",
+          tasks: [{ title: "Finish gate", completion_criteria: ["finish_plan attempted"] }],
+        },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
+      )
+      await hooks.event({
+        event: {
+          type: "todo.updated",
+          properties: {
+            sessionID: "ses_plan_runner",
+            todos: [{ content: "T1: Finish gate", status: "in_progress", priority: "high" }],
+          },
+        },
+      })
+
+      const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
+      const state = readJson(statePath)
+      state.status = "repairing"
+      state.completion_gate = {
+        mode: "finish_plan",
+        status: "repair_required",
+        source: "deterministic_check",
+        reasons: ["todo list still has pending or in_progress items"],
+      }
+      writeFileSync(statePath, JSON.stringify(state, null, 2))
+
+      await assert.doesNotReject(() => hooks["tool.execute.before"](
+        { tool: "todowrite", sessionID: "ses_plan_runner", callID: "call_repair_todo" },
+        { args: { todos: [{ content: "T1: Finish gate", status: "completed", priority: "high" }] } },
+      ))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("does not apply plan-runner phase gate to the parent session", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
@@ -1410,13 +1460,10 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.match(String(finishResult.output || finishResult), /fix T1 evidence/)
       assert.equal(prompts.some((payload) => payload.path?.id === "ses_plan_runner"), false)
 
-      await assert.rejects(
-        () => hooks["tool.execute.before"](
-          { tool: "todowrite", sessionID: "ses_plan_runner", callID: "call_repair_todo" },
-          { args: { todos: [{ content: "T1: Edit file", status: "in_progress" }] } },
-        ),
-        /repairing/,
-      )
+      await assert.doesNotReject(() => hooks["tool.execute.before"](
+        { tool: "todowrite", sessionID: "ses_plan_runner", callID: "call_repair_todo" },
+        { args: { todos: [{ content: "T1: Edit file", status: "in_progress" }] } },
+      ))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

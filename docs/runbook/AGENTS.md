@@ -4,4 +4,5 @@
 
 | Runbook | 场景 |
 | --- | --- |
+| [plan-runner-current-session-smoke.md](plan-runner-current-session-smoke.md) | 当前会话中验证 plan-runner 真实链路。 |
 | [plan-runner-smoke.md](plan-runner-smoke.md) | 重启 OpenCode 后烟测 plan-runner review loop。 |

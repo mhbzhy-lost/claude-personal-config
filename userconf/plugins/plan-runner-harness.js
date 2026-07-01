@@ -440,7 +440,6 @@ async function enforcePhaseGate(stateDir, input) {
   }
 
   if (state.status === "ready_to_execute" || state.status === "executing" || state.status === "repairing") {
-    if (state.status === "repairing" && input.tool === "todowrite") throw new Error("plan-runner phase gate: todowrite is not allowed during repairing")
     if (!EXECUTION_TOOLS.has(input.tool)) throw new Error(`plan-runner phase gate: ${input.tool} is not allowed during ${state.status}`)
     if (state.status !== "repairing" && EXECUTION_CONTEXT_TOOLS.has(input.tool) && countInProgressTodos(state.todo.last_seen) !== 1) {
       throw new Error("plan-runner phase gate: exactly one in_progress todo is required for execution tools")
