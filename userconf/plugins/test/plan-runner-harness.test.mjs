@@ -575,7 +575,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("allows todowrite during repairing so deterministic todo findings can be fixed", async () => {
+  it("blocks todowrite during repairing because repair work must not rewrite the original plan ledger", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -616,10 +616,100 @@ describe("PlanRunnerHarnessPlugin", () => {
       }
       writeFileSync(statePath, JSON.stringify(state, null, 2))
 
-      await assert.doesNotReject(() => hooks["tool.execute.before"](
-        { tool: "todowrite", sessionID: "ses_plan_runner", callID: "call_repair_todo" },
-        { args: { todos: [{ content: "T1: Finish gate", status: "completed", priority: "high" }] } },
-      ))
+      await assert.rejects(
+        () => hooks["tool.execute.before"](
+          { tool: "todowrite", sessionID: "ses_plan_runner", callID: "call_repair_todo" },
+          { args: { todos: [{ content: "T1: Finish gate", status: "completed", priority: "high" }] } },
+        ),
+        /todowrite is not allowed during repairing/,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("ignores finish_plan gate todos when deterministic checks decide whether original work is complete", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const prompts = []
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async () => ({ data: { id: "ses_audit" } }),
+              prompt: async (payload) => prompts.push(payload),
+            },
+          },
+        },
+        { stateDir },
+      )
+      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
+
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+      await hooks.tool.write_plan.execute(
+        {
+          title: "Gate Todo Smoke",
+          tasks: [
+            { title: "Edit file", completion_criteria: ["diff evidence exists"] },
+            { title: "Call finish_plan", completion_criteria: ["finish_plan returns validated"] },
+          ],
+        },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
+      )
+      await hooks.event({
+        event: {
+          type: "todo.updated",
+          properties: {
+            sessionID: "ses_plan_runner",
+            todos: [
+              { content: "T1: Edit file", status: "in_progress", priority: "high" },
+              { content: "T2: Call finish_plan", status: "pending", priority: "high" },
+            ],
+          },
+        },
+      })
+      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
+      await hooks.event({
+        event: {
+          type: "todo.updated",
+          properties: {
+            sessionID: "ses_plan_runner",
+            todos: [
+              { content: "T1: Edit file", status: "completed", priority: "high" },
+              { content: "T2: Call finish_plan", status: "in_progress", priority: "high" },
+            ],
+          },
+        },
+      })
+
+      const finish = hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
+      const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
+      await waitUntil(() => readJson(statePath).status === "audit_review")
+      await hooks.event({ event: auditMessageEvent(JSON.stringify({
+        round: 1,
+        kind: "audit",
+        result: "fail",
+        verified_tasks: ["T1"],
+        rejected_tasks: [],
+        unknown_tasks: [],
+        unmapped_files: [],
+        required_fixes: ["audit repair required"],
+      })) })
+      await hooks.event({ event: auditIdleEvent() })
+      const result = await finish
+      const state = readJson(statePath)
+
+      assert.equal(state.completion_gate.status, "repair_required")
+      assert.equal(state.completion_gate.source, "audit_review")
+      assert.ok(prompts.some((payload) => payload.path?.id === "ses_audit"))
+      assert.doesNotMatch(String(result.output), /todo list still has pending or in_progress items/)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1460,10 +1550,13 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.match(String(finishResult.output || finishResult), /fix T1 evidence/)
       assert.equal(prompts.some((payload) => payload.path?.id === "ses_plan_runner"), false)
 
-      await assert.doesNotReject(() => hooks["tool.execute.before"](
-        { tool: "todowrite", sessionID: "ses_plan_runner", callID: "call_repair_todo" },
-        { args: { todos: [{ content: "T1: Edit file", status: "in_progress" }] } },
-      ))
+      await assert.rejects(
+        () => hooks["tool.execute.before"](
+          { tool: "todowrite", sessionID: "ses_plan_runner", callID: "call_repair_todo" },
+          { args: { todos: [{ content: "T1: Edit file", status: "in_progress" }] } },
+        ),
+        /todowrite is not allowed during repairing/,
+      )
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

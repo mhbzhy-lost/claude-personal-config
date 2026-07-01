@@ -41,7 +41,7 @@ Plan document requirements:
 - Do not use legacy TODO/DONE markers in plan markdown. The harness uses `Plan item T1` style markers to avoid old plan-tracker conflicts.
 - Include the goal, decided approach, non-goals, task breakdown, completion criteria, DAG dependencies, parallelizable task sets, risks, and stop conditions in the `write_plan` input.
 - Each task must be concrete and verifiable. Avoid vague items such as "优化逻辑", "完善错误处理", or "补充测试" without observable completion criteria.
-- Do not create a plan task for the final report. The final report is outside the plan and happens only after every plan todo is completed and `finish_plan` returns `validated`.
+- Do not create a plan task for `finish_plan`, waiting for `validated`, or the final report. These are harness lifecycle steps outside the plan; plan tasks must describe only the original implementation and validation work.
 - For logic changes, follow test-driven development unless explicitly exempted by the governing instructions. Record the RED/GREEN verification commands in the plan or final report.
 - The harness blocks dirty repo startup and reviews only the local commit range produced after dispatch. Do not rely on uncommitted worktree diff as completion scope.
 - Do not ask the user to choose an execution mode after calling `write_plan`. The user already chose execution by invoking this agent.

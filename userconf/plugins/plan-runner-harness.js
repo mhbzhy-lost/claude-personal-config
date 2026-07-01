@@ -10,6 +10,7 @@ const PLANNING_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", 
 const TODO_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "todowrite"])
 const EXECUTION_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "edit", "write", "apply_patch", "bash", "task", "todowrite", "finish_plan"])
 const EXECUTION_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash", "task"])
+const TERMINAL_GATE_TASK_RE = /\bfinish_plan\b|final report|最终报告|终态门禁/i
 const ACTIVE_STATUSES = new Set(["dispatching", "planning_required", "waiting_for_todo", "ready_to_execute", "executing", "audit_review", "external_review", "repairing", "interrupted"])
 const COMPLETION_GATE_RESULT_STATUSES = new Set(["validated", "repairing", "blocked", "interrupted", "stale"])
 
@@ -391,7 +392,30 @@ function activeTodoTaskID(todos = [], tasks = []) {
   const active = todos.find((todo) => todo.status === "in_progress")
   if (!active) return null
   const content = String(active.content || "")
-  return tasks.find((task) => content.includes(task.id))?.id || null
+  return tasks.find((task) => !isTerminalGateTask(task) && content.includes(task.id))?.id || null
+}
+
+function isTerminalGateTask(task = {}) {
+  return TERMINAL_GATE_TASK_RE.test([task.title, ...(task.completion_criteria || [])].filter(Boolean).join("\n"))
+}
+
+function taskForTodo(state, todo) {
+  const content = String(todo?.content || "")
+  return state.plan_contract.tasks.find((task) => content.includes(task.id)) || null
+}
+
+function isTerminalGateTodo(state, todo) {
+  if (TERMINAL_GATE_TASK_RE.test(String(todo?.content || ""))) return true
+  const task = taskForTodo(state, todo)
+  return task ? isTerminalGateTask(task) : false
+}
+
+function originalPlanTasks(state) {
+  return state.plan_contract.tasks.filter((task) => !isTerminalGateTask(task))
+}
+
+function originalTodos(state) {
+  return state.todo.last_seen.filter((todo) => !isTerminalGateTodo(state, todo))
 }
 
 function repairEvidenceTaskIDs(state) {
@@ -440,6 +464,7 @@ async function enforcePhaseGate(stateDir, input) {
   }
 
   if (state.status === "ready_to_execute" || state.status === "executing" || state.status === "repairing") {
+    if (state.status === "repairing" && input.tool === "todowrite") throw new Error("plan-runner phase gate: todowrite is not allowed during repairing")
     if (!EXECUTION_TOOLS.has(input.tool)) throw new Error(`plan-runner phase gate: ${input.tool} is not allowed during ${state.status}`)
     if (state.status !== "repairing" && EXECUTION_CONTEXT_TOOLS.has(input.tool) && countInProgressTodos(state.todo.last_seen) !== 1) {
       throw new Error("plan-runner phase gate: exactly one in_progress todo is required for execution tools")
@@ -502,7 +527,7 @@ async function recordToolEvidence(stateDir, input, output) {
 }
 
 function completedTaskIDs(state) {
-  return state.plan_contract.tasks
+  return originalPlanTasks(state)
     .filter((task) => state.todo.last_seen.some((todo) => todo.status === "completed" && String(todo.content || "").includes(task.id)))
     .map((task) => task.id)
 }
@@ -511,7 +536,7 @@ function findDeterministicCheckFailures(state) {
   const reasons = []
   if (!state.plan_path || !state.plan_sha256 || state.plan_contract.tasks.length === 0) reasons.push("plan is not written")
   if (!state.todo.mirrored) reasons.push("todo list does not mirror all plan tasks")
-  if (state.todo.last_seen.some((todo) => todo.status === "pending" || todo.status === "in_progress")) reasons.push("todo list still has pending or in_progress items")
+  if (originalTodos(state).some((todo) => todo.status === "pending" || todo.status === "in_progress")) reasons.push("todo list still has pending or in_progress items")
 
   for (const taskID of completedTaskIDs(state)) {
     const task = state.plan_contract.tasks.find((item) => item.id === taskID)
@@ -552,17 +577,18 @@ function isCompletionAttempt(state) {
   if (!state.plan_path || !state.plan_sha256 || state.plan_contract.tasks.length === 0) return false
   if (!state.todo.mirrored) return false
   if (completedTaskIDs(state).length === 0) return false
-  return !state.todo.last_seen.some((todo) => todo.status === "pending" || todo.status === "in_progress")
+  return !originalTodos(state).some((todo) => todo.status === "pending" || todo.status === "in_progress")
 }
 
 function auditPromptText(state) {
   const modifiedFiles = Array.isArray(state.modified_files) ? state.modified_files : []
   const files = modifiedFiles.length ? modifiedFiles.map((file) => `- ${file}`) : ["- none recorded"]
-  const tasks = state.plan_contract.tasks.length
-    ? state.plan_contract.tasks.map((task) => `- ${task.id}: ${task.title}; completion: ${task.completion_criteria.join("; ")}`)
+  const planTasks = originalPlanTasks(state)
+  const tasks = planTasks.length
+    ? planTasks.map((task) => `- ${task.id}: ${task.title}; completion: ${task.completion_criteria.join("; ")}`)
     : ["- none recorded"]
-  const todos = state.plan_contract.tasks.length
-    ? state.plan_contract.tasks.map((task) => {
+  const todos = planTasks.length
+    ? planTasks.map((task) => {
       const todo = state.todo.last_seen.find((item) => String(item.content || "").includes(task.id))
       const status = todo?.status || "missing"
       return `- ${task.id}: ${status} - ${task.title}`
@@ -974,9 +1000,9 @@ async function finalCompletenessFailures(state) {
     }
   }
   if (!state.todo.mirrored) reasons.push("todo list does not mirror all plan tasks")
-  if (state.todo.last_seen.some((todo) => todo.status === "pending" || todo.status === "in_progress")) reasons.push("todo list still has pending or in_progress items")
+  if (originalTodos(state).some((todo) => todo.status === "pending" || todo.status === "in_progress")) reasons.push("todo list still has pending or in_progress items")
   const completed = new Set(completedTaskIDs(state))
-  for (const task of state.plan_contract.tasks) {
+  for (const task of originalPlanTasks(state)) {
     if (!completed.has(task.id)) reasons.push(`${task.id} has no completed todo`)
     reasons.push(...taskEvidenceFailures(state, task))
   }

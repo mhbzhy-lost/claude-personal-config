@@ -175,17 +175,17 @@ tool/event hook 行为。
 - 普通执行阶段允许 `apply_patch`，但它和 `edit` / `write` / `bash` / `task` 一样要求恰好一个
   `in_progress` todo；`skill` 不绑定执行上下文，不要求 active todo。
 - terminal gate 状态（`audit_review` / `external_review`）禁止 plan-runner 工具调用。`repairing`
-  允许小修工具和 `todowrite`，因为 deterministic check 可能把 todo 未收敛作为 repair
-  finding；证据归属仍由 harness 从缺失 diff evidence 或最新 audit 结果推导。
+  允许小修工具，但继续禁止 `todowrite`，避免在门禁失败后重写原始计划账本；证据归属仍由
+  harness 从缺失 diff evidence 或最新 audit 结果推导。
 - repair 后不能依赖 `session.idle` 或 completed assistant `message.updated` 自动推进。plan-runner
   必须再次调用 `finish_plan`；这是唯一 terminal gate boundary。
 - deterministic / final completeness 不消费 agent 提交的 evidence 契约；completed task
   需要 harness-observed diff evidence。command log 只作为实际命令日志，不作为完成条件。
 - `plan-runner-audit` 只触发一次。audit fail 会回流一次 repair；repair 后 deterministic
   通过时直接进入 external review，不再次派发 audit，避免 LLM 审计循环不收敛。
-- plan-runner 的最终报告不应建模为 plan task；所有 plan todos 应尽量在首次 `finish_plan`
-  前 completed。若 `finish_plan` 返回 todo 未收敛的 `repair_required`，repair 阶段允许
-  `todowrite` 补齐状态后再次调用 `finish_plan`。只有 `finish_plan` 返回 `validated` 后才能输出最终报告，避免主会话先收到未经过门禁的 completed。
+- plan-runner 的最终报告、`finish_plan` 调用、等待 `validated` 等终态门禁动作不应建模为
+  plan task。若 agent 仍把这些动作写进 todo，harness 在 deterministic / final completeness
+  的 todo 完成度审查中忽略这类 gate todo；原始计划任务仍必须 completed 且有 evidence。
 - external reviewer 的 `--review-round` 只由 `reviews.external.length + 1` 推导，最多为 2；
   `reviews.round` 仅是 harness repair loop 计数，不复用为 external review 轮次。
 - 损坏 task state JSON 的恢复路径由单测覆盖：`session.idle` 不抛异常，坏文件会进入

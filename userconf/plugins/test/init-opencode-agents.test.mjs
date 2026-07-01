@@ -515,7 +515,7 @@ describe("init_opencode agents sync", () => {
     assert.match(prompt, /repo is clean/i)
     assert.match(prompt, /call `finish_plan` before writing any final report/i)
     assert.match(prompt, /Only after `finish_plan` returns `validated`/i)
-    assert.match(prompt, /Do not create a plan task for the final report/i)
+    assert.match(prompt, /Do not create a plan task for `finish_plan`/i)
     assert.doesNotMatch(prompt, /evidence_required/)
     assert.doesNotMatch(prompt, /provide evidence/i)
     assert.doesNotMatch(prompt, /claimed_done.*evidence/i)
