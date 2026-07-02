@@ -1357,6 +1357,33 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
+  it("watchdog does not nudge when legacy completion gate status is interrupted or stale", async () => {
+    for (const status of ["interrupted", "stale"]) {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        const prompts = []
+        const hooks = await PlanRunnerHarnessPlugin(
+          { directory: workspace, client: { session: { prompt: async (payload) => prompts.push(payload) } } },
+          { stateDir },
+        )
+        const statePath = await prepareCompletionReadyState({ hooks, workspace, stateDir })
+        const stateBeforeIdle = readJson(statePath)
+        stateBeforeIdle.completion_gate = { status, updated_at: Date.now() }
+        writeFileSync(statePath, JSON.stringify(stateBeforeIdle, null, 2) + "\n")
+
+        await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
+
+        const state = readJson(statePath)
+        assert.equal(prompts.length, 0)
+        assert.equal(state.watchdog_nudge, undefined)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }
+  })
+
   it("watchdog records failed prompt attempts so idle does not spam retries", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
@@ -1388,6 +1415,39 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.equal(typeof state.watchdog_nudge.last_sent_at, "number")
       const events = readFileSync(join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl"), "utf8")
       assert.equal((events.match(/"type":"watchdog_nudge_failed"/g) || []).length, 1)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("watchdog records failed prompt events under the session index task id", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              prompt: async () => {
+                throw new Error("prompt unavailable")
+              },
+            },
+          },
+        },
+        { stateDir },
+      )
+      const statePath = await prepareCompletionReadyState({ hooks, workspace, stateDir })
+      const stateBeforeIdle = readJson(statePath)
+      delete stateBeforeIdle.task_id
+      writeFileSync(statePath, JSON.stringify(stateBeforeIdle, null, 2) + "\n")
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
+
+      const events = readFileSync(join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl"), "utf8")
+      assert.match(events, /"type":"watchdog_nudge_failed"/)
+      assert.equal(existsSync(join(stateDir, "events", "undefined.jsonl")), false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

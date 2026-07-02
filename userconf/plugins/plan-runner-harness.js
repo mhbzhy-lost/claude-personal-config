@@ -609,7 +609,7 @@ function hasRunningChildSession(state) {
 }
 
 function hasTerminalGateResult(state) {
-  return [state.status, state.completion_gate?.status].some((status) => status === "validated" || status === "blocked")
+  return [state.status, state.completion_gate?.status].some((status) => TERMINAL_COMPLETION_GATE_STATUSES.has(status))
 }
 
 function watchdogNudgeCount(state) {
@@ -1316,7 +1316,8 @@ async function handlePlanRunnerWatchdogIdle({ stateDir, client, directory, event
 
   const index = await readSessionIndex(stateDir, sessionID)
   if (!index || index.role !== "plan-runner") return
-  const state = await readTaskState(stateDir, index.task_id)
+  let state = await readTaskState(stateDir, index.task_id)
+  if (state && !state.task_id) state = { ...state, task_id: index.task_id }
   if (!shouldSendWatchdogNudge(state, sessionID)) return
 
   const nextState = cloneState(state)
@@ -1339,11 +1340,11 @@ async function handlePlanRunnerWatchdogIdle({ stateDir, client, directory, event
     })
     throwIfSdkError(prompted, "watchdog nudge prompt failed")
   } catch (error) {
-    await appendEvent(stateDir, state.task_id, { type: "watchdog_nudge_failed", session_id: sessionID, count: nextState.watchdog_nudge.count, error: formatDiagnosticError(error) })
+    await appendEvent(stateDir, index.task_id, { type: "watchdog_nudge_failed", session_id: sessionID, count: nextState.watchdog_nudge.count, error: formatDiagnosticError(error) })
     return
   }
 
-  await appendEvent(stateDir, state.task_id, { type: "watchdog_nudge_sent", session_id: sessionID, count: nextState.watchdog_nudge.count })
+  await appendEvent(stateDir, index.task_id, { type: "watchdog_nudge_sent", session_id: sessionID, count: nextState.watchdog_nudge.count })
 }
 
 function shouldCheckExpiredTasks(event) {
