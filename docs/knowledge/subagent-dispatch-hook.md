@@ -13,7 +13,7 @@ applies_to:
   - userconf/agents/plan-runner.md
   - userconf/plugins/plan-runner-harness.js
   - scripts/opencode-subagent-event-probe.mjs
-last_verified: 2026-07-01
+last_verified: 2026-07-02
 source: opencode plan-runner agent
 ---
 
@@ -70,6 +70,10 @@ subagent safety policy 保证 child 没有 `task` 权限。child 只能返回执
 - `finish_plan` custom tool 是 plan-runner 的 terminal gate 入口。plan-runner 完成 todos
   和验证命令后必须先调用该工具；工具等待 deterministic / audit / external review。返回
   `repair_required` 时 findings 只回到 plan-runner session，返回 `validated` 后 agent 才能写最终报告。
+- `session.idle` 只允许做 bounded watchdog nudge：当原始计划任务已完成、没有 running
+  child session、没有 active / terminal `finish_plan` gate 时，harness 向同一个 plan-runner
+  session 追加一次提示，要求立即调用 `finish_plan` 且不要写最终报告。watchdog 不能自动跑
+  `finish_plan`、audit 或 external review，state 用 `watchdog_nudge.count/last_sent_at` 防 spam。
 - `write_plan.tasks[]` 不接受 agent 主动提交的 evidence 契约；harness 只保存
   `title` / `completion_criteria`，并用实际工具事件裁定 diff evidence。
 - `write_plan` 会拒绝引用未知 task id 或包含环的 DAG；后续执行/审计可以假设
@@ -187,7 +191,8 @@ tool/event hook 行为。
   允许小修工具，但继续禁止 `todowrite`，避免在门禁失败后重写原始计划账本；证据归属仍由
   harness 从缺失 diff evidence 或最新 audit 结果推导。
 - repair 后不能依赖 `session.idle` 或 completed assistant `message.updated` 自动推进。plan-runner
-  必须再次调用 `finish_plan`；这是唯一 terminal gate boundary。
+  必须再次调用 `finish_plan`；这是唯一 terminal gate boundary。idle watchdog 只能提醒同一
+  session 调用 `finish_plan`，不能替 agent 进入 terminal gate。
 - deterministic / final completeness 不消费 agent 提交的 evidence 契约；completed task
   需要 harness-observed diff evidence。command log 只作为实际命令日志，不作为完成条件。
 - terminal gate 每个节点失败上限为 2：`deterministic_check`、`audit_review`、

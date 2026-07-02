@@ -95,6 +95,8 @@ export const ExternalReviewGatePlugin = async () => {
         tool_name: "Bash",
         tool_input: {
           command,
+          ...(output.args?.workdir ? { workdir: output.args.workdir } : {}),
+          ...(output.args?.cwd ? { cwd: output.args.cwd } : {}),
           ...(output.args?.env ? { env: output.args.env } : {}),
           ...(output.args?.environment
             ? { environment: output.args.environment }

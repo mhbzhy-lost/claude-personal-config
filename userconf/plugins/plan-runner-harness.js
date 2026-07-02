@@ -16,6 +16,7 @@ const COMPLETION_GATE_RESULT_STATUSES = new Set(["validated", "repairing", "bloc
 const TERMINAL_COMPLETION_GATE_STATUSES = new Set(["validated", "blocked", "interrupted", "stale"])
 const MAX_AUDIT_INVALID_JSON_ATTEMPTS = 2
 const MAX_GATE_FAILURES = 2
+const MAX_WATCHDOG_NUDGES = 1
 
 function defaultStateDir() {
   return join(homedir(), ".config", "opencode", "task-state")
@@ -601,6 +602,37 @@ function isCompletionAttempt(state) {
   if (!state.todo.mirrored) return false
   if (completedTaskIDs(state).length === 0) return false
   return !originalTodos(state).some((todo) => todo.status === "pending" || todo.status === "in_progress")
+}
+
+function hasRunningChildSession(state) {
+  return (state.child_sessions || []).some((child) => child.status === "running")
+}
+
+function hasTerminalGateResult(state) {
+  return [state.status, state.completion_gate?.status].some((status) => status === "validated" || status === "blocked")
+}
+
+function watchdogNudgeCount(state) {
+  return Number(state.watchdog_nudge?.count || 0)
+}
+
+function shouldSendWatchdogNudge(state, sessionID) {
+  if (!state || state.plan_runner_session_id !== sessionID) return false
+  if (state.status !== "ready_to_execute" && state.status !== "executing") return false
+  if (!isCompletionAttempt(state)) return false
+  if (completionGateActive(state) || hasTerminalGateResult(state)) return false
+  if (hasRunningChildSession(state)) return false
+  return watchdogNudgeCount(state) < MAX_WATCHDOG_NUDGES
+}
+
+function watchdogNudgePromptText(state) {
+  return [
+    "Plan-runner watchdog: original plan tasks are complete and the session is idle.",
+    "Immediate next step: call finish_plan now.",
+    "No final report: do not write any final report before finish_plan returns validated.",
+    "Do not run audit or external review manually; finish_plan owns the terminal gate.",
+    `Harness Task ID: ${state.task_id}`,
+  ].join("\n")
 }
 
 function auditPromptText(state) {
@@ -1277,6 +1309,43 @@ async function handleAuditReviewIdle({ stateDir, client, directory, event, exter
   await runExternalReview({ stateDir, client, directory, state: nextState, externalReview })
 }
 
+async function handlePlanRunnerWatchdogIdle({ stateDir, client, directory, event }) {
+  if (event.type !== "session.idle") return
+  const sessionID = event.properties?.sessionID
+  if (!sessionID || !client?.session?.prompt) return
+
+  const index = await readSessionIndex(stateDir, sessionID)
+  if (!index || index.role !== "plan-runner") return
+  const state = await readTaskState(stateDir, index.task_id)
+  if (!shouldSendWatchdogNudge(state, sessionID)) return
+
+  const nextState = cloneState(state)
+  nextState.watchdog_nudge = {
+    count: watchdogNudgeCount(nextState) + 1,
+    last_sent_at: Date.now(),
+  }
+  nextState.updated_at = Date.now()
+  await writeTaskState(stateDir, nextState)
+
+  try {
+    const query = { directory: directory || state.worktree }
+    const prompted = await client.session.prompt({
+      path: { id: sessionID },
+      query,
+      body: {
+        agent: "plan-runner",
+        parts: [{ type: "text", text: watchdogNudgePromptText(state) }],
+      },
+    })
+    throwIfSdkError(prompted, "watchdog nudge prompt failed")
+  } catch (error) {
+    await appendEvent(stateDir, state.task_id, { type: "watchdog_nudge_failed", session_id: sessionID, count: nextState.watchdog_nudge.count, error: formatDiagnosticError(error) })
+    return
+  }
+
+  await appendEvent(stateDir, state.task_id, { type: "watchdog_nudge_sent", session_id: sessionID, count: nextState.watchdog_nudge.count })
+}
+
 function shouldCheckExpiredTasks(event) {
   return event?.type === "session.idle" || event?.type === "todo.updated"
 }
@@ -1626,6 +1695,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       await handleMessageDiff(stateDir, event)
       await handleAuditReviewMessage(stateDir, event)
       await handleAuditReviewIdle({ stateDir, client, directory: worktree, event, externalReview })
+      await handlePlanRunnerWatchdogIdle({ stateDir, client, directory: worktree, event })
     }),
   }
 }

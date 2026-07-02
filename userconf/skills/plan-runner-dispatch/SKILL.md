@@ -8,6 +8,12 @@ description: Use when the user explicitly asks 写计划并执行, 开始执行,
 Use this skill only as a routing shim. The primary agent should not execute the
 implementation after this skill is loaded.
 
+## Clean Worktree Precondition
+
+Before dispatching, run `git status --short`. If it reports a dirty worktree,
+do not dispatch `plan-runner`; report dirty files and ask the user to
+commit, stash, or clean the worktree first.
+
 ## Required Action
 
 Do not implement the request in the primary agent. Immediately dispatch the

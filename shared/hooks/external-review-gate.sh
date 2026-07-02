@@ -248,10 +248,12 @@ except Exception:
     except Exception:
         base_ref = "origin/main"
 
+review_range = f"{base_ref}..HEAD"
+
 # --- Check if there are commits to push ---
 try:
     ahead = subprocess.check_output(
-        _git_prefix + ["rev-list", f"{base_ref}..HEAD", "--count"],
+        _git_prefix + ["rev-list", review_range, "--count"],
         text=True, stderr=subprocess.DEVNULL
     ).strip()
     if ahead == "0":
@@ -289,11 +291,11 @@ if not Path(REVIEWER_ENV).is_file():
 try:
     # Exclude deletions (D) and renames (R) to avoid bloating with mass file removals
     diff_stat = subprocess.check_output(
-        ["git", "diff", "--diff-filter=ACM", "--stat", f"{base_ref}..HEAD"],
+        _git_prefix + ["diff", "--diff-filter=ACM", "--stat", review_range],
         text=True, stderr=subprocess.DEVNULL
     ).strip()
     diff_numstat = subprocess.check_output(
-        ["git", "diff", "--diff-filter=ACM", "--numstat", f"{base_ref}..HEAD"],
+        _git_prefix + ["diff", "--diff-filter=ACM", "--numstat", review_range],
         text=True, stderr=subprocess.DEVNULL
     ).strip()
 except Exception:
@@ -301,6 +303,7 @@ except Exception:
     allow()
 
 # Exemption: diff < 10 lines total (binary files skip exemption)
+changed_file_count = 0
 if diff_numstat:
     total_lines = 0
     all_non_code = True
@@ -308,6 +311,7 @@ if diff_numstat:
     for line in diff_numstat.strip().split("\n"):
         parts = line.split("\t")
         if len(parts) >= 3:
+            changed_file_count += 1
             if parts[0] == "-":
                 has_binary = True
             else:
@@ -329,11 +333,27 @@ if diff_numstat:
             log("exempt: all files are non-code")
             allow()
 
+
+def review_context_block() -> str:
+    return (
+        f"Review range: {review_range}\n"
+        f"Review repo: {_eff_top}\n"
+        f"Review file count: {changed_file_count}"
+    )
+
+
+def log_review_context():
+    for _line in review_context_block().splitlines():
+        log(_line)
+
+
+log_review_context()
+
 # --- Compute diff hash ---
 try:
     # Exclude deletions (D) and renames (R) to match reviewer.py behavior
     diff_content = subprocess.check_output(
-        ["git", "diff", "--diff-filter=ACM", f"{base_ref}..HEAD"],
+        _git_prefix + ["diff", "--diff-filter=ACM", review_range],
         text=True, stderr=subprocess.DEVNULL
     )
     diff_hash = hashlib.sha256(diff_content.encode()).hexdigest()[:16]
@@ -344,7 +364,7 @@ except Exception:
 # --- Repo slug ---
 try:
     remote_url = subprocess.check_output(
-        ["git", "remote", "get-url", "origin"],
+        _git_prefix + ["remote", "get-url", "origin"],
         text=True, stderr=subprocess.DEVNULL
     ).strip()
     slug = re.sub(r"[^\w-]", "_", remote_url.split("/")[-1].replace(".git", ""))
@@ -472,12 +492,14 @@ if action == "deny_fix_first":
             _changes += "  unstaged: " + _unstaged.split("\n")[-1] + "\n"
         deny(
             "🚫 禁止 push。异源 Review 发现的问题疑似已修复但尚未 commit。\n"
+            f"{review_context_block()}\n"
             "请先 commit 修复内容后再次 push。\n"
             f"检测到未提交的变更：\n{_changes}"
         )
     else:
         deny(
             "🚫 禁止 push。异源 Review 发现的问题尚未修复。\n"
+            f"{review_context_block()}\n"
             "请先修复这些问题并 commit 后再次 push。"
         )
 
@@ -485,7 +507,7 @@ if action == "deny_fix_first":
 log(f"executing review round {review_round}...")
 
 # --- Run reviewer.py (try anthropic first, fall back to api on failure) ---
-head_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+head_sha = subprocess.check_output(_git_prefix + ["rev-parse", "HEAD"], text=True).strip()
 
 
 def run_reviewer(provider: str) -> "subprocess.CompletedProcess[str] | None":
@@ -617,6 +639,7 @@ else:
     )
     header = (
         "🚫 禁止 push。异源 Review 发现需要修复的问题。\n\n"
+        f"{review_context_block()}\n\n"
         f"{digest}"
         "---\n\n"
     )

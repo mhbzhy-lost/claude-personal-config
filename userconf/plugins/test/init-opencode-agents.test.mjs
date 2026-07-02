@@ -405,6 +405,12 @@ describe("init_opencode agents sync", () => {
     assert.match(skill, /subagent_type["`]?:\s*["`]plan-runner["`]/)
     assert.match(skill, /background["`]?:\s*true/)
     assert.match(skill, /Do not implement the request in the primary agent/i)
+    assert.match(skill, /git status --short/)
+    assert.match(skill, /clean worktree precondition/i)
+    assert.match(skill, /dirty worktree/i)
+    assert.match(skill, /do not dispatch/i)
+    assert.match(skill, /report dirty files/i)
+    assert.match(skill, /commit, stash, or clean/i)
   })
 
   it("plan-runner agent description describes responsibility, not trigger phrases", () => {

@@ -163,6 +163,13 @@ OpenCode plugin 目录不能再整目录软链到主仓 `opencode/plugins/`。�
 - git push gate 不应因为 staged/unstaged dirty tree 本身阻断 push。`git push` 只推
   `base_ref..HEAD` 的 commit；dirty tree 可能是用户草稿或其它任务改动，最多作为日志
   提示，不能要求 agent 提交或回滚无关本地状态。
+- OpenCode 的 git push gate 必须把 Bash tool 的 `workdir` / `cwd` 透传给
+  `shared/hooks/external-review-gate.sh`。hook 解析目标仓库时按命令内显式 `cd` / `git -C`
+  优先，其次用 tool `workdir` / `cwd`，定位后后续 diff、hash、HEAD、remote 等 git
+  调用都应使用同一 `_git_prefix`，避免子仓 push 被误审成主仓 range。
+- git push gate 的 stderr / deny 文案需要包含 `Review repo`、`Review range`、
+  `Review file count`。排查“只想推一个子模块提交却审了主仓所有待推送提交”时，先看
+  这三项是否指向实际 Bash workdir。
 - OpenCode 采用 YOLO permission，`rm` 越界删除由
   `opencode/plugins/rm-outside-workspace-guard.js` 插件兜底。不要用粗粒度 permission
   glob 重建一份删除策略，避免与插件规则漂移。
@@ -184,6 +191,7 @@ bash scripts/test-init-opencode-env.sh
 bash scripts/test-init-opencode-cache-proxy.sh
 bash scripts/test-init-qwen-provider.sh
 python3 -m unittest codex/hooks/tests/test_codex_hooks.py
+node --test userconf/plugins/test/external-review-gate-workdir.test.mjs
 bash -n init_opencode.sh
 bash -n init_qwen.sh
 git diff --check
