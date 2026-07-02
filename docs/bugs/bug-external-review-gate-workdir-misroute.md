@@ -40,3 +40,9 @@ blocking 结果。
 1. 新增 plugin 单测，断言 Bash `output.args.workdir` / `cwd` 会进入 hook payload。
 2. 新增 hook 集成测试，构造父仓 + 子仓，payload 用裸 `git push` 且 `workdir` 指向子仓，断言日志中的 repo/range/file count 来自子仓。
 3. 聚焦运行 `node --test userconf/plugins/test/external-review-gate-workdir.test.mjs`，先 RED 后 GREEN。
+
+## post-fix invariant
+
+定位有效仓库后，hook 中用于 review range、diff hash、HEAD、remote slug 和 reviewer
+上下文的 git 调用必须继续使用同一个 `_git_prefix`；新增裸 `git` 调用前必须先确认不会回到
+hook 进程 cwd。
