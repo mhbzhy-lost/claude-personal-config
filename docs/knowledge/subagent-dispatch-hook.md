@@ -49,13 +49,24 @@ schema 没有 `agents.paths` 配置，不能在 `opencode.json` 中增加自定�
 Change Request。
 
 多步计划入口不再依赖 `writing-plans` skill。`plan-runner` 的 description 负责启发式
-触发；完整计划文档格式、TODO/DONE marker、DAG、可并发集合和验证方式都维护在
-`userconf/agents/plan-runner.md`。
+触发；精简版 Plan Content Contract、`Tn:` todo 协议、并发 worktree 约束和验证方式都
+维护在 `userconf/agents/plan-runner.md`。
 
 `plan-runner` 作为 root executor 可以使用 `task` 工具编排 DAG child subagents，但
 child subagents 必须使用默认 child subagent，不选择自定义 agent；依赖 OpenCode 默认
 subagent safety policy 保证 child 没有 `task` 权限。child 只能返回执行结果摘要，不能
 继续递归派发 subagent，也不能更新 root plan/todo 的完成状态。
+
+无并发时，root plan-runner 可以直接在主工作区执行。只要存在并发 child/executor，
+禁止多个执行者共享主工作区：root 必须为每个并发 child 准备独立 `git worktree`，child
+只改自己的 worktree；child 返回后由 root 合并回主工作区，处理冲突/失败、清理 worktree，
+并在主工作区运行必要验证和最终提交。
+
+OpenCode `task` 工具当前参数只有 `description/prompt/subagent_type/task_id/command/background`，
+没有 `directory` / `workdir` 字段；`TaskTool` 创建 child session 时也没有从参数传入独立
+location。因此本轮先在 plan-runner agent 指令和单测中强制“并发必须独立 worktree”，由
+root 在 dispatch 前创建 worktree 并在 child prompt 中声明路径，harness 暂不自动创建或校验
+per-child worktree。
 
 `userconf/plugins/plan-runner-harness.js` 是 plan-runner 的 harness 入口。首个落地
 切片包含：
@@ -65,8 +76,12 @@ subagent safety policy 保证 child 没有 `task` 权限。child 只能返回执
   `git worktree add` 创建的 linked worktree 启动；禁止在 dirty 主工作区启动。
   阻断时写 `status = blocked` 和 `dispatch_blocked` event，不创建 plan-runner child session。
 - `tool.execute.after(task)` 通过 `output.metadata.sessionId` 绑定 plan-runner child session。
-- `write_plan` custom tool 写 `docs/plans/<task_id>.md`，并只把 harness 消费的
-  `plan_contract` 写入 task state。
+- `write_plan` custom tool 的公开协议是 `content: string`。它只负责写
+  `docs/plans/<task_id>.md`、保存 sha、推进到 `waiting_for_todo`；plan 文档服务人审、
+  external review 和设计承诺，不再作为 harness 结构化账本来源。
+- harness 结构化账本由首次有效 `todowrite` 派生：每条 todo 必须以精确 `Tn:` 前缀开头；
+  `plan_contract.tasks[].id` 使用 `Tn`，`title` 使用去掉前缀后的 todo 文本，完成标准使用
+  harness 默认最小条件。旧 `write_plan(tasks/dag/parallel_sets)` 不再是公开协议。
 - `finish_plan` custom tool 是 plan-runner 的 terminal gate 入口。plan-runner 完成 todos
   和验证命令后必须先调用该工具；工具等待 deterministic / audit / external review。返回
   `repair_required` 时 findings 只回到 plan-runner session，返回 `validated` 后 agent 才能写最终报告。
@@ -74,13 +89,11 @@ subagent safety policy 保证 child 没有 `task` 权限。child 只能返回执
   child session、没有 active / terminal `finish_plan` gate 时，harness 向同一个 plan-runner
   session 追加一次提示，要求立即调用 `finish_plan` 且不要写最终报告。watchdog 不能自动跑
   `finish_plan`、audit 或 external review，state 用 `watchdog_nudge.count/last_sent_at` 防 spam。
-- `write_plan.tasks[]` 不接受 agent 主动提交的 evidence 契约；harness 只保存
-  `title` / `completion_criteria`，并用实际工具事件裁定 diff evidence。
-- `write_plan` 会拒绝引用未知 task id 或包含环的 DAG；后续执行/审计可以假设
-  `plan_contract.dag` 是可拓扑排序的依赖图。
+- agent 不能通过 `write_plan.tasks[]` 主动提交 evidence 契约；harness 只用实际工具事件
+  裁定 diff evidence。todo 派生的默认完成标准不改变 deterministic check：completed task
+  仍需要 harness-observed diff evidence。
 - OpenCode `todowrite` 不提供稳定 per-todo id；harness 只通过 todo content 中独立的
-  `Tn` token 映射到 `write_plan` 生成的 plan task。agent 应使用 `Tn: ...` 前缀；
-  `T10` 不能被视为 `T1`。
+  `Tn` token 映射任务。agent 应使用 `Tn: ...` 前缀；`T10` 不能被视为 `T1`。
 - phase gate 在 `planning_required` / `waiting_for_todo` / execution / terminal gate 阶段限制工具；`skill`
   作为只读上下文工具可用于普通执行阶段，`apply_patch` 作为执行类变更工具在执行阶段需要 active todo，repair 阶段由 harness 推导 evidence 绑定目标。
 - `todo.updated`、`tool.execute.after(bash)`、`tool.execute.after(write|edit).input.filePath`、

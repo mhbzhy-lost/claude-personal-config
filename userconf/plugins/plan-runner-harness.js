@@ -17,6 +17,7 @@ const TERMINAL_COMPLETION_GATE_STATUSES = new Set(["validated", "blocked", "inte
 const MAX_AUDIT_INVALID_JSON_ATTEMPTS = 2
 const MAX_GATE_FAILURES = 2
 const MAX_WATCHDOG_NUDGES = 1
+const DEFAULT_TODO_COMPLETION_CRITERION = "todo reaches completed status with harness-observed evidence when required"
 
 function defaultStateDir() {
   return join(homedir(), ".config", "opencode", "task-state")
@@ -293,101 +294,6 @@ async function blockPlanRunnerDispatch({ stateDir, state, parentSessionID, block
   throw new Error(`${blocker.code}: ${blocker.message}`)
 }
 
-function validateDag(taskIDs, dag = []) {
-  const edges = new Map()
-  for (const id of taskIDs) edges.set(id, [])
-  for (const edge of dag) {
-    if (!Array.isArray(edge) || edge.length !== 2) throw new Error("dag edge must contain exactly two task ids")
-    for (const id of edge) {
-      if (!taskIDs.has(id)) throw new Error(`dag references unknown task id: ${id}`)
-    }
-    edges.get(edge[0]).push(edge[1])
-  }
-
-  const visiting = new Set()
-  const visited = new Set()
-  const visit = (id) => {
-    if (visiting.has(id)) throw new Error("dag contains a cycle")
-    if (visited.has(id)) return
-    visiting.add(id)
-    for (const next of edges.get(id)) visit(next)
-    visiting.delete(id)
-    visited.add(id)
-  }
-
-  for (const id of taskIDs) {
-    visit(id)
-  }
-}
-
-function formatMarkdown({ taskID, input, contract }) {
-  const lines = []
-  lines.push(`# ${input.title}`)
-  lines.push("")
-  lines.push(`Harness Task ID: ${taskID}`)
-  lines.push("")
-  if (input.goal) {
-    lines.push("## Goal")
-    lines.push("")
-    lines.push(input.goal)
-    lines.push("")
-  }
-  if (input.approach) {
-    lines.push("## Approach")
-    lines.push("")
-    lines.push(input.approach)
-    lines.push("")
-  }
-  if (input.non_goals?.length) {
-    lines.push("## Non Goals")
-    lines.push("")
-    for (const item of input.non_goals) lines.push(`- ${item}`)
-    lines.push("")
-  }
-  lines.push("## Tasks")
-  lines.push("")
-  for (const task of contract.tasks) {
-    lines.push(`- Plan item ${task.id}: ${task.title}`)
-    for (const criterion of task.completion_criteria) lines.push(`  - Completion: ${criterion}`)
-  }
-  lines.push("")
-  if (contract.dag.length) {
-    lines.push("## DAG")
-    lines.push("")
-    for (const [from, to] of contract.dag) lines.push(`- ${from} -> ${to}`)
-    lines.push("")
-  }
-  if (contract.parallel_sets.length) {
-    lines.push("## Parallel Sets")
-    lines.push("")
-    for (const set of contract.parallel_sets) lines.push(`- ${set.join(", ")}`)
-    lines.push("")
-  }
-  if (input.stop_conditions?.length) {
-    lines.push("## Stop Conditions")
-    lines.push("")
-    for (const item of input.stop_conditions) lines.push(`- ${item}`)
-    lines.push("")
-  }
-  return lines.join("\n")
-}
-
-function buildPlanContract(input) {
-  const tasks = input.tasks.map((task, index) => ({
-    id: `T${index + 1}`,
-    title: task.title,
-    completion_criteria: task.completion_criteria,
-  }))
-  const taskIDs = new Set(tasks.map((task) => task.id))
-  const dag = input.dag || []
-  validateDag(taskIDs, dag)
-  return {
-    tasks,
-    dag,
-    parallel_sets: input.parallel_sets || [],
-  }
-}
-
 function countInProgressTodos(todos = []) {
   return todos.filter((todo) => todo.status === "in_progress").length
 }
@@ -401,11 +307,75 @@ function todoContentMatchesTaskID(content, taskID) {
   return new RegExp(`(^|[^A-Za-z0-9_])${escapeRegExp(taskID)}(?=$|[^A-Za-z0-9_])`).test(String(content || ""))
 }
 
+function todoTaskPrefix(content) {
+  const match = String(content || "").match(/^T([1-9]\d*):\s*(\S.*)$/)
+  if (!match) return null
+  return {
+    id: `T${match[1]}`,
+    number: Number(match[1]),
+    title: match[2].trim(),
+  }
+}
+
+function todoDerivationDiagnostic(todos = []) {
+  if (!todos.length) return "todo list is empty; rewrite todowrite items with exact Tn: prefixes, for example T1: implement the first task"
+
+  const invalid = todos.filter((todo) => !todoTaskPrefix(todo?.content))
+  if (invalid.length) {
+    const first = String(invalid[0]?.content || "").trim() || "<empty todo>"
+    return `todo list must derive plan tasks from an exact Tn: prefix on every item; rewrite '${first}' as 'T1: ${first === "<empty todo>" ? "describe the task" : first}'`
+  }
+
+  const seen = new Set()
+  const duplicates = new Set()
+  for (const todo of todos) {
+    const task = todoTaskPrefix(todo?.content)
+    if (!task) continue
+    if (seen.has(task.id)) duplicates.add(task.id)
+    seen.add(task.id)
+  }
+  if (duplicates.size) return `todo list contains duplicate Tn task ids: ${[...duplicates].join(", ")}; each task id must appear once`
+
+  const numbers = [...seen].map((id) => Number(id.slice(1)))
+  const max = Math.max(...numbers)
+  const missing = []
+  for (let index = 1; index <= max; index += 1) {
+    const id = `T${index}`
+    if (!seen.has(id)) missing.push(id)
+  }
+  if (missing.length) return `todo list has non-contiguous Tn task ids; missing ${missing.join(", ")}; rewrite todos as T1:, T2:, ... without gaps`
+
+  return null
+}
+
+function derivePlanContractFromTodos(todos = []) {
+  const diagnostic = todoDerivationDiagnostic(todos)
+  if (diagnostic) return { diagnostic }
+
+  const tasks = todos
+    .map((todo) => todoTaskPrefix(todo?.content))
+    .sort((left, right) => left.number - right.number)
+    .map((task) => ({
+      id: task.id,
+      title: task.title,
+      completion_criteria: [DEFAULT_TODO_COMPLETION_CRITERION],
+    }))
+
+  return {
+    contract: {
+      tasks,
+      dag: [],
+      parallel_sets: [],
+    },
+  }
+}
+
 function todoMatchesTask(todo, task) {
   return todoContentMatchesTaskID(todo?.content, task?.id)
 }
 
 function todoMirrorDiagnostic(todos = [], tasks = []) {
+  if (!tasks.length) return todoDerivationDiagnostic(todos)
   const missing = tasks.filter((task) => !todos.some((todo) => todoMatchesTask(todo, task))).map((task) => task.id)
   if (!missing.length) return null
   const examples = missing.slice(0, 3).map((taskID) => `${taskID}: ...`).join(", ")
@@ -510,7 +480,13 @@ async function handleTodoUpdated(stateDir, event) {
   const state = await readTaskState(stateDir, index.task_id)
   if (!state) return
   state.todo.last_seen = todos
-  const mirrorDiagnostic = todoMirrorDiagnostic(todos, state.plan_contract.tasks)
+  let mirrorDiagnostic = null
+  if (!state.plan_contract?.tasks?.length) {
+    const derived = derivePlanContractFromTodos(todos)
+    if (derived.contract) state.plan_contract = derived.contract
+    else mirrorDiagnostic = derived.diagnostic
+  }
+  if (!mirrorDiagnostic) mirrorDiagnostic = todoMirrorDiagnostic(todos, state.plan_contract.tasks)
   state.todo.mirrored = !mirrorDiagnostic
   state.todo.mirror_diagnostic = mirrorDiagnostic
   if (state.status === "waiting_for_todo" && state.todo.mirrored) state.status = "ready_to_execute"
@@ -558,7 +534,8 @@ function completedTaskIDs(state) {
 
 function findDeterministicCheckFailures(state) {
   const reasons = []
-  if (!state.plan_path || !state.plan_sha256 || state.plan_contract.tasks.length === 0) reasons.push("plan is not written")
+  if (!state.plan_path || !state.plan_sha256) reasons.push("plan is not written")
+  if (state.plan_path && state.plan_sha256 && state.plan_contract.tasks.length === 0) reasons.push("todo-derived plan contract is empty; rewrite todowrite items with Tn: prefixes")
   if (!state.todo.mirrored) reasons.push("todo list does not mirror all plan tasks")
   if (originalTodos(state).some((todo) => todo.status === "pending" || todo.status === "in_progress")) reasons.push("todo list still has pending or in_progress items")
 
@@ -1564,10 +1541,10 @@ async function writePlanTool(args, context, stateDir) {
   if (!state) throw new Error("write_plan task state is not readable")
   if (state.status !== "planning_required") throw new Error(`write_plan requires planning_required status, got ${state.status}`)
 
-  const contract = buildPlanContract(args)
+  const markdown = String(args?.content || "")
+  if (!markdown.trim()) throw new Error("write_plan requires non-empty content; structured tasks/dag fields are no longer accepted as the plan contract")
   const worktree = state.worktree || context.worktree || context.directory
   const planPath = join(worktree, "docs", "plans", `${state.task_id}.md`)
-  const markdown = formatMarkdown({ taskID: state.task_id, input: args, contract })
   await ensureDir(dirname(planPath))
   await writeFile(planPath, markdown)
 
@@ -1576,7 +1553,7 @@ async function writePlanTool(args, context, stateDir) {
   state.lease_expires_at = Date.now() + 10 * 60 * 1000
   state.plan_path = planPath
   state.plan_sha256 = sha256(markdown)
-  state.plan_contract = contract
+  state.plan_contract = { tasks: [], dag: [], parallel_sets: [] }
   await writeTaskState(stateDir, state)
   await appendEvent(stateDir, state.task_id, { type: "plan_written", plan_path: planPath, plan_sha256: state.plan_sha256 })
 
@@ -1609,19 +1586,9 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
   return {
     tool: {
       write_plan: tool({
-        description: "Write a plan-runner execution plan and bind it to harness task state.",
+        description: "Write a reviewer-facing plan-runner execution plan from markdown content and advance harness state.",
         args: {
-          title: tool.schema.string().min(1),
-          goal: tool.schema.string().optional(),
-          approach: tool.schema.string().optional(),
-          non_goals: tool.schema.array(tool.schema.string()).optional(),
-          tasks: tool.schema.array(tool.schema.object({
-            title: tool.schema.string().min(1),
-            completion_criteria: tool.schema.array(tool.schema.string().min(1)).min(1),
-          })).min(1),
-          dag: tool.schema.array(tool.schema.tuple([tool.schema.string(), tool.schema.string()])).optional(),
-          parallel_sets: tool.schema.array(tool.schema.array(tool.schema.string())).optional(),
-          stop_conditions: tool.schema.array(tool.schema.string()).optional(),
+          content: tool.schema.string().min(1),
         },
         execute: (args, context) => writePlanTool(args, context, stateDir),
       }),

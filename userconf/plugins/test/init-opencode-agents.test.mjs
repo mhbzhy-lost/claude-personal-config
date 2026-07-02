@@ -8,6 +8,12 @@ import { tmpdir } from "node:os"
 const repoRoot = new URL("../../..", import.meta.url).pathname
 const initScript = join(repoRoot, "init_opencode.sh")
 
+function missingPromptClauses(prompt, clauses) {
+  return clauses
+    .filter(({ pattern }) => !pattern.test(prompt))
+    .map(({ label }) => label)
+}
+
 function pathExistsNoFollow(path) {
   try {
     lstatSync(path)
@@ -509,6 +515,51 @@ describe("init_opencode agents sync", () => {
     assert.match(prompt, /default child subagent/i)
     assert.match(prompt, /do not use custom agents/i)
     assert.doesNotMatch(prompt, /return evidence only/i)
+  })
+
+  it("plan-runner prompt defines the concise Plan Content Contract", () => {
+    const prompt = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
+
+    const missing = missingPromptClauses(prompt, [
+      { label: "Plan Content Contract heading", pattern: /Plan Content Contract/i },
+      { label: "Goal", pattern: /Goal/i },
+      { label: "Architecture", pattern: /Architecture/i },
+      { label: "File Structure", pattern: /File Structure/i },
+      { label: "TDD task steps", pattern: /TDD task steps/i },
+      { label: "commands with expected output", pattern: /commands? with expected output/i },
+      { label: "risks and stop conditions", pattern: /risks?\s*\/\s*stop conditions|risks?.*stop conditions/i },
+      { label: "no placeholders", pattern: /no placeholders|do not use placeholders/i },
+    ])
+
+    assert.deepEqual(missing, [])
+  })
+
+  it("plan-runner prompt separates human plan docs from harness structured state", () => {
+    const prompt = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
+
+    const missing = missingPromptClauses(prompt, [
+      { label: "human review", pattern: /human review/i },
+      { label: "external review", pattern: /external review/i },
+      { label: "design commitment", pattern: /design commitment/i },
+      { label: "structured state comes from todowrite", pattern: /structured state.*todowrite|todowrite.*structured state/i },
+    ])
+
+    assert.deepEqual(missing, [])
+  })
+
+  it("plan-runner prompt requires independent worktrees for all concurrent child work", () => {
+    const prompt = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
+
+    const missing = missingPromptClauses(prompt, [
+      { label: "no concurrency in main workspace", pattern: /no concurrency.*main workspace|main workspace.*no concurrency/i },
+      { label: "parallel or DAG branches", pattern: /parallel\/DAG|parallel.*DAG/i },
+      { label: "every child/executor in independent git worktree", pattern: /every child\/executor.*independent git worktree|independent git worktree.*every child\/executor/i },
+      { label: "child only edits its worktree", pattern: /child only edits its worktree/i },
+      { label: "root merges back", pattern: /root merges back/i },
+      { label: "root handles conflicts failures validation", pattern: /root handles.*conflicts.*failures.*validation/i },
+    ])
+
+    assert.deepEqual(missing, [])
   })
 
   it("plan-runner uses write_plan and finish_plan as harness lifecycle entrypoints", () => {

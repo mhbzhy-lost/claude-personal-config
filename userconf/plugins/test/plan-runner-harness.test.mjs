@@ -38,6 +38,32 @@ function initGitWorkspace(workspace) {
   return git(workspace, ["rev-parse", "HEAD"])
 }
 
+function planContent(title = "Harness Slice") {
+  return [
+    `# ${title}`,
+    "",
+    "## Goal",
+    "Exercise the plan-runner harness behavior under test.",
+    "",
+    "## Architecture",
+    "Use reviewer-facing prose; harness structure is derived from Tn todos.",
+    "",
+    "## File Structure",
+    "- userconf/plugins/plan-runner-harness.js",
+    "",
+    "## TDD task steps",
+    "- RED: run the focused failing test.",
+    "- GREEN: implement the minimum harness change.",
+    "",
+    "## Commands with expected output",
+    "- node --test userconf/plugins/test/plan-runner-harness.test.mjs # expected: pass",
+    "",
+    "## Risks / Stop Conditions",
+    "- Stop if the test needs behavior outside the harness contract.",
+    "",
+  ].join("\n")
+}
+
 async function prepareAuditReviewState({ hooks, workspace, stateDir }) {
   const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
   await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
@@ -47,6 +73,7 @@ async function prepareAuditReviewState({ hooks, workspace, stateDir }) {
   )
   await hooks.tool.write_plan.execute(
     {
+      content: planContent("Audit Consumption Slice"),
       title: "Audit Consumption Slice",
       tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
       dag: [],
@@ -80,6 +107,7 @@ async function prepareCompletionReadyState({ hooks, workspace, stateDir }) {
   )
   await hooks.tool.write_plan.execute(
     {
+      content: planContent("Completion Gate Slice"),
       title: "Completion Gate Slice",
       tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
       dag: [],
@@ -263,7 +291,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("write_plan writes markdown and stores only the consumed plan contract", async () => {
+  it("write_plan writes content markdown and leaves task contract for todo derivation", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -288,6 +316,7 @@ describe("PlanRunnerHarnessPlugin", () => {
 
       const result = await hooks.tool.write_plan.execute(
         {
+          content: planContent("Harness Slice"),
           title: "Harness Slice",
           goal: "Create the first harness slice",
           approach: "Use a small state file and markdown plan",
@@ -307,22 +336,157 @@ describe("PlanRunnerHarnessPlugin", () => {
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
       assert.equal(state.status, "waiting_for_todo")
-      assert.equal(state.plan_contract.tasks.length, 2)
-      assert.deepEqual(state.plan_contract.tasks[0], {
-        id: "T1",
-        title: "Persist state",
-        completion_criteria: ["state file exists"],
-      })
-      assert.equal("evidence_required" in state.plan_contract.tasks[0], false)
-      assert.deepEqual(state.plan_contract.dag, [["T1", "T2"]])
+      assert.deepEqual(state.plan_contract, { tasks: [], dag: [], parallel_sets: [] })
       assert.equal("check_commands" in state.plan_contract, false)
       assert.ok(state.plan_sha256)
       assert.ok(existsSync(state.plan_path))
 
       const markdown = readFileSync(state.plan_path, "utf8")
-      assert.match(markdown, /# Harness Slice/)
-      assert.match(markdown, /Plan item T1: Persist state/)
+      assert.equal(markdown, planContent("Harness Slice"))
+      assert.doesNotMatch(markdown, /Plan item T1: Persist state/)
       assert.equal(markdown.includes("TODO:"), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("write_plan writes content verbatim and derives the plan contract from Tn todos", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+
+      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement the brief." } }
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+
+      const content = [
+        "# Human Plan",
+        "",
+        "## Goal",
+        "Explain the production change for reviewers.",
+        "",
+        "## Architecture",
+        "Keep design prose in the plan instead of harness ledger fields.",
+        "",
+      ].join("\n")
+      await hooks.tool.write_plan.execute(
+        { content },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
+      )
+
+      const stateAfterPlan = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.equal(stateAfterPlan.status, "waiting_for_todo")
+      assert.deepEqual(stateAfterPlan.plan_contract, { tasks: [], dag: [], parallel_sets: [] })
+      assert.equal(readFileSync(stateAfterPlan.plan_path, "utf8"), content)
+
+      await hooks.event({
+        event: {
+          type: "todo.updated",
+          properties: {
+            sessionID: "ses_plan_runner",
+            todos: [
+              { content: "T1: Add regression test", status: "in_progress" },
+              { content: "T2: Implement harness change", status: "pending" },
+            ],
+          },
+        },
+      })
+
+      const stateAfterTodo = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.equal(stateAfterTodo.status, "ready_to_execute")
+      assert.equal(stateAfterTodo.todo.mirrored, true)
+      assert.deepEqual(stateAfterTodo.plan_contract, {
+        tasks: [
+          {
+            id: "T1",
+            title: "Add regression test",
+            completion_criteria: ["todo reaches completed status with harness-observed evidence when required"],
+          },
+          {
+            id: "T2",
+            title: "Implement harness change",
+            completion_criteria: ["todo reaches completed status with harness-observed evidence when required"],
+          },
+        ],
+        dag: [],
+        parallel_sets: [],
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("write_plan ignores legacy tasks and dag fields when content is present", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+
+      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement the brief." } }
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+
+      await hooks.tool.write_plan.execute(
+        {
+          content: "# Reviewer-facing plan\n\nThis prose is the only plan document source.",
+          tasks: [{ title: "Legacy task", completion_criteria: ["must be ignored"] }],
+          dag: [["T1", "T1"]],
+          parallel_sets: [["T1"]],
+        },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
+      )
+
+      const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.deepEqual(state.plan_contract, { tasks: [], dag: [], parallel_sets: [] })
+      assert.equal(readFileSync(state.plan_path, "utf8"), "# Reviewer-facing plan\n\nThis prose is the only plan document source.")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps waiting_for_todo with an actionable diagnostic when todos cannot derive Tn tasks", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+
+      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement the brief." } }
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+      await hooks.tool.write_plan.execute(
+        { content: "# Plan\n\nHuman-readable plan body." },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
+      )
+
+      await hooks.event({
+        event: {
+          type: "todo.updated",
+          properties: {
+            sessionID: "ses_plan_runner",
+            todos: [{ content: "Implement harness change", status: "in_progress" }],
+          },
+        },
+      })
+
+      const stateAfterTodo = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.equal(stateAfterTodo.status, "waiting_for_todo")
+      assert.equal(stateAfterTodo.todo.mirrored, false)
+      assert.deepEqual(stateAfterTodo.plan_contract.tasks, [])
+      assert.match(stateAfterTodo.todo.mirror_diagnostic, /Tn: prefix/i)
+      assert.match(stateAfterTodo.todo.mirror_diagnostic, /T1: Implement harness change/i)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -353,6 +517,7 @@ describe("PlanRunnerHarnessPlugin", () => {
 
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Root Context Slice"),
           title: "Root Context Slice",
           tasks: [{ title: "Persist plan", completion_criteria: ["plan file exists under workspace"] }],
           dag: [],
@@ -378,6 +543,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       await assert.rejects(
         () => hooks.tool.write_plan.execute(
           {
+            content: planContent("Invalid"),
             title: "Invalid",
             tasks: [{ title: "Task", completion_criteria: ["done"] }],
             dag: [],
@@ -392,7 +558,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("write_plan rejects cyclic DAGs", async () => {
+  it("write_plan rejects missing content instead of accepting a legacy DAG contract", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -419,7 +585,7 @@ describe("PlanRunnerHarnessPlugin", () => {
           },
           makeContext({ sessionID: "ses_plan_runner", workspace }),
         ),
-        /cycle/,
+        /content/,
       )
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -515,6 +681,7 @@ describe("PlanRunnerHarnessPlugin", () => {
 
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Harness Slice"),
           title: "Harness Slice",
           tasks: [
             { title: "Persist state", completion_criteria: ["state file exists"] },
@@ -591,6 +758,7 @@ describe("PlanRunnerHarnessPlugin", () => {
 
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Harness Slice"),
           title: "Harness Slice",
           tasks: [
             { title: "Persist state", completion_criteria: ["state file exists"] },
@@ -618,8 +786,8 @@ describe("PlanRunnerHarnessPlugin", () => {
       const stateAfterTodo = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
       assert.equal(stateAfterTodo.status, "waiting_for_todo")
       assert.equal(stateAfterTodo.todo.mirrored, false)
-      assert.match(stateAfterTodo.todo.mirror_diagnostic, /T1:/)
-      assert.match(stateAfterTodo.todo.mirror_diagnostic, /T2:/)
+      assert.match(stateAfterTodo.todo.mirror_diagnostic, /Tn: prefix/i)
+      assert.match(stateAfterTodo.todo.mirror_diagnostic, /T1: Persist state/i)
       const events = readFileSync(join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl"), "utf8")
       assert.match(events, /todo_mirror_diagnostic/)
     } finally {
@@ -646,7 +814,7 @@ describe("PlanRunnerHarnessPlugin", () => {
         completion_criteria: [`criterion ${index + 1}`],
       }))
       await hooks.tool.write_plan.execute(
-        { title: "Harness Slice", tasks, dag: [], parallel_sets: [] },
+        { content: planContent("Harness Slice"), title: "Harness Slice", tasks, dag: [], parallel_sets: [] },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
 
@@ -695,6 +863,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Repair Todo"),
           title: "Repair Todo",
           tasks: [{ title: "Finish gate", completion_criteria: ["finish_plan attempted"] }],
         },
@@ -760,6 +929,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Gate Todo Smoke"),
           title: "Gate Todo Smoke",
           tasks: [
             { title: "Edit file", completion_criteria: ["diff evidence exists"] },
@@ -863,6 +1033,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Evidence Slice"),
           title: "Evidence Slice",
           tasks: [{ title: "Run command", completion_criteria: ["command evidence exists"] }],
           dag: [],
@@ -934,6 +1105,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Diff Slice"),
           title: "Diff Slice",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -996,6 +1168,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Message Diff Slice"),
           title: "Message Diff Slice",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -1065,6 +1238,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Concurrent Diff Slice"),
           title: "Concurrent Diff Slice",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -1106,6 +1280,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Plan Diff Only"),
           title: "Plan Diff Only",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -1144,6 +1319,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Tool File Evidence"),
           title: "Tool File Evidence",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -1233,6 +1409,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Self Check Slice"),
           title: "Self Check Slice",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -1488,6 +1665,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Synchronous Audit Prompt"),
           title: "Synchronous Audit Prompt",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -1542,6 +1720,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Audit Consumption Slice"),
           title: "Audit Consumption Slice",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -1601,6 +1780,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Legacy State Slice"),
           title: "Legacy State Slice",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -1661,6 +1841,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Unwrapped Create Result"),
           title: "Unwrapped Create Result",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -1716,6 +1897,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Prompt Failure"),
           title: "Prompt Failure",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -1781,6 +1963,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("SDK Error Audit Dispatch"),
           title: "SDK Error Audit Dispatch",
           tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -3264,6 +3447,7 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Command Evidence"),
           title: "Command Evidence",
           tasks: [{ title: "Run validation", completion_criteria: ["command evidence exists"], evidence_required: ["command"] }],
           dag: [],
@@ -3321,6 +3505,7 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Command Only"),
           title: "Command Only",
           tasks: [{ title: "Implement code", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -3374,6 +3559,7 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Repair Completion Boundary"),
           title: "Repair Completion Boundary",
           tasks: [{ title: "Implement file", completion_criteria: ["diff evidence exists"] }],
           dag: [],
@@ -3535,6 +3721,7 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
       )
       await hooks.tool.write_plan.execute(
         {
+          content: planContent("Idle Slice"),
           title: "Idle Slice",
           tasks: [{ title: "Need evidence", completion_criteria: ["diff evidence exists"] }],
           dag: [],

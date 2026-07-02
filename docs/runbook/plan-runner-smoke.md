@@ -8,9 +8,9 @@
 
 1. 重启 OpenCode，并在 clean 的主工作区启动会话；不要从 `git worktree add` 创建的 linked worktree 启动。若当前主工作区不干净，先由主 agent/用户提交或清理既有改动，再派发 `plan-runner`。
 2. 在主会话派发一个小型 `plan-runner` 文档任务，要求：
-    - 先调用 `write_plan`；
-   - `write_plan.tasks[]` 只写任务标题和完成标准，不声明 evidence 契约；
-   - 用 `todowrite` 镜像计划项；
+    - 先调用 `write_plan({ content })`，content 按 Plan Content Contract 写成人审正文；
+   - 不再向 `write_plan` 传 `tasks/dag/parallel_sets` 作为 harness 账本；
+   - 用 `todowrite` 的 `Tn:` 前缀列表镜像计划项，harness 从 todo 派生结构化状态；
     - 不要把“最终报告/汇报 smoke 结果”写成 plan task，最终报告发生在所有 plan todo completed 之后；
      - 所有 plan todo completed 且验证命令完成后，先创建本地 commit，确认 repo clean，再调用 `finish_plan`，只有返回 `validated` 后再写最终报告；
     - 只改动约定的文档文件；
@@ -20,7 +20,7 @@
 
 ## 通过标准
 
-- `docs/plans/<task_id>.md` 已生成，且任务状态与 todo 项对应。
+- `docs/plans/<task_id>.md` 已生成，正文包含 Goal / Architecture / File Structure / TDD task steps / Commands with expected output / Risks 或 Stop Conditions，且 task 状态由 `Tn:` todo 项派生。
 - plan-runner 创建了本地 commit；external review 范围是 dispatch 时记录的 base commit 到当前 `HEAD`。
 - 最终报告列出修改文件、验证命令与结果。
 - `git diff --check` 通过。
