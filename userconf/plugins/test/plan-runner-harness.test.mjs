@@ -575,6 +575,111 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
+  it("keeps waiting_for_todo with an actionable diagnostic when todo text omits harness task ids", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+
+      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement the brief." } }
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+
+      await hooks.tool.write_plan.execute(
+        {
+          title: "Harness Slice",
+          tasks: [
+            { title: "Persist state", completion_criteria: ["state file exists"] },
+            { title: "Write markdown", completion_criteria: ["plan file exists"] },
+          ],
+          dag: [],
+          parallel_sets: [],
+        },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
+      )
+
+      await hooks.event({
+        event: {
+          type: "todo.updated",
+          properties: {
+            sessionID: "ses_plan_runner",
+            todos: [
+              { content: "Persist state", status: "in_progress" },
+              { content: "Write markdown", status: "pending" },
+            ],
+          },
+        },
+      })
+
+      const stateAfterTodo = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.equal(stateAfterTodo.status, "waiting_for_todo")
+      assert.equal(stateAfterTodo.todo.mirrored, false)
+      assert.match(stateAfterTodo.todo.mirror_diagnostic, /T1:/)
+      assert.match(stateAfterTodo.todo.mirror_diagnostic, /T2:/)
+      const events = readFileSync(join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl"), "utf8")
+      assert.match(events, /todo_mirror_diagnostic/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("maps T10 todo evidence to T10 instead of treating it as T1", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+
+      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement the brief." } }
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
+      await hooks["tool.execute.after"](
+        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
+        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+      )
+
+      const tasks = Array.from({ length: 10 }, (_, index) => ({
+        title: `Task ${index + 1}`,
+        completion_criteria: [`criterion ${index + 1}`],
+      }))
+      await hooks.tool.write_plan.execute(
+        { title: "Harness Slice", tasks, dag: [], parallel_sets: [] },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
+      )
+
+      await hooks.event({
+        event: {
+          type: "todo.updated",
+          properties: {
+            sessionID: "ses_plan_runner",
+            todos: tasks.map((task, index) => ({
+              content: `T${index + 1}: ${task.title}`,
+              status: index === 9 ? "in_progress" : "pending",
+            })),
+          },
+        },
+      })
+
+      await hooks["tool.execute.before"](
+        { tool: "bash", sessionID: "ses_plan_runner", callID: "call_bash" },
+        { args: { command: "printf ok" } },
+      )
+      await hooks["tool.execute.after"](
+        { tool: "bash", sessionID: "ses_plan_runner", callID: "call_bash", args: { command: "printf ok" } },
+        { metadata: { exit: 0 } },
+      )
+
+      const stateAfterEvidence = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      const commandEvidence = stateAfterEvidence.evidence.find((item) => item.id === "ev-command-call_bash")
+      assert.deepEqual(commandEvidence.task_ids, ["T10"])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("blocks todowrite during repairing because repair work must not rewrite the original plan ledger", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
@@ -1434,8 +1539,12 @@ describe("PlanRunnerHarnessPlugin", () => {
       await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
-      assert.equal(state.status, "interrupted")
+      assert.equal(state.status, "repairing")
       assert.deepEqual(state.child_sessions, [{ session_id: "ses_audit", role: "audit", status: "orphaned" }])
+      assert.equal(state.completion_gate.status, "repair_required")
+      assert.equal(state.completion_gate.source, "audit_review")
+      assert.equal(state.gate_failures[0].source, "audit_review")
+      assert.equal(state.gate_failures[0].failed_open, false)
 
       const events = readFileSync(join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl"), "utf8")
         .split("\n")
@@ -1496,12 +1605,74 @@ describe("PlanRunnerHarnessPlugin", () => {
 
       const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
       const state = readJson(statePath)
-      assert.equal(state.status, "interrupted")
+      assert.equal(state.status, "repairing")
       assert.deepEqual(state.child_sessions, [{ session_id: "ses_audit", role: "audit", status: "orphaned" }])
+      assert.equal(state.completion_gate.status, "repair_required")
+      assert.equal(state.completion_gate.source, "audit_review")
+      assert.equal(state.gate_failures[0].source, "audit_review")
+      assert.equal(state.gate_failures[0].failed_open, false)
       const events = readFileSync(join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl"), "utf8")
       assert.match(events, /audit_dispatch_failed/)
       assert.match(events, /agent not found: plan-runner-audit/)
       assert.doesNotMatch(events, /audit_review_dispatched/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("fails open audit dispatch after two failures and accumulates dispatch errors", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const createdSessions = []
+      const externalCalls = []
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async () => {
+                const id = `ses_audit_${createdSessions.length + 1}`
+                createdSessions.push(id)
+                return { data: { id } }
+              },
+              prompt: async () => {
+                throw new Error("audit prompt unavailable")
+              },
+              promptAsync: async () => {},
+            },
+          },
+        },
+        {
+          stateDir,
+          completionGatePollMs: 5,
+          completionGateTimeoutMs: 1000,
+          externalReview: async (state) => {
+            externalCalls.push(state.task_id)
+            return { result: "pass", provider: "test-provider", findings: "No issues" }
+          },
+        },
+      )
+      const statePath = await prepareCompletionReadyState({ hooks, workspace, stateDir })
+
+      const firstResult = await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
+      let state = readJson(statePath)
+      assert.match(String(firstResult.output || firstResult), /Result: repair_required/)
+      assert.equal(state.status, "repairing")
+      assert.equal(state.gate_failures.filter((item) => item.source === "audit_review").length, 1)
+      assert.equal(state.gate_failures[0].failed_open, false)
+      assert.equal(state.child_sessions[0].status, "orphaned")
+
+      const secondResult = await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
+      state = readJson(statePath)
+      assert.match(String(secondResult.output || secondResult), /Result: validated/)
+      assert.match(String(secondResult.output || secondResult), /audit prompt unavailable/)
+      assert.equal(state.status, "validated")
+      assert.equal(createdSessions.length, 2)
+      assert.equal(externalCalls.length, 1)
+      assert.equal(state.gate_failures.filter((item) => item.source === "audit_review").length, 2)
+      assert.equal(state.gate_failures.at(-1).failed_open, true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1562,12 +1733,13 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("repairs the plan-runner session when audit review output is not valid JSON", async () => {
+  it("asks the audit child to regenerate when audit review output is not valid JSON", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
       const stateDir = join(root, "state")
       const prompts = []
+      const externalCalls = []
       const hooks = await PlanRunnerHarnessPlugin(
         {
           directory: workspace,
@@ -1579,20 +1751,89 @@ describe("PlanRunnerHarnessPlugin", () => {
             },
           },
         },
-        { stateDir },
+        {
+          stateDir,
+          externalReview: async (state) => {
+            externalCalls.push(state.task_id)
+            return { result: "pass", provider: "test-provider", findings: "No issues" }
+          },
+        },
       )
       const { statePath, finish } = await prepareAuditReviewState({ hooks, workspace, stateDir })
 
       await hooks.event({ event: auditMessageEvent("Audit result: pass\nnot json") })
       await hooks.event({ event: auditIdleEvent() })
+
+      await waitUntil(() => prompts.length >= 2)
+
+      let state = readJson(statePath)
+      assert.equal(state.status, "audit_review")
+      assert.equal(state.reviews.audit.length, 0)
+      assert.equal(state.reviews.audit_invalid_json_attempts, 1)
+      assert.equal(prompts.at(-1).path.id, "ses_audit")
+      assert.equal(prompts.at(-1).body.agent, "plan-runner-audit")
+      assert.match(prompts.at(-1).body.parts[0].text, /invalid JSON/i)
+      assert.match(prompts.at(-1).body.parts[0].text, /required_fixes/)
+
+      await hooks.event({ event: auditTextPartEvent(JSON.stringify({ result: "pass", required_fixes: [] })) })
+      await hooks.event({ event: auditIdleEvent() })
+      const finishResult = await finish
+
+      state = readJson(statePath)
+      assert.equal(state.status, "validated")
+      assert.equal(state.reviews.audit.length, 1)
+      assert.equal(state.reviews.audit[0].result, "pass")
+      assert.equal(externalCalls.length, 1)
+      assert.match(String(finishResult.output || finishResult), /Result: validated/)
+      assert.equal(prompts.some((payload) => payload.path?.id === "ses_plan_runner"), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("fails open after two invalid audit JSON attempts and records the audit failure reason", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const prompts = []
+      const externalCalls = []
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async () => ({ data: { id: "ses_audit" } }),
+              prompt: async (payload) => prompts.push(payload),
+              promptAsync: async (payload) => prompts.push(payload),
+            },
+          },
+        },
+        {
+          stateDir,
+          externalReview: async (state) => {
+            externalCalls.push(state.task_id)
+            return { result: "pass", provider: "test-provider", findings: "No issues" }
+          },
+        },
+      )
+      const { statePath, finish } = await prepareAuditReviewState({ hooks, workspace, stateDir })
+
+      await hooks.event({ event: auditMessageEvent("not json") })
+      await hooks.event({ event: auditIdleEvent() })
+      await waitUntil(() => prompts.length >= 2)
+      await hooks.event({ event: auditMessageEvent("still not json") })
+      await hooks.event({ event: auditIdleEvent() })
       const finishResult = await finish
 
       const state = readJson(statePath)
-      assert.equal(state.status, "repairing")
-      assert.equal(state.reviews.audit[0].result, "fail")
-      assert.match(state.reviews.audit[0].required_fixes[0], /valid JSON/i)
-      assert.match(String(finishResult.output || finishResult), /Result: repair_required/)
-      assert.match(String(finishResult.output || finishResult), /valid JSON/i)
+      assert.equal(state.status, "validated")
+      assert.equal(state.reviews.audit[0].result, "pass")
+      assert.match(state.reviews.audit[0].invalid_json_reason, /valid JSON/i)
+      assert.equal(state.reviews.audit[0].invalid_json_attempts, 2)
+      assert.equal(externalCalls.length, 1)
+      assert.match(String(finishResult.output || finishResult), /Result: validated/)
+      assert.equal(prompts.filter((payload) => payload.path?.id === "ses_audit").length, 2)
       assert.equal(prompts.some((payload) => payload.path?.id === "ses_plan_runner"), false)
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -1911,6 +2152,297 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.match(String(result.output || result), /Important issue/)
       assert.equal(readJson(statePath).status, "repairing")
       assert.equal(prompts.some((payload) => payload.path?.id === "ses_plan_runner"), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("rechecks external review after the second repair instead of blocking at the entrypoint", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const prompts = []
+      const externalCalls = []
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async () => ({ data: { id: "ses_audit" } }),
+              prompt: async (payload) => prompts.push(payload),
+              promptAsync: async (payload) => prompts.push(payload),
+            },
+          },
+        },
+        {
+          stateDir,
+          completionGatePollMs: 5,
+          completionGateTimeoutMs: 1000,
+          externalReview: async (state) => {
+            externalCalls.push(state.task_id)
+            return { result: "pass", provider: "test-provider", findings: "No issues" }
+          },
+        },
+      )
+      const statePath = await prepareCompletionReadyState({ hooks, workspace, stateDir })
+      const stateBeforeRecheck = readJson(statePath)
+      stateBeforeRecheck.status = "repairing"
+      stateBeforeRecheck.self_check = { status: "completed", round: 1 }
+      stateBeforeRecheck.reviews = {
+        round: 2,
+        audit: [{ result: "pass", rejected_tasks: [], unknown_tasks: [], unmapped_files: [], required_fixes: [] }],
+        external: [{ result: "issues", provider: "test-provider", findings: "previous external issue" }],
+      }
+      stateBeforeRecheck.completion_gate = { mode: "finish_plan", status: "repair_required", source: "external_review", reasons: ["previous external issue"] }
+      writeFileSync(statePath, JSON.stringify(stateBeforeRecheck, null, 2) + "\n")
+
+      const finishResult = await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
+
+      const state = readJson(statePath)
+      assert.match(String(finishResult.output || finishResult), /Result: validated/)
+      assert.equal(state.status, "validated")
+      assert.equal(externalCalls.length, 1)
+      assert.equal(prompts.length, 0)
+      assert.equal(state.reviews.external.length, 2)
+      assert.equal(state.reviews.external.at(-1).result, "pass")
+      const events = readFileSync(join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl"), "utf8")
+      assert.match(events, /"type":"external_review_started"/)
+      assert.match(events, /"type":"external_review_passed"/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("fails open deterministic check after two failures and accumulates the errors", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const prompts = []
+      const externalCalls = []
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async () => ({ data: { id: "ses_audit" } }),
+              prompt: async (payload) => prompts.push(payload),
+              promptAsync: async (payload) => prompts.push(payload),
+            },
+          },
+        },
+        {
+          stateDir,
+          completionGatePollMs: 5,
+          completionGateTimeoutMs: 1000,
+          externalReview: async (state) => {
+            externalCalls.push(state.task_id)
+            return { result: "pass", provider: "test-provider", findings: "No issues" }
+          },
+        },
+      )
+      const statePath = await prepareCompletionReadyState({ hooks, workspace, stateDir })
+      git(workspace, ["add", "."])
+      git(workspace, ["commit", "-m", "docs(smoke): 准备门禁状态"])
+      const head = git(workspace, ["rev-parse", "HEAD"])
+      const stateBeforeRecheck = readJson(statePath)
+      stateBeforeRecheck.status = "repairing"
+      stateBeforeRecheck.git_base = head
+      stateBeforeRecheck.base_commit = head
+      stateBeforeRecheck.gate_failures = [{ source: "deterministic_check", attempt: 1, reasons: ["previous deterministic failure"], failed_open: false }]
+      stateBeforeRecheck.completion_gate = { mode: "finish_plan", status: "repair_required", source: "deterministic_check", reasons: ["previous deterministic failure"] }
+      writeFileSync(statePath, JSON.stringify(stateBeforeRecheck, null, 2) + "\n")
+
+      const finish = hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
+      await waitUntil(() => prompts.some((payload) => payload.body?.agent === "plan-runner-audit"))
+      await hooks.event({ event: auditTextPartEvent(JSON.stringify({ result: "pass", required_fixes: [] })) })
+      await hooks.event({ event: auditIdleEvent() })
+      const finishResult = await finish
+
+      const state = readJson(statePath)
+      assert.match(String(finishResult.output || finishResult), /Result: validated/)
+      assert.match(String(finishResult.output || finishResult), /Gate Failures:/)
+      assert.equal(state.status, "validated")
+      assert.equal(externalCalls.length, 1)
+      assert.equal(state.gate_failures.filter((item) => item.source === "deterministic_check").length, 2)
+      assert.equal(state.gate_failures.at(-1).failed_open, true)
+      assert.match(state.gate_failures.at(-1).reasons.join("\n"), /HEAD equals base commit/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("fails open external review after two failures and still records findings for the main agent", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const externalCalls = []
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async () => ({ data: { id: "ses_audit" } }),
+              prompt: async () => {},
+              promptAsync: async () => {},
+            },
+          },
+        },
+        {
+          stateDir,
+          completionGatePollMs: 5,
+          completionGateTimeoutMs: 1000,
+          externalReview: async (state) => {
+            externalCalls.push(state.task_id)
+            return { result: "issues", provider: "test-provider", findings: "Important issue still present" }
+          },
+        },
+      )
+      const statePath = await prepareCompletionReadyState({ hooks, workspace, stateDir })
+      const stateBeforeRecheck = readJson(statePath)
+      stateBeforeRecheck.status = "repairing"
+      stateBeforeRecheck.self_check = { status: "completed", round: 1 }
+      stateBeforeRecheck.reviews = {
+        round: 1,
+        audit: [{ result: "pass", required_fixes: [] }],
+        external: [{ result: "issues", provider: "test-provider", findings: "previous external issue" }],
+      }
+      stateBeforeRecheck.gate_failures = [{ source: "external_review", attempt: 1, reasons: ["previous external issue"], failed_open: false }]
+      stateBeforeRecheck.completion_gate = { mode: "finish_plan", status: "repair_required", source: "external_review", reasons: ["previous external issue"] }
+      writeFileSync(statePath, JSON.stringify(stateBeforeRecheck, null, 2) + "\n")
+
+      const finishResult = await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
+
+      const state = readJson(statePath)
+      assert.match(String(finishResult.output || finishResult), /Result: validated/)
+      assert.match(String(finishResult.output || finishResult), /Important issue still present/)
+      assert.equal(state.status, "validated")
+      assert.equal(externalCalls.length, 1)
+      assert.equal(state.reviews.external.length, 2)
+      assert.equal(state.reviews.external.at(-1).result, "issues")
+      assert.equal(state.gate_failures.filter((item) => item.source === "external_review").length, 2)
+      assert.equal(state.gate_failures.at(-1).failed_open, true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("fails open final completeness after two failures and ends with accumulated errors", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const externalCalls = []
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async () => ({ data: { id: "ses_audit" } }),
+              prompt: async () => {},
+              promptAsync: async () => {},
+            },
+          },
+        },
+        {
+          stateDir,
+          completionGatePollMs: 5,
+          completionGateTimeoutMs: 1000,
+          externalReview: async (state) => {
+            externalCalls.push(state.task_id)
+            return { result: "pass", provider: "test-provider", findings: "No issues" }
+          },
+        },
+      )
+      const statePath = await prepareCompletionReadyState({ hooks, workspace, stateDir })
+      const stateBeforeRecheck = readJson(statePath)
+      stateBeforeRecheck.status = "repairing"
+      stateBeforeRecheck.self_check = { status: "completed", round: 1 }
+      stateBeforeRecheck.reviews = {
+        round: 1,
+        audit: [{ result: "pass", required_fixes: [] }],
+        external: [],
+      }
+      stateBeforeRecheck.child_sessions = [{ session_id: "ses_child", role: "worker", status: "running" }]
+      stateBeforeRecheck.gate_failures = [{ source: "completeness_check", attempt: 1, reasons: ["child sessions are still running"], failed_open: false }]
+      stateBeforeRecheck.completion_gate = { mode: "finish_plan", status: "repair_required", source: "completeness_check", reasons: ["child sessions are still running"] }
+      writeFileSync(statePath, JSON.stringify(stateBeforeRecheck, null, 2) + "\n")
+
+      const finishResult = await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
+
+      const state = readJson(statePath)
+      assert.match(String(finishResult.output || finishResult), /Result: validated/)
+      assert.match(String(finishResult.output || finishResult), /child sessions are still running/)
+      assert.equal(state.status, "validated")
+      assert.equal(externalCalls.length, 1)
+      assert.equal(state.gate_failures.filter((item) => item.source === "completeness_check").length, 2)
+      assert.equal(state.gate_failures.at(-1).failed_open, true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("does not restart terminal review after finish_plan already blocked", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const externalCalls = []
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async () => ({ data: { id: "ses_audit" } }),
+              prompt: async () => {},
+              promptAsync: async () => {},
+            },
+          },
+        },
+        {
+          stateDir,
+          completionGatePollMs: 5,
+          completionGateTimeoutMs: 1000,
+          externalReview: async (state) => {
+            externalCalls.push(state.task_id)
+            return { result: "pass", provider: "test-provider", findings: "No issues" }
+          },
+        },
+      )
+      const statePath = await prepareCompletionReadyState({ hooks, workspace, stateDir })
+      const blockedState = readJson(statePath)
+      blockedState.status = "blocked"
+      blockedState.self_check = { status: "completed", round: 1 }
+      blockedState.reviews = {
+        round: 2,
+        audit: [{ result: "pass", rejected_tasks: [], unknown_tasks: [], unmapped_files: [], required_fixes: [] }],
+        external: [
+          { result: "issues", provider: "test-provider", findings: "first external issue" },
+          { result: "issues", provider: "test-provider", findings: "second external issue" },
+        ],
+      }
+      blockedState.completion_gate = {
+        mode: "finish_plan",
+        status: "blocked",
+        source: "external_review",
+        reasons: ["second external issue"],
+      }
+      writeFileSync(statePath, JSON.stringify(blockedState, null, 2) + "\n")
+
+      const finishResult = await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
+
+      const state = readJson(statePath)
+      assert.match(String(finishResult.output || finishResult), /Result: blocked/)
+      assert.match(String(finishResult.output || finishResult), /second external issue/)
+      assert.equal(state.status, "blocked")
+      assert.equal(state.completion_gate.status, "blocked")
+      assert.equal(state.completion_gate.source, "external_review")
+      assert.equal(externalCalls.length, 0)
+      const events = readFileSync(join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl"), "utf8")
+      assert.doesNotMatch(events, /"type":"external_review_started"/)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

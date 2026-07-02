@@ -14,7 +14,7 @@
   <rect x="170" y="35" width="220" height="48" fill="#CFFAFE" stroke="#06B6D4" stroke-width="1.5" rx="8"/>
   <!-- Node 2: Agent planning (indigo) -->
   <rect x="170" y="115" width="220" height="48" fill="#E0E7FF" stroke="#6366F1" stroke-width="1.5" rx="8"/>
-  <!-- Node 3: Agent execution (indigo) -->
+  <!-- Node 3: Agent execution + finish_plan (indigo) -->
   <rect x="170" y="195" width="220" height="48" fill="#E0E7FF" stroke="#6366F1" stroke-width="1.5" rx="8"/>
   <!-- Node 4: Deterministic Check (amber) -->
   <rect x="170" y="275" width="220" height="48" fill="#FEF3C7" stroke="#F59E0B" stroke-width="1.5" rx="8"/>
@@ -62,44 +62,44 @@
 
   <!-- Node 1 text: Skill -->
   <text x="280" y="55" font-size="12" font-weight="bold" fill="#0E7490" text-anchor="middle">plan-runner-dispatch Skill</text>
-  <text x="280" y="71" font-size="9.5" fill="#6B7280" text-anchor="middle">父 Agent 触发 · 路由派发 · 创建 child session</text>
+  <text x="280" y="71" font-size="9.5" fill="#6B7280" text-anchor="middle">父 Agent 触发 · task(plan-runner) · 创建 child session</text>
 
   <!-- Node 2 text: Agent Planning -->
   <text x="280" y="135" font-size="12" font-weight="bold" fill="#3730A3" text-anchor="middle">Agent: 计划编写 + Todo同步</text>
-  <text x="280" y="151" font-size="9.5" fill="#6B7280" text-anchor="middle">write_plan → DAG验证 → todowrite → mirrored</text>
+  <text x="280" y="151" font-size="9.5" fill="#6B7280" text-anchor="middle">write_plan → DAG无环验证 → todowrite → mirrored</text>
 
-  <!-- Node 3 text: Agent Execution -->
-  <text x="280" y="215" font-size="12" font-weight="bold" fill="#3730A3" text-anchor="middle">Agent: 任务执行 + 证据收集</text>
-  <text x="280" y="231" font-size="9.5" fill="#6B7280" text-anchor="middle">bash/edit/write → evidence(diff|command) 自动归属</text>
+  <!-- Node 3 text: Agent Execution + finish_plan -->
+  <text x="280" y="215" font-size="12" font-weight="bold" fill="#3730A3" text-anchor="middle">Agent: 执行 + finish_plan</text>
+  <text x="280" y="231" font-size="9.5" fill="#6B7280" text-anchor="middle">任务执行 · evidence自动归属 · finish_plan触发门禁</text>
 
   <!-- Node 4 text: Det Check -->
   <text x="280" y="295" font-size="12" font-weight="bold" fill="#92400E" text-anchor="middle">Deterministic Check 自检</text>
-  <text x="280" y="311" font-size="9.5" fill="#6B7280" text-anchor="middle">5项: plan完整 · todo同步清空 · 证据覆盖 · DAG</text>
+  <text x="280" y="311" font-size="9.5" fill="#6B7280" text-anchor="middle">7项: plan·todo·evidence·commit boundary·gate task过滤</text>
 
   <!-- Node 5 text: Audit -->
   <text x="280" y="375" font-size="12" font-weight="bold" fill="#5B21B6" text-anchor="middle">Audit Review 审计</text>
-  <text x="280" y="391" font-size="9.5" fill="#6B7280" text-anchor="middle">child session → plan/files/evidence → JSON pass|fail</text>
+  <text x="280" y="391" font-size="9.5" fill="#6B7280" text-anchor="middle">Harness派发audit · JSON重试2次 · fail-open(≥2)</text>
 
   <!-- Node 6 text: External -->
   <text x="280" y="455" font-size="12" font-weight="bold" fill="#9D174D" text-anchor="middle">External Review 外审</text>
-  <text x="280" y="471" font-size="9.5" fill="#6B7280" text-anchor="middle">reviewer.py --spec plan --depth exhaustive → pass|issues</text>
+  <text x="280" y="471" font-size="9.5" fill="#6B7280" text-anchor="middle">Provider链故障转移 · 最多2轮 · fail-open(≥2)</text>
 
   <!-- Node 7 text: Completeness -->
   <text x="280" y="535" font-size="12" font-weight="bold" fill="#065F46" text-anchor="middle">Final Completeness 完整性</text>
-  <text x="280" y="551" font-size="9.5" fill="#6B7280" text-anchor="middle">9项: hash一致 · sessions完成 · 审计外审均pass</text>
+  <text x="280" y="551" font-size="9.5" fill="#6B7280" text-anchor="middle">重验全部条件 · child sessions idle · fail-open</text>
 
   <!-- Repair node text -->
-  <text x="730" y="375" font-size="12" font-weight="bold" fill="#C2410C" text-anchor="middle">promptRepair 修复循环</text>
-  <text x="730" y="391" font-size="9.5" fill="#6B7280" text-anchor="middle">回投 plan-runner session · round++</text>
+  <text x="730" y="375" font-size="12" font-weight="bold" fill="#C2410C" text-anchor="middle">Repair 修复循环</text>
+  <text x="730" y="391" font-size="9.5" fill="#6B7280" text-anchor="middle">per-gate计数 · 返回repair_required · 禁todowrite</text>
 
   <!-- Terminal text -->
   <text x="280" y="617" font-size="13" font-weight="bold" fill="#FFFFFF" text-anchor="middle">VALIDATED ✓</text>
 
   <text x="730" y="459" font-size="11" font-weight="bold" fill="#FFFFFF" text-anchor="middle">BLOCKED ✗</text>
-  <text x="730" y="473" font-size="9" fill="#FECACA" text-anchor="middle">round ≥ 2</text>
+  <text x="730" y="473" font-size="9" fill="#FECACA" text-anchor="middle">hard failure</text>
 
   <text x="730" y="535" font-size="11" font-weight="bold" fill="#FFFFFF" text-anchor="middle">INTERRUPTED ✗</text>
-  <text x="730" y="549" font-size="9" fill="#D1D5DB" text-anchor="middle">promptAsync 不可用</text>
+  <text x="730" y="549" font-size="9" fill="#D1D5DB" text-anchor="middle">timeout / cancelled</text>
 
   <!-- Legend -->
   <circle cx="90" cy="698" r="5" fill="#06B6D4"/>
@@ -109,12 +109,11 @@
   <circle cx="320" cy="698" r="5" fill="#F59E0B"/>
   <text x="332" y="702" font-size="10" fill="#374151">Harness 门禁</text>
   <circle cx="460" cy="698" r="5" fill="#F97316"/>
-  <text x="472" y="702" font-size="10" fill="#374151">修复路径</text>
-  <circle cx="580" cy="698" r="5" fill="#10B981"/>
-  <text x="592" y="702" font-size="10" fill="#374151">通过</text>
-  <circle cx="650" cy="698" r="5" fill="#EF4444"/>
-  <text x="662" y="702" font-size="10" fill="#374151">终止</text>
-  <circle cx="720" cy="698" r="5" fill="#6B7280"/>
-  <text x="732" y="702" font-size="10" fill="#374151">中断</text>
-  <text x="820" y="702" font-size="10" fill="#374151">最多2轮修复</text>
+  <text x="472" y="702" font-size="10" fill="#374151">修复(1st fail)</text>
+  <circle cx="600" cy="698" r="5" fill="#10B981"/>
+  <text x="612" y="702" font-size="10" fill="#374151">通过/fail-open(2nd)</text>
+  <circle cx="770" cy="698" r="5" fill="#EF4444"/>
+  <text x="782" y="702" font-size="10" fill="#374151">终止</text>
+  <circle cx="850" cy="698" r="5" fill="#6B7280"/>
+  <text x="862" y="702" font-size="10" fill="#374151">中断</text>
 </svg>

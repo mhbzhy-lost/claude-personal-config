@@ -13,6 +13,9 @@ const EXECUTION_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash",
 const TERMINAL_GATE_TASK_RE = /\bfinish_plan\b|final report|最终报告|终态门禁/i
 const ACTIVE_STATUSES = new Set(["dispatching", "planning_required", "waiting_for_todo", "ready_to_execute", "executing", "audit_review", "external_review", "repairing", "interrupted"])
 const COMPLETION_GATE_RESULT_STATUSES = new Set(["validated", "repairing", "blocked", "interrupted", "stale"])
+const TERMINAL_COMPLETION_GATE_STATUSES = new Set(["validated", "blocked", "interrupted", "stale"])
+const MAX_AUDIT_INVALID_JSON_ATTEMPTS = 2
+const MAX_GATE_FAILURES = 2
 
 function defaultStateDir() {
   return join(homedir(), ".config", "opencode", "task-state")
@@ -388,11 +391,30 @@ function countInProgressTodos(todos = []) {
   return todos.filter((todo) => todo.status === "in_progress").length
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function todoContentMatchesTaskID(content, taskID) {
+  if (!taskID) return false
+  return new RegExp(`(^|[^A-Za-z0-9_])${escapeRegExp(taskID)}(?=$|[^A-Za-z0-9_])`).test(String(content || ""))
+}
+
+function todoMatchesTask(todo, task) {
+  return todoContentMatchesTaskID(todo?.content, task?.id)
+}
+
+function todoMirrorDiagnostic(todos = [], tasks = []) {
+  const missing = tasks.filter((task) => !todos.some((todo) => todoMatchesTask(todo, task))).map((task) => task.id)
+  if (!missing.length) return null
+  const examples = missing.slice(0, 3).map((taskID) => `${taskID}: ...`).join(", ")
+  return `todo list must mirror every plan task id as a standalone token, preferably with a Tn: prefix; missing ${missing.join(", ")}; rewrite todowrite items like ${examples}`
+}
+
 function activeTodoTaskID(todos = [], tasks = []) {
   const active = todos.find((todo) => todo.status === "in_progress")
   if (!active) return null
-  const content = String(active.content || "")
-  return tasks.find((task) => !isTerminalGateTask(task) && content.includes(task.id))?.id || null
+  return tasks.find((task) => !isTerminalGateTask(task) && todoMatchesTask(active, task))?.id || null
 }
 
 function isTerminalGateTask(task = {}) {
@@ -400,8 +422,7 @@ function isTerminalGateTask(task = {}) {
 }
 
 function taskForTodo(state, todo) {
-  const content = String(todo?.content || "")
-  return state.plan_contract.tasks.find((task) => content.includes(task.id)) || null
+  return state.plan_contract.tasks.find((task) => todoMatchesTask(todo, task)) || null
 }
 
 function isTerminalGateTodo(state, todo) {
@@ -442,7 +463,7 @@ function evidenceTaskIDs(state) {
 }
 
 function todosCoverTasks(todos = [], tasks = []) {
-  return tasks.every((task) => todos.some((todo) => String(todo.content || "").includes(task.id)))
+  return !todoMirrorDiagnostic(todos, tasks)
 }
 
 async function enforcePhaseGate(stateDir, input) {
@@ -488,11 +509,13 @@ async function handleTodoUpdated(stateDir, event) {
   const state = await readTaskState(stateDir, index.task_id)
   if (!state) return
   state.todo.last_seen = todos
-  state.todo.mirrored = todosCoverTasks(todos, state.plan_contract.tasks)
+  const mirrorDiagnostic = todoMirrorDiagnostic(todos, state.plan_contract.tasks)
+  state.todo.mirrored = !mirrorDiagnostic
+  state.todo.mirror_diagnostic = mirrorDiagnostic
   if (state.status === "waiting_for_todo" && state.todo.mirrored) state.status = "ready_to_execute"
   state.updated_at = Date.now()
   await writeTaskState(stateDir, state)
-  await appendEvent(stateDir, state.task_id, { type: "todo_updated", session_id: sessionID, mirrored: state.todo.mirrored })
+  await appendEvent(stateDir, state.task_id, { type: "todo_updated", session_id: sessionID, mirrored: state.todo.mirrored, todo_mirror_diagnostic: mirrorDiagnostic || undefined })
 }
 
 async function recordToolEvidence(stateDir, input, output) {
@@ -528,7 +551,7 @@ async function recordToolEvidence(stateDir, input, output) {
 
 function completedTaskIDs(state) {
   return originalPlanTasks(state)
-    .filter((task) => state.todo.last_seen.some((todo) => todo.status === "completed" && String(todo.content || "").includes(task.id)))
+    .filter((task) => state.todo.last_seen.some((todo) => todo.status === "completed" && todoMatchesTask(todo, task)))
     .map((task) => task.id)
 }
 
@@ -589,7 +612,7 @@ function auditPromptText(state) {
     : ["- none recorded"]
   const todos = planTasks.length
     ? planTasks.map((task) => {
-      const todo = state.todo.last_seen.find((item) => String(item.content || "").includes(task.id))
+      const todo = state.todo.last_seen.find((item) => todoMatchesTask(item, task))
       const status = todo?.status || "missing"
       return `- ${task.id}: ${status} - ${task.title}`
     })
@@ -600,7 +623,7 @@ function auditPromptText(state) {
     "- You must consume the Todo state observed by harness below; do not pass work that merely marks todos complete.",
     "- Check whether each completed todo has a complete implementation, not just an interface shell, stub, mock, or code that only satisfy tests.",
     "- Review the plan path, task contract, todo state, modified files, and observed validation context.",
-    "- Return only fields consumed by the harness: result, rejected_tasks, unknown_tasks, unmapped_files, required_fixes.",
+    "- Return only fields consumed by the harness: result, required_fixes.",
     `- Harness Task ID: ${state.task_id}`,
     `- Plan path: ${state.plan_path}`,
     "- Task contract:",
@@ -619,6 +642,43 @@ function sessionIDFromCreateResult(result) {
 
 function cloneState(state) {
   return JSON.parse(JSON.stringify(state))
+}
+
+function gateFailures(state = {}) {
+  return Array.isArray(state.gate_failures) ? state.gate_failures : []
+}
+
+function ensureGateFailures(state) {
+  if (!Array.isArray(state.gate_failures)) state.gate_failures = []
+  return state.gate_failures
+}
+
+function gateFailureCount(state, source) {
+  return gateFailures(state).filter((failure) => failure.source === source).length
+}
+
+function nextGateFailureAttempt(state, source) {
+  return gateFailureCount(state, source) + 1
+}
+
+function shouldFailOpenGate(state, source) {
+  return nextGateFailureAttempt(state, source) >= MAX_GATE_FAILURES
+}
+
+function gateFailedOpen(state, source) {
+  return gateFailures(state).some((failure) => failure.source === source && failure.failed_open)
+}
+
+function recordGateFailure(state, source, reasons, { failedOpen = false } = {}) {
+  const entry = {
+    source,
+    attempt: nextGateFailureAttempt(state, source),
+    reasons: (Array.isArray(reasons) ? reasons : [reasons]).map((reason) => String(reason)),
+    failed_open: Boolean(failedOpen),
+    ts: Date.now(),
+  }
+  ensureGateFailures(state).push(entry)
+  return entry
 }
 
 function diagnosticValue(value) {
@@ -684,31 +744,33 @@ function normalizeStringArray(value) {
 function auditFailureReasons(result) {
   const reasons = []
   if (result.result !== "pass") reasons.push(`audit result is ${result.result || "missing"}`)
-  for (const field of ["rejected_tasks", "unknown_tasks", "unmapped_files"]) {
-    if (result[field]?.length) reasons.push(`${field}: ${result[field].join(", ")}`)
-  }
   for (const fix of result.required_fixes || []) reasons.push(fix)
   return reasons
+}
+
+function invalidAuditReview(reason) {
+  return {
+    result: "invalid",
+    required_fixes: [reason],
+    invalid_json: true,
+  }
 }
 
 function normalizeAuditReview(text) {
   try {
     const parsed = extractJsonObject(text)
+    if (parsed.result !== "pass" && parsed.result !== "fail") {
+      return invalidAuditReview("audit review must return valid JSON with result set to pass or fail")
+    }
+    if (!Array.isArray(parsed.required_fixes)) {
+      return invalidAuditReview("audit review must return valid JSON with required_fixes as an array")
+    }
     return {
-      result: parsed.result === "pass" ? "pass" : "fail",
-      rejected_tasks: normalizeStringArray(parsed.rejected_tasks),
-      unknown_tasks: normalizeStringArray(parsed.unknown_tasks),
-      unmapped_files: normalizeStringArray(parsed.unmapped_files),
+      result: parsed.result,
       required_fixes: normalizeStringArray(parsed.required_fixes),
     }
   } catch (error) {
-    return {
-      result: "fail",
-      rejected_tasks: [],
-      unknown_tasks: [],
-      unmapped_files: [],
-      required_fixes: [`audit review must return valid JSON: ${formatDiagnosticError(error)}`],
-    }
+    return invalidAuditReview(`audit review must return valid JSON: ${formatDiagnosticError(error)}`)
   }
 }
 
@@ -881,22 +943,19 @@ function rememberCompletionGateResult(state, status, source, reasons) {
 
 async function promptRepair({ stateDir, state, source, reasons }) {
   const nextState = cloneState(state)
-  const completionGateExhausted = completionGateActive(nextState) && source === "external_review" && (nextState.reviews.external || []).length >= 2
-  if (nextState.reviews.round >= 2 || completionGateExhausted) {
-    nextState.status = "blocked"
-    rememberCompletionGateResult(nextState, "blocked", source, reasons)
-    nextState.updated_at = Date.now()
-    await writeTaskState(stateDir, nextState)
-    await appendEvent(stateDir, state.task_id, { type: `${source}_blocked`, reasons })
-    return
-  }
-
+  recordGateFailure(nextState, source, reasons)
   nextState.status = "repairing"
   nextState.reviews.round += 1
   rememberCompletionGateResult(nextState, "repair_required", source, reasons)
   nextState.updated_at = Date.now()
   await writeTaskState(stateDir, nextState)
   await appendEvent(stateDir, state.task_id, { type: `${source}_repair_required`, reasons })
+}
+
+async function failOpenGate({ stateDir, state, source, reasons }) {
+  recordGateFailure(state, source, reasons, { failedOpen: true })
+  state.updated_at = Date.now()
+  await appendEvent(stateDir, state.task_id, { type: `${source}_failed_open`, reasons })
 }
 
 function sleep(ms) {
@@ -946,6 +1005,14 @@ function completionGateResultText(state) {
       lines.push(`- external: ${latest.result}${latest.provider ? ` (${latest.provider})` : ""}`)
     }
   }
+  const failures = gateFailures(state)
+  if (failures.length) {
+    lines.push("", "Gate Failures:")
+    for (const failure of failures) {
+      const status = failure.failed_open ? "fail-open" : "repair-required"
+      lines.push(`- ${failure.source}#${failure.attempt} ${status}: ${(failure.reasons || []).join("; ")}`)
+    }
+  }
   return lines.join("\n")
 }
 
@@ -955,6 +1022,16 @@ async function finishPlanTool(args, context, stateDir, { client, directory, exte
   const state = await readTaskStateForSession(stateDir, sessionID)
   if (!state) throw new Error("finish_plan task state is not readable")
   if (state.plan_runner_session_id !== sessionID) throw new Error("finish_plan must run in the bound plan-runner session")
+  if (completionGateActive(state) && TERMINAL_COMPLETION_GATE_STATUSES.has(state.status)) {
+    return {
+      output: completionGateResultText(state),
+      metadata: {
+        task_id: state.task_id,
+        status: state.status,
+        completion_gate: state.completion_gate || null,
+      },
+    }
+  }
 
   const nextState = cloneState(state)
   nextState.completion_gate = {
@@ -1011,15 +1088,24 @@ async function finalCompletenessFailures(state) {
     if (!evidenceFiles.has(file)) reasons.push(`modified file is not mapped to evidence: ${file}`)
   }
   if (state.child_sessions?.some((child) => child.status === "running")) reasons.push("child sessions are still running")
-  if (!state.reviews.audit.length) reasons.push("audit review did not run")
-  if (state.reviews.external.at(-1)?.result !== "pass") reasons.push("latest external review did not pass")
-  if (state.reviews.round > 2) reasons.push("review repair round limit exceeded")
+  if (!state.reviews.audit.length && !gateFailedOpen(state, "audit_review")) reasons.push("audit review did not run")
+  if (state.reviews.external.at(-1)?.result !== "pass" && !gateFailedOpen(state, "external_review")) reasons.push("latest external review did not pass")
   return reasons
 }
 
 async function finalizeIfComplete({ stateDir, client, directory, state }) {
   const reasons = await finalCompletenessFailures(state)
   if (reasons.length) {
+    if (shouldFailOpenGate(state, "completeness_check")) {
+      const nextState = cloneState(state)
+      await failOpenGate({ stateDir, state: nextState, source: "completeness_check", reasons })
+      nextState.status = "validated"
+      rememberCompletionGateResult(nextState, "validated", "terminal_gate", [])
+      nextState.updated_at = Date.now()
+      await writeTaskState(stateDir, nextState)
+      await appendEvent(stateDir, state.task_id, { type: "task_validated", fail_open: true })
+      return
+    }
     await promptRepair({ stateDir, state, source: "completeness_check", reasons })
     return
   }
@@ -1053,6 +1139,12 @@ async function runExternalReview({ stateDir, client, directory, state, externalR
 
   if (review.result !== "pass") {
     await appendEvent(stateDir, state.task_id, { type: "external_review_failed", result: review.result })
+    if (shouldFailOpenGate(reviewedState, "external_review")) {
+      await failOpenGate({ stateDir, state: reviewedState, source: "external_review", reasons: [review.findings || `external review ${review.result}`] })
+      await writeTaskState(stateDir, reviewedState)
+      await finalizeIfComplete({ stateDir, client, directory, state: reviewedState })
+      return
+    }
     await promptRepair({ stateDir, state: reviewedState, source: "external_review", reasons: [review.findings || `external review ${review.result}`] })
     return
   }
@@ -1079,6 +1171,66 @@ async function handleAuditReviewMessage(stateDir, event) {
   await writeTaskState(stateDir, state)
 }
 
+async function requestAuditRegeneration({ stateDir, client, directory, sessionID, state, reason, attempts, externalReview }) {
+  if (!client?.session?.prompt) {
+    await recordAuditDispatchFailure({ stateDir, client, directory, sessionID: state.plan_runner_session_id, state, error: "audit regeneration prompt unavailable", auditSessionID: sessionID, externalReview })
+    return
+  }
+
+  const nextState = cloneState(state)
+  nextState.reviews.audit_invalid_json_attempts = attempts
+  recordGateFailure(nextState, "audit_review", [reason])
+  delete nextState.reviews.pending_audit_text
+  nextState.updated_at = Date.now()
+  await writeTaskState(stateDir, nextState)
+
+  const query = { directory: directory || state.worktree }
+  const prompted = await client.session.prompt({
+    path: { id: sessionID },
+    query,
+    body: {
+      agent: "plan-runner-audit",
+      parts: [{
+        type: "text",
+        text: [
+          "Your previous audit response was invalid JSON for the plan-runner harness.",
+          `Reason: ${reason}`,
+          "Return only this JSON shape, with no markdown fences or extra text:",
+          '{"result":"pass","required_fixes":[]}',
+          "Set result to fail and put concise string fixes in required_fixes only when fixes remain.",
+        ].join("\n"),
+      }],
+    },
+  })
+  throwIfSdkError(prompted, "audit regeneration prompt failed")
+  await appendEvent(stateDir, state.task_id, { type: "audit_review_regeneration_requested", audit_session_id: sessionID, attempts, reason })
+}
+
+async function failOpenInvalidAudit({ stateDir, client, directory, sessionID, state, audit, attempts, externalReview }) {
+  const nextState = cloneState(state)
+  nextState.reviews.audit_invalid_json_attempts = attempts
+  recordGateFailure(nextState, "audit_review", [audit.required_fixes?.[0] || "audit review did not return valid JSON"], { failedOpen: true })
+  nextState.reviews.audit = [...(nextState.reviews.audit || []), {
+    result: "pass",
+    required_fixes: [],
+    invalid_json_reason: audit.required_fixes?.[0] || "audit review did not return valid JSON",
+    invalid_json_attempts: attempts,
+  }]
+  delete nextState.reviews.pending_audit_text
+  nextState.child_sessions = (nextState.child_sessions || []).map((child) => (
+    child.session_id === sessionID ? { ...child, status: "completed" } : child
+  ))
+  nextState.updated_at = Date.now()
+  await writeTaskState(stateDir, nextState)
+  await appendEvent(stateDir, state.task_id, {
+    type: "audit_review_invalid_json_fail_open",
+    attempts,
+    reason: audit.required_fixes?.[0] || "audit review did not return valid JSON",
+  })
+  await appendEvent(stateDir, state.task_id, { type: "audit_review_passed", fail_open: true })
+  await runExternalReview({ stateDir, client, directory, state: nextState, externalReview })
+}
+
 async function handleAuditReviewIdle({ stateDir, client, directory, event, externalReview }) {
   if (event.type !== "session.idle") return
   const sessionID = event.properties?.sessionID
@@ -1089,6 +1241,16 @@ async function handleAuditReviewIdle({ stateDir, client, directory, event, exter
   const state = await readTaskState(stateDir, index.task_id)
   if (!state || state.status !== "audit_review") return
   const audit = normalizeAuditReview(state.reviews.pending_audit_text || "")
+  if (audit.invalid_json) {
+    const attempts = (state.reviews.audit_invalid_json_attempts || 0) + 1
+    if (attempts < MAX_AUDIT_INVALID_JSON_ATTEMPTS) {
+      await requestAuditRegeneration({ stateDir, client, directory, sessionID, state, reason: audit.required_fixes?.[0] || "invalid JSON", attempts, externalReview })
+      return
+    }
+    await failOpenInvalidAudit({ stateDir, client, directory, sessionID, state, audit, attempts, externalReview })
+    return
+  }
+
   const nextState = cloneState(state)
   nextState.reviews.audit = [...(nextState.reviews.audit || []), audit]
   delete nextState.reviews.pending_audit_text
@@ -1101,6 +1263,12 @@ async function handleAuditReviewIdle({ stateDir, client, directory, event, exter
   const reasons = auditFailureReasons(audit)
   if (reasons.length) {
     await appendEvent(stateDir, state.task_id, { type: "audit_review_failed", reasons })
+    if (shouldFailOpenGate(nextState, "audit_review")) {
+      await failOpenGate({ stateDir, state: nextState, source: "audit_review", reasons })
+      await writeTaskState(stateDir, nextState)
+      await runExternalReview({ stateDir, client, directory, state: nextState, externalReview })
+      return
+    }
     await promptRepair({ stateDir, state: nextState, source: "audit_review", reasons })
     return
   }
@@ -1113,10 +1281,9 @@ function shouldCheckExpiredTasks(event) {
   return event?.type === "session.idle" || event?.type === "todo.updated"
 }
 
-async function recordAuditDispatchFailure({ stateDir, sessionID, state, error, auditSessionID = null }) {
+async function recordAuditDispatchFailure({ stateDir, client, directory, sessionID, state, error, auditSessionID = null, externalReview }) {
   const failedState = cloneState(state)
-  failedState.status = "interrupted"
-  failedState.updated_at = Date.now()
+  const reason = formatDiagnosticError(error)
 
   if (auditSessionID) {
     const childSessions = Array.isArray(failedState.child_sessions) ? failedState.child_sessions : []
@@ -1127,21 +1294,35 @@ async function recordAuditDispatchFailure({ stateDir, sessionID, state, error, a
   const event = {
     type: "audit_dispatch_failed",
     session_id: sessionID,
-    error: formatDiagnosticError(error),
+    error: reason,
   }
   if (auditSessionID) event.orphan_session_id = auditSessionID
 
   try {
+    if (shouldFailOpenGate(failedState, "audit_review")) {
+      await failOpenGate({ stateDir, state: failedState, source: "audit_review", reasons: [reason] })
+      await writeTaskState(stateDir, failedState)
+      await appendEvent(stateDir, state.task_id, event)
+      await runExternalReview({ stateDir, client, directory, state: failedState, externalReview })
+      return
+    }
+
+    recordGateFailure(failedState, "audit_review", [reason])
+    failedState.status = "repairing"
+    failedState.reviews.round += 1
+    rememberCompletionGateResult(failedState, "repair_required", "audit_review", [reason])
+    failedState.updated_at = Date.now()
     await writeTaskState(stateDir, failedState)
     await appendEvent(stateDir, state.task_id, event)
+    await appendEvent(stateDir, state.task_id, { type: "audit_review_repair_required", reasons: [reason] })
   } catch (recordError) {
     console.error("plan-runner audit failure recording failed", formatDiagnosticError(recordError))
   }
 }
 
-async function dispatchAuditReview({ stateDir, client, directory, sessionID, state }) {
+async function dispatchAuditReview({ stateDir, client, directory, sessionID, state, externalReview }) {
   if (!client?.session?.create || !client?.session?.prompt) {
-    await recordAuditDispatchFailure({ stateDir, sessionID, state, error: "session create/prompt unavailable" })
+    await recordAuditDispatchFailure({ stateDir, client, directory, sessionID, state, error: "session create/prompt unavailable", externalReview })
     return
   }
 
@@ -1178,7 +1359,7 @@ async function dispatchAuditReview({ stateDir, client, directory, sessionID, sta
     throwIfSdkError(prompted, "audit prompt dispatch failed")
     await appendEvent(stateDir, state.task_id, { type: "audit_review_dispatched", session_id: sessionID, audit_session_id: auditSessionID })
   } catch (error) {
-    await recordAuditDispatchFailure({ stateDir, sessionID, state, error, auditSessionID })
+    await recordAuditDispatchFailure({ stateDir, client, directory, sessionID, state, error, auditSessionID, externalReview })
   }
 }
 
@@ -1260,14 +1441,6 @@ async function handleMessageDiff(stateDir, event) {
 }
 
 async function continuePlanRunnerReview({ stateDir, client, directory, sessionID, state, externalReview }) {
-  if (state.reviews.round >= 2) {
-    state.status = "blocked"
-    rememberCompletionGateResult(state, "blocked", "review_round_limit", ["review repair round limit exceeded"])
-    state.updated_at = Date.now()
-    await writeTaskState(stateDir, state)
-    return
-  }
-
   const reasons = [...findDeterministicCheckFailures(state), ...await gitCommitBoundaryFailures(state)]
   if (reasons.length === 0) {
     if ((state.reviews.audit || []).length) {
@@ -1280,15 +1453,27 @@ async function continuePlanRunnerReview({ stateDir, client, directory, sessionID
     state.updated_at = Date.now()
     await writeTaskState(stateDir, state)
     await appendEvent(stateDir, state.task_id, { type: "deterministic_check_passed", session_id: sessionID })
-    await dispatchAuditReview({ stateDir, client, directory, sessionID, state })
+    await dispatchAuditReview({ stateDir, client, directory, sessionID, state, externalReview })
+    return
+  }
+
+  if (shouldFailOpenGate(state, "deterministic_check")) {
+    await failOpenGate({ stateDir, state, source: "deterministic_check", reasons })
+    if ((state.reviews.audit || []).length) {
+      await writeTaskState(stateDir, state)
+      await runExternalReview({ stateDir, client, directory, state, externalReview })
+      return
+    }
+
+    state.status = "audit_review"
+    state.updated_at = Date.now()
+    await writeTaskState(stateDir, state)
+    await dispatchAuditReview({ stateDir, client, directory, sessionID, state, externalReview })
     return
   }
 
   state.status = "repairing"
-  state.reviews.round += 1
-  rememberCompletionGateResult(state, "repair_required", "deterministic_check", reasons)
-  state.updated_at = Date.now()
-  await writeTaskState(stateDir, state)
+  await promptRepair({ stateDir, state, source: "deterministic_check", reasons })
   await appendEvent(stateDir, state.task_id, { type: "repair_required", session_id: sessionID, reasons })
 }
 

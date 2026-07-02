@@ -28,17 +28,18 @@ or code that only satisfy tests without completing the requested behavior.
 
 Return only a JSON object. Do not wrap it in markdown fences. Do not include
 extra explanation before or after the JSON.
+Use only `result` and `required_fixes`; do not add task/file classification
+fields.
+If the harness asks you to regenerate because the previous response was invalid,
+return the same JSON shape again and no surrounding prose.
 
 ```json
 {
   "result": "pass" | "fail",
-  "rejected_tasks": [],
-  "unknown_tasks": [],
-  "unmapped_files": [],
   "required_fixes": []
 }
 ```
 
-Use empty arrays for categories with no findings. Set `result` to `fail` when
-any task is rejected, any unknown task is found, any modified file is unmapped,
-or any required fix remains.
+Use an empty array when no fixes are required. Set `result` to `fail` when any
+required fix remains, and describe each fix as a concise string in
+`required_fixes`.

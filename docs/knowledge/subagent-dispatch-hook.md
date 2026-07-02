@@ -74,6 +74,9 @@ subagent safety policy 保证 child 没有 `task` 权限。child 只能返回执
   `title` / `completion_criteria`，并用实际工具事件裁定 diff evidence。
 - `write_plan` 会拒绝引用未知 task id 或包含环的 DAG；后续执行/审计可以假设
   `plan_contract.dag` 是可拓扑排序的依赖图。
+- OpenCode `todowrite` 不提供稳定 per-todo id；harness 只通过 todo content 中独立的
+  `Tn` token 映射到 `write_plan` 生成的 plan task。agent 应使用 `Tn: ...` 前缀；
+  `T10` 不能被视为 `T1`。
 - phase gate 在 `planning_required` / `waiting_for_todo` / execution / terminal gate 阶段限制工具；`skill`
   作为只读上下文工具可用于普通执行阶段，`apply_patch` 作为执行类变更工具在执行阶段需要 active todo，repair 阶段由 harness 推导 evidence 绑定目标。
 - `todo.updated`、`tool.execute.after(bash)`、`tool.execute.after(write|edit).input.filePath`、
@@ -147,18 +150,24 @@ tool/event hook 行为。
 - 新 task state 必须按当前 schema 写入；磁盘残留的旧不兼容 state 直接清理，不由
   harness 自动迁移推进。
 - audit 派发失败时，`audit_dispatch_failed` event 应保留已创建但未完成派发的
-  `orphan_session_id`，并记录 stack / response data / stderr 等 SDK 诊断上下文。
+  `orphan_session_id`，并记录 stack / response data / stderr 等 SDK 诊断上下文；第一次失败
+  返回 `repair_required`，第二次仍失败则 audit fail-open 进入 external review。
 - hey-api/OpenCode SDK 失败不一定 throw；`session.create`、`session.prompt`、`session.promptAsync`
   可能返回 `{ error: ... }`。harness 在记录 `audit_review_dispatched` 前必须检查返回对象，
   否则会留下 audit session 已创建但无 message / part 的 running child。
-- audit child session idle 后，harness 消费最新 audit message 文本并要求 JSON 结构；JSON
-  不可解析或 `result != pass`、`rejected_tasks` / `unknown_tasks` / `unmapped_files` 非空时，
+- audit child session idle 后，harness 消费最新 audit message 文本并要求 JSON 结构；当前只消费
+  `result` 与 `required_fixes`。合法 JSON 中 `result != pass` 或 `required_fixes` 非空时，
   `finish_plan` 返回 `repair_required` 给 plan-runner 当前 tool 调用。review findings 不再通过
   `promptAsync` 回投，也不暴露给主会话处理。
-- audit pass 后进入 external review：默认命令 runner 调用
+- audit JSON 语法或 schema 错误不应消耗 plan-runner repair 预算。harness 会先向同一个
+  audit child 追加一次 regeneration prompt；若累计 2 次仍无合法 JSON，则 audit fail-open
+  视为通过，并在 `reviews.audit[0].invalid_json_reason` / `invalid_json_attempts` 记录失败原因，
+  继续进入 external review。
+- audit pass 或 audit fail-open 后进入 external review：默认命令 runner 调用
   `reviewer.py <base_commit> HEAD --worktree <worktree> --spec <plan_path>`，将输出归一为
-  `pass` / `issues` / `unavailable` 写入 `reviews.external`。只有 external pass 且 final
-  completeness check 通过时，task 才写 `status = validated`。
+  `pass` / `issues` / `unavailable` 写入 `reviews.external`。external 第一次失败返回
+  `repair_required`；第二次仍失败则 external fail-open，错误保留在 `gate_failures`，继续 final
+  completeness check。
 - external review 范围只允许由 Git commit range 定义。`modified_files` / `evidence`
   继续用于 deterministic check 和 audit 上下文，但不能定义 external review 范围。
 - `finish_plan` deterministic check 会在 Git repo 中要求当前 repo clean、`HEAD` 不等于
@@ -181,6 +190,10 @@ tool/event hook 行为。
   必须再次调用 `finish_plan`；这是唯一 terminal gate boundary。
 - deterministic / final completeness 不消费 agent 提交的 evidence 契约；completed task
   需要 harness-observed diff evidence。command log 只作为实际命令日志，不作为完成条件。
+- terminal gate 每个节点失败上限为 2：`deterministic_check`、`audit_review`、
+  `external_review`、`completeness_check` 第一次失败进入 `repairing`，第二次仍失败则
+  fail-open 到下一节点；final completeness 第二次失败时写 `validated` 结束。所有失败都追加到
+  top-level `gate_failures[]`，`finish_plan` 输出会列出 `Gate Failures` 供主 agent 消费。
 - `plan-runner-audit` 只触发一次。audit fail 会回流一次 repair；repair 后 deterministic
   通过时直接进入 external review，不再次派发 audit，避免 LLM 审计循环不收敛。
 - plan-runner 的最终报告、`finish_plan` 调用、等待 `validated` 等终态门禁动作不应建模为
@@ -188,6 +201,11 @@ tool/event hook 行为。
   的 todo 完成度审查中忽略这类 gate todo；原始计划任务仍必须 completed 且有 evidence。
 - external reviewer 的 `--review-round` 只由 `reviews.external.length + 1` 推导，最多为 2；
   `reviews.round` 仅是 harness repair loop 计数，不复用为 external review 轮次。
+- `reviews.round` 只保留 repair 次数观测，不再作为全局 blocked 预算；预算按 gate source
+  分别由 `gate_failures[].source` 计数。
+- `validated` / `blocked` / `interrupted` / `stale` 是 `finish_plan` terminal gate 的
+  缓存终态。再次调用 `finish_plan` 只能回放既有结果，不能把 gate 改回 running 或重跑
+  audit/external review；`repairing` 不是终态，仍允许再次调用 `finish_plan` 复核。
 - 损坏 task state JSON 的恢复路径由单测覆盖：`session.idle` 不抛异常，坏文件会进入
   `corrupt/tasks/<task_id>.json`。
 

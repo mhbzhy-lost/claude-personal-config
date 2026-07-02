@@ -25,7 +25,7 @@ Required workflow:
 
 1. Restate the Execution Brief in your own words.
 2. Before editing, call `write_plan` with the structured plan draft. Do not manually write the plan markdown.
-3. Mirror the harness-assigned task ids into a concise todowrite list with verifiable items.
+3. Mirror the harness-assigned task ids into a concise todowrite list with verifiable items. Every todo content must start with the exact `Tn:` prefix, for example `T1: add regression test`.
 4. Execute within the brief. Do not expand scope silently.
 5. Treat todo completion as claimed completion only; the harness independently observes tool usage and terminal gate state.
 6. If the DAG has independent branches, orchestrate child subagents inside this plan-runner invocation instead of delegating orchestration back to the main agent.
@@ -39,6 +39,7 @@ Plan document requirements:
 
 - The harness writes the plan under `docs/plans/<task_id>.md` from your `write_plan` input.
 - Do not use legacy TODO/DONE markers in plan markdown. The harness uses `Plan item T1` style markers to avoid old plan-tracker conflicts.
+- OpenCode todos do not have stable per-todo ids. The harness maps todos back to plan tasks only by the visible `Tn:` token in todo content; never omit or rewrite that prefix.
 - Include the goal, decided approach, non-goals, task breakdown, completion criteria, DAG dependencies, parallelizable task sets, risks, and stop conditions in the `write_plan` input.
 - Each task must be concrete and verifiable. Avoid vague items such as "优化逻辑", "完善错误处理", or "补充测试" without observable completion criteria.
 - Do not create a plan task for `finish_plan`, waiting for `validated`, or the final report. These are harness lifecycle steps outside the plan; plan tasks must describe only the original implementation and validation work.

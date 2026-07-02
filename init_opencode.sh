@@ -456,6 +456,55 @@ sync_opencode_plugins() {
   done
 }
 
+# ── Prompts (chat templates) ────────────────────────────
+# 自定义 agent 的 system prompt 模板文件。通过 agent 配置的
+# {file:./prompts/xxx.txt} 引用，路径相对于 opencode.json 所在目录。
+# 采用 per-file symlink 模式，仓内 userconf/prompts/ 是 SSOT。
+sync_opencode_prompts() {
+  local src_path="$SRC/userconf/prompts"
+  local dst_path="$OPENCODE_CONFIG_DIR/prompts"
+
+  if [ ! -d "$src_path" ]; then
+    echo "[skip]  userconf/prompts/ 不存在，跳过"
+    return
+  fi
+
+  mkdir -p "$dst_path"
+
+  local src_file dst_file basename current_target
+  for src_file in "$src_path"/*.txt; do
+    [ -e "$src_file" ] || continue
+    [ -f "$src_file" ] || continue
+    basename=$(basename "$src_file")
+    dst_file="$dst_path/$basename"
+
+    if [ -L "$dst_file" ] && [ "$(readlink "$dst_file")" = "$src_file" ]; then
+      echo "[prompts] ${basename}（已就绪）"
+      continue
+    fi
+
+    if [ -L "$dst_file" ]; then
+      current_target=$(readlink "$dst_file")
+      echo "[warn]  $dst_file 是软链但指向 ${current_target}，人工核对后再处理"
+      continue
+    fi
+
+    if [ -f "$dst_file" ]; then
+      if cmp -s "$src_file" "$dst_file"; then
+        rm -f "$dst_file"
+        ln -s "$src_file" "$dst_file"
+        echo "[prompts] $basename 升级为软链"
+      else
+        echo "[warn]  $dst_file 与仓内不一致，保留本地副本"
+      fi
+      continue
+    fi
+
+    ln -s "$src_file" "$dst_file"
+    echo "[prompts] $basename 软链已创建"
+  done
+}
+
 # ── Agents ──────────────────────────────────────────────
 # opencode schema 不提供 agents.paths；文件型全局 agent 只能放在
 # ~/.config/opencode/agent(s)/。这里采用 per-file symlink，避免整目录软链覆盖
@@ -753,6 +802,7 @@ sync_shared_skills
 # ── Run sync ────────────────────────────────────────────
 sync_opencode_plugins
 sync_opencode_agents
+sync_opencode_prompts
 configure_opencode_cache_proxy
 sync_opencode_instructions
 sync_opencode_shared
@@ -913,6 +963,41 @@ if os.path.exists(permission_path):
         print(f"[warn]  {permission_path} 不是合法 JSON：{e}，跳过", file=sys.stderr)
 else:
     print(f"[skip]  opencode/opencode-permission.json 不存在，跳过 permission 同步")
+
+# ── Agent chat templates ──
+# 为特定模型注册带自定义 system prompt 的 primary agent。
+# SSOT：userconf/agents.json，按 agent name 合并到 opencode.json.agent。
+# prompt 文件由 sync_opencode_prompts() 软链到 ~/.config/opencode/prompts/。
+# 已有同名 agent 配置不覆盖（用户可能手动调整了 model 指向等字段）。
+agents_json_path = os.path.join(src, "userconf", "agents.json")
+if os.path.exists(agents_json_path):
+    try:
+        with open(agents_json_path) as f:
+            desired_agents = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"[warn]  {agents_json_path} 不是合法 JSON：{e}，跳过 agent 同步", file=sys.stderr)
+        desired_agents = {}
+
+    agents = config.setdefault("agent", {})
+    for agent_name, agent_config in desired_agents.items():
+        existing = agents.get(agent_name)
+        is_disable = agent_config.get("disable") is True
+        if existing is None:
+            agents[agent_name] = agent_config
+            changed = True
+            print(f"[agent] {agent_name} {'禁用' if is_disable else '新增'}")
+        elif is_disable and existing != agent_config:
+            agents[agent_name] = agent_config
+            changed = True
+            print(f"[agent] {agent_name} 禁用")
+        elif not is_disable and existing.get("prompt") != agent_config.get("prompt"):
+            agents[agent_name]["prompt"] = agent_config.get("prompt")
+            changed = True
+            print(f"[agent] {agent_name} prompt 路径已更新")
+        else:
+            print(f"[agent] {agent_name} 已是最新")
+else:
+    print("[skip]  userconf/agents.json 不存在，跳过 agent 同步")
 
 if changed:
     with open(config_path, "w") as f:
