@@ -4,6 +4,13 @@
 
 验证重启后的 OpenCode 已加载当前仓库的 plan-runner plugin、agent 与 skill 栈，能走通：写计划、同步 todo、执行最小改动、运行验证、由 harness 接管 terminal gate 并进入 review loop。
 
+## Live smoke 记录
+
+- 2026-07-03：基于 `e6e677b fix(plan-runner): 删除 runtime stale 扫描` 执行最小文档型 live smoke，验证新 plan-runner runtime 不再写入 `task_stale`，并能在本地提交后由 `finish_plan` 进入 `validated`。
+- 本次最小验证命令：`node --test "userconf/plugins/test/plan-runner-harness.test.mjs"` 与 `git diff --check`。
+- 本次 T1 检查证据：派发前主工作区为 clean；`write_plan` 后仅出现计划文件与本 runbook 文档改动。
+- 观察 task-state events 时，预期不出现 `task_stale`；若出现，应按失败处理回到 runtime/harness 事件写入链路排查。
+
 ## 步骤
 
 1. 重启 OpenCode，并在 clean 的主工作区启动会话；不要从 `git worktree add` 创建的 linked worktree 启动。若当前主工作区不干净，先由主 agent/用户提交或清理既有改动，再派发 `plan-runner`。
