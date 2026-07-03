@@ -1,90 +1,149 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 650" font-family="system-ui, -apple-system, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 800" font-family="system-ui, -apple-system, sans-serif">
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
       <path d="M0,0 L8,3 L0,6 Z" fill="#64748B"/>
     </marker>
-    <marker id="arrow-dash" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-      <path d="M0,0 L8,3 L0,6 Z" fill="#64748B"/>
-    </marker>
   </defs>
 
-  <!-- Background Areas -->
-  <rect x="30" y="20" width="1340" height="100" rx="12" fill="#FEF2F2" stroke="none"/>
-  <rect x="30" y="140" width="650" height="240" rx="12" fill="#EFF6FF" stroke="none"/>
-  <rect x="720" y="140" width="650" height="240" rx="12" fill="#F5F3FF" stroke="none"/>
-  <rect x="30" y="400" width="1340" height="100" rx="12" fill="#F0FDF4" stroke="none"/>
-  <rect x="30" y="520" width="1340" height="100" rx="12" fill="#F9FAFB" stroke="none"/>
+  <!-- ===== Section Backgrounds (w=1340) ===== -->
+  <rect x="30" y="30" width="1340" height="90" rx="12" fill="#FEF2F2" stroke="none"/>
+  <rect x="30" y="135" width="1340" height="160" rx="12" fill="#EFF6FF" stroke="none"/>
+  <rect x="30" y="310" width="1340" height="160" rx="12" fill="#EEF2FF" stroke="none"/>
+  <rect x="30" y="485" width="1340" height="160" rx="12" fill="#F5F3FF" stroke="none"/>
+  <rect x="30" y="660" width="1340" height="90" rx="12" fill="#F0FDF4" stroke="none"/>
 
-  <!-- Area Titles -->
-  <text x="50" y="42" font-size="16" font-weight="bold" fill="#DC2626">用户工具层</text>
-  <text x="50" y="168" font-size="16" font-weight="bold" fill="#2563EB">主仓配置层</text>
-  <text x="740" y="168" font-size="16" font-weight="bold" fill="#7C3AED">Vendor 子模块层</text>
-  <text x="50" y="422" font-size="16" font-weight="bold" fill="#16A34A">部署目标</text>
-  <text x="50" y="548" font-size="16" font-weight="bold" fill="#475569">图例</text>
+  <!-- ===== Section Titles ===== -->
+  <text x="50" y="47" font-size="15" font-weight="bold" fill="#DC2626">入口</text>
+  <text x="50" y="152" font-size="15" font-weight="bold" fill="#2563EB">插件系统（9 核心插件）</text>
+  <text x="50" y="327" font-size="15" font-weight="bold" fill="#4338CA">治理规范 · Agent · 技能</text>
+  <text x="50" y="502" font-size="15" font-weight="bold" fill="#7C3AED">Vendor 子模块 · 知识库 · 运行时</text>
+  <text x="50" y="677" font-size="15" font-weight="bold" fill="#16A34A">部署目标</text>
 
-  <!-- Red Area Nodes -->
-  <rect x="350" y="55" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
-  <rect x="600" y="55" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
-  <rect x="850" y="55" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
+  <!-- ===== Band 1: OpenCode (1 node, centered) ===== -->
+  <rect x="575" y="58" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#EF4444" stroke-width="1.5"/>
+  <text x="700" y="78" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">OpenCode</text>
+  <text x="700" y="94" text-anchor="middle" font-size="10" fill="#6B7280">AI 编码主力 IDE</text>
 
-  <text x="450" y="77" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">OpenCode</text>
-  <text x="450" y="93" font-size="10" fill="#6B7280" text-anchor="middle">AI 编码主力 IDE</text>
-  <text x="700" y="77" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">Claude Code</text>
-  <text x="700" y="93" font-size="10" fill="#6B7280" text-anchor="middle">Anthropic 原生</text>
-  <text x="950" y="77" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">Qwen Code</text>
-  <text x="950" y="93" font-size="10" fill="#6B7280" text-anchor="middle">通义千问编码</text>
+  <!-- ===== Band 2: Plugins Row 1 (5) y=163 ===== -->
+  <rect x="55" y="163" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <rect x="315" y="163" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <rect x="575" y="163" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <rect x="835" y="163" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <rect x="1095" y="163" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="180" y="183" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">coding-guard</text>
+  <text x="180" y="199" text-anchor="middle" font-size="10" fill="#6B7280">写文件安全守护</text>
+  <text x="440" y="183" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">event-probe</text>
+  <text x="440" y="199" text-anchor="middle" font-size="10" fill="#6B7280">Agent 事件追踪</text>
+  <text x="700" y="183" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">external-review-gate</text>
+  <text x="700" y="199" text-anchor="middle" font-size="10" fill="#6B7280">异源代码评审门禁</text>
+  <text x="960" y="183" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">git-commit-gate</text>
+  <text x="960" y="199" text-anchor="middle" font-size="10" fill="#6B7280">Commit 消息规范校验</text>
+  <text x="1220" y="183" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">plan-runner-harness</text>
+  <text x="1220" y="199" text-anchor="middle" font-size="10" fill="#6B7280">计划执行状态机门禁</text>
 
-  <!-- Blue Area Nodes - Row 1 -->
-  <rect x="140" y="195" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
-  <rect x="370" y="195" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <!-- ===== Band 2: Plugins Row 2 (4) y=221 ===== -->
+  <rect x="185" y="221" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <rect x="445" y="221" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <rect x="705" y="221" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <rect x="965" y="221" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="310" y="241" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">plan-tracker</text>
+  <text x="310" y="257" text-anchor="middle" font-size="10" fill="#6B7280">Todo 进度追踪</text>
+  <text x="570" y="241" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">rm-outside-guard</text>
+  <text x="570" y="257" text-anchor="middle" font-size="10" fill="#6B7280">防删工作区外文件</text>
+  <text x="830" y="241" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">skill-resolve-preflight</text>
+  <text x="830" y="257" text-anchor="middle" font-size="10" fill="#6B7280">Skill 调用预检</text>
+  <text x="1090" y="241" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">subagent-hint</text>
+  <text x="1090" y="257" text-anchor="middle" font-size="10" fill="#6B7280">子 Agent 派发提示</text>
 
-  <text x="240" y="217" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">插件系统（9 plugins）</text>
-  <text x="240" y="233" font-size="10" fill="#6B7280" text-anchor="middle">commit-gate / review-gate</text>
-  <text x="470" y="217" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">全局规则（AGENTS.md）</text>
-  <text x="470" y="233" font-size="10" fill="#6B7280" text-anchor="middle">TDD / Bugfix / Commit 规范</text>
+  <!-- ===== Band 3: Governance Row 1 (5) y=338 ===== -->
+  <rect x="55" y="338" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.5"/>
+  <rect x="315" y="338" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.5"/>
+  <rect x="575" y="338" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.5"/>
+  <rect x="835" y="338" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.5"/>
+  <rect x="1095" y="338" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.5"/>
+  <text x="180" y="358" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">AGENTS.md</text>
+  <text x="180" y="374" text-anchor="middle" font-size="10" fill="#6B7280">TDD/Bugfix/Commit 规范</text>
+  <text x="440" y="358" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">AGENTS.reason.md</text>
+  <text x="440" y="374" text-anchor="middle" font-size="10" fill="#6B7280">规则设计理由文档</text>
+  <text x="700" y="358" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">permission.json</text>
+  <text x="700" y="374" text-anchor="middle" font-size="10" fill="#6B7280">多层级权限控制</text>
+  <text x="960" y="358" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">plan-runner (agent)</text>
+  <text x="960" y="374" text-anchor="middle" font-size="10" fill="#6B7280">计划执行者规范</text>
+  <text x="1220" y="358" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">plan-runner-audit</text>
+  <text x="1220" y="374" text-anchor="middle" font-size="10" fill="#6B7280">只读审查者规范</text>
 
-  <!-- Blue Area Nodes - Row 2 -->
-  <rect x="140" y="267" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
-  <rect x="370" y="267" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.5"/>
+  <!-- ===== Band 3: Skills Row 2 (5) y=396 ===== -->
+  <rect x="55" y="396" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <rect x="315" y="396" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <rect x="575" y="396" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <rect x="835" y="396" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <rect x="1095" y="396" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="180" y="416" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">claude-code-worker</text>
+  <text x="180" y="432" text-anchor="middle" font-size="10" fill="#6B7280">Claude Code 远程执行</text>
+  <text x="440" y="416" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">external-llm-review</text>
+  <text x="440" y="432" text-anchor="middle" font-size="10" fill="#6B7280">异源交叉代码评审</text>
+  <text x="700" y="416" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">opencode-deepseek-worker</text>
+  <text x="700" y="432" text-anchor="middle" font-size="10" fill="#6B7280">DeepSeek 远程执行</text>
+  <text x="960" y="416" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">plan-runner-dispatch</text>
+  <text x="960" y="432" text-anchor="middle" font-size="10" fill="#6B7280">计划执行触发路由</text>
+  <text x="1220" y="416" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">wcag-check</text>
+  <text x="1220" y="432" text-anchor="middle" font-size="10" fill="#6B7280">无障碍合规检查</text>
 
-  <text x="240" y="289" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">共享资源（shared/）</text>
-  <text x="240" y="305" font-size="10" fill="#6B7280" text-anchor="middle">hooks + policies SSOT</text>
-  <text x="470" y="289" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">知识库（docs/）</text>
-  <text x="470" y="305" font-size="10" fill="#6B7280" text-anchor="middle">16 知识 + 60 Bug + 9 计划</text>
+  <!-- ===== Band 4: Vendor Row 1 (3) y=513 ===== -->
+  <rect x="315" y="513" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#7C3AED" stroke-width="1.5"/>
+  <rect x="575" y="513" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#7C3AED" stroke-width="1.5"/>
+  <rect x="835" y="513" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#7C3AED" stroke-width="1.5"/>
+  <text x="440" y="533" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">superpowers</text>
+  <text x="440" y="549" text-anchor="middle" font-size="10" fill="#6B7280">16 方法论技能 (TDD/SDD)</text>
+  <text x="700" y="533" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">cache-proxy</text>
+  <text x="700" y="549" text-anchor="middle" font-size="10" fill="#6B7280">API 缓存代理 :48761</text>
+  <text x="960" y="533" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">dynamic-workflow</text>
+  <text x="960" y="549" text-anchor="middle" font-size="10" fill="#6B7280">多 Agent DAG 编排引擎</text>
 
-  <!-- Purple Area Nodes -->
-  <rect x="945" y="180" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
-  <rect x="945" y="250" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
-  <rect x="945" y="320" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="1.5"/>
+  <!-- ===== Band 4: Knowledge/Runtime Row 2 (5) y=571 ===== -->
+  <rect x="55" y="571" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#64748B" stroke-width="1.5"/>
+  <rect x="315" y="571" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#64748B" stroke-width="1.5"/>
+  <rect x="575" y="571" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#64748B" stroke-width="1.5"/>
+  <rect x="835" y="571" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#64748B" stroke-width="1.5"/>
+  <rect x="1095" y="571" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#64748B" stroke-width="1.5"/>
+  <text x="180" y="591" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">knowledge/</text>
+  <text x="180" y="607" text-anchor="middle" font-size="10" fill="#6B7280">16 篇项目知识文档</text>
+  <text x="440" y="591" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">bugs/</text>
+  <text x="440" y="607" text-anchor="middle" font-size="10" fill="#6B7280">109 条 Bug 诊断记录</text>
+  <text x="700" y="591" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">.workflow/</text>
+  <text x="700" y="607" text-anchor="middle" font-size="10" fill="#6B7280">工作流事件仪表板</text>
+  <text x="960" y="591" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">.agent/</text>
+  <text x="960" y="607" text-anchor="middle" font-size="10" fill="#6B7280">知识门禁配置</text>
+  <text x="1220" y="591" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">shared/</text>
+  <text x="1220" y="607" text-anchor="middle" font-size="10" fill="#6B7280">4 hooks + 5 policies</text>
 
-  <text x="1045" y="202" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">superpowers v5.1.0</text>
-  <text x="1045" y="218" font-size="10" fill="#6B7280" text-anchor="middle">16 方法论技能 (TDD/SDD/Debug)</text>
-  <text x="1045" y="272" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">opencode-cache-proxy</text>
-  <text x="1045" y="288" font-size="10" fill="#6B7280" text-anchor="middle">API 缓存代理 :48761</text>
-  <text x="1045" y="342" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">opencode-dynamic-workflow</text>
-  <text x="1045" y="358" font-size="10" fill="#6B7280" text-anchor="middle">多 Agent DAG 编排引擎</text>
+  <!-- ===== Band 5: Deploy (2 nodes) y=688 ===== -->
+  <rect x="445" y="688" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#22C55E" stroke-width="1.5"/>
+  <rect x="705" y="688" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#22C55E" stroke-width="1.5"/>
+  <text x="570" y="708" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">init_opencode.sh</text>
+  <text x="570" y="724" text-anchor="middle" font-size="10" fill="#6B7280">幂等初始化脚本</text>
+  <text x="830" y="708" text-anchor="middle" font-size="13" font-weight="bold" fill="#1E293B">~/.config/opencode/</text>
+  <text x="830" y="724" text-anchor="middle" font-size="10" fill="#6B7280">软链同步目标目录</text>
 
-  <!-- Green Area Nodes -->
-  <rect x="480" y="435" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#22C55E" stroke-width="1.5"/>
-  <rect x="720" y="435" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#22C55E" stroke-width="1.5"/>
+  <!-- ===== Connection Arrows ===== -->
+  <line x1="700" y1="110" x2="700" y2="163" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="700" y1="273" x2="700" y2="338" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="700" y1="565" x2="700" y2="448" stroke="#64748B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+  <line x1="570" y1="740" x2="830" y2="740" stroke="#64748B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
 
-  <text x="580" y="457" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">~/.config/opencode/</text>
-  <text x="580" y="473" font-size="10" fill="#6B7280" text-anchor="middle">软链同步目标</text>
-  <text x="820" y="457" font-size="13" font-weight="bold" fill="#1E293B" text-anchor="middle">init_opencode.sh</text>
-  <text x="820" y="473" font-size="10" fill="#6B7280" text-anchor="middle">幂等初始化 (773行)</text>
-
-  <!-- Connection Lines -->
-  <!-- 工具层 → 部署目标: OpenCode bottom → green1 top (solid) -->
-  <line x1="450" y1="107" x2="580" y2="435" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <!-- 主仓 → 部署目标: 共享资源 bottom → init_opencode.sh top (dashed) -->
-  <line x1="240" y1="319" x2="820" y2="435" stroke="#64748B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-dash)"/>
-  <!-- Vendor → 主仓: superpowers left → 全局规则 right (solid) -->
-  <line x1="945" y1="206" x2="570" y2="221" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <!-- 插件 → 工具层: 插件系统 top → OpenCode bottom (solid) -->
-  <line x1="240" y1="195" x2="450" y2="107" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-  <!-- Legend Text -->
-  <text x="100" y="575" font-size="11" fill="#475569">实线箭头 = 加载/调用</text>
-  <text x="380" y="575" font-size="11" fill="#475569">虚线箭头 = 软链同步</text>
-  <text x="660" y="575" font-size="11" fill="#475569">背景色 = 功能分区</text>
+  <!-- ===== Legend ===== -->
+  <text x="50" y="775" font-size="11" fill="#64748B">实线 = 加载/调用</text>
+  <text x="220" y="775" font-size="11" fill="#64748B">虚线 = 软链/反向提供</text>
+  <circle cx="430" cy="771" r="5" fill="#3B82F6"/>
+  <text x="442" y="775" font-size="11" fill="#475569">插件</text>
+  <circle cx="500" cy="771" r="5" fill="#6366F1"/>
+  <text x="512" y="775" font-size="11" fill="#475569">治理</text>
+  <circle cx="570" cy="771" r="5" fill="#8B5CF6"/>
+  <text x="582" y="775" font-size="11" fill="#475569">技能</text>
+  <circle cx="640" cy="771" r="5" fill="#7C3AED"/>
+  <text x="652" y="775" font-size="11" fill="#475569">Vendor</text>
+  <circle cx="730" cy="771" r="5" fill="#64748B"/>
+  <text x="742" y="775" font-size="11" fill="#475569">知识/运行时</text>
+  <circle cx="850" cy="771" r="5" fill="#22C55E"/>
+  <text x="862" y="775" font-size="11" fill="#475569">部署</text>
 </svg>

@@ -2391,6 +2391,64 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
+  it("consumes audit idle before stale scan when audit output is already pending", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const externalCalls = []
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async () => ({ data: { id: "ses_audit" } }),
+              prompt: async () => ({ data: {} }),
+              promptAsync: async () => ({ data: {} }),
+            },
+          },
+        },
+        {
+          stateDir,
+          completionGatePollMs: 5,
+          completionGateTimeoutMs: 1000,
+          externalReview: async (state) => {
+            externalCalls.push(state.task_id)
+            return { result: "pass", provider: "test-provider", findings: "No issues" }
+          },
+        },
+      )
+      const { statePath, finish } = await prepareAuditReviewState({ hooks, workspace, stateDir })
+
+      await hooks.event({ event: auditMessageEvent(JSON.stringify({
+        result: "pass",
+        rejected_tasks: [],
+        unknown_tasks: [],
+        unmapped_files: [],
+        required_fixes: [],
+      })) })
+
+      const pendingState = readJson(statePath)
+      assert.equal(pendingState.reviews.pending_audit_text.includes('"result":"pass"'), true)
+      pendingState.lease_expires_at = Date.now() - 1000
+      writeFileSync(statePath, JSON.stringify(pendingState, null, 2) + "\n")
+
+      await hooks.event({ event: auditIdleEvent() })
+      const finishResult = await finish
+
+      const state = readJson(statePath)
+      assert.equal(state.status, "validated")
+      assert.match(String(finishResult.output || finishResult), /Result: validated/)
+      assert.equal(externalCalls.length, 1)
+      assert.equal(state.reviews.audit[0].result, "pass")
+      const events = readFileSync(join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl"), "utf8")
+      assert.match(events, /"type":"audit_review_passed"/)
+      assert.doesNotMatch(events, /"type":"task_stale"/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("finish_plan waits for audit and external review before allowing the final report", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {

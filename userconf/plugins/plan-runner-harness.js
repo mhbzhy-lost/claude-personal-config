@@ -1657,12 +1657,12 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
     },
 
     event: async ({ event }) => enqueueEvent(async () => {
-      if (shouldCheckExpiredTasks(event)) await markExpiredTasks(stateDir)
       await handleTodoUpdated(stateDir, event)
       await handleSessionDiff(stateDir, event)
       await handleMessageDiff(stateDir, event)
       await handleAuditReviewMessage(stateDir, event)
       await handleAuditReviewIdle({ stateDir, client, directory: worktree, event, externalReview })
+      if (shouldCheckExpiredTasks(event)) await markExpiredTasks(stateDir)
       await handlePlanRunnerWatchdogIdle({ stateDir, client, directory: worktree, event })
     }),
   }
