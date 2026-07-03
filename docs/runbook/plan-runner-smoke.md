@@ -27,7 +27,7 @@
 
 ## 通过标准
 
-- `docs/plans/<task_id>.md` 已生成，正文包含 Goal / Architecture / File Structure / TDD task steps / Commands with expected output / Risks 或 Stop Conditions，且 task 状态由 `Tn:` todo 项派生。
+- `docs/plans/<task_id>.md` 已生成，正文是紧凑的自然语言实现计划，覆盖目标、方案、精确文件、小步可验证切片、验证命令、风险或停止条件，不要求固定模板章节或 checkbox 任务跟踪。
 - plan-runner 创建了本地 commit；external review 范围是 dispatch 时记录的 base commit 到当前 `HEAD`。
 - 最终报告列出修改文件、验证命令与结果。
 - `git diff --check` 通过。
