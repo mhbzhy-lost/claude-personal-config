@@ -238,6 +238,66 @@ describe("init_opencode agents sync", () => {
     }
   })
 
+  it("configures executor as deterministic low-effort worker", () => {
+    const agents = JSON.parse(readFileSync(join(repoRoot, "userconf", "agents.json"), "utf8"))
+
+    assert.equal(agents.executor.mode, "subagent")
+    assert.equal(agents.executor.temperature, 0)
+    assert.equal(agents.executor.options.effort, "low")
+    assert.equal(agents.executor.options.reasoningEffort, "low")
+    assert.match(agents.executor.description, /Deterministic code executor/i)
+  })
+
+  it("updates an existing executor config during opencode.json sync", () => {
+    const configDir = mkdtempSync(join(tmpdir(), "opencode-json-agents-"))
+
+    try {
+      writeFileSync(
+        join(configDir, "opencode.json"),
+        JSON.stringify(
+          {
+            "$schema": "https://opencode.ai/config.json",
+            agent: {
+              executor: {
+                description: "Old executor config",
+                mode: "subagent",
+                temperature: 0,
+                options: {
+                  effort: "high",
+                  reasoningEffort: "high",
+                },
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      )
+
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "declare -F sync_opencode_json >/dev/null",
+            "sync_opencode_json",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      const desiredAgents = JSON.parse(readFileSync(join(repoRoot, "userconf", "agents.json"), "utf8"))
+      const config = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"))
+
+      assert.deepEqual(config.agent.executor, desiredAgents.executor)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
   it("repairs shared skill symlinks that still point to deprecated claude-skills", () => {
     const skillsDir = mkdtempSync(join(tmpdir(), "agents-skills-"))
 
@@ -517,21 +577,25 @@ describe("init_opencode agents sync", () => {
     assert.doesNotMatch(prompt, /return evidence only/i)
   })
 
-  it("plan-runner prompt defines the concise Plan Content Contract", () => {
+  it("plan-runner prompt uses writing-plans style without a rigid plan template", () => {
     const prompt = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
 
     const missing = missingPromptClauses(prompt, [
-      { label: "Plan Content Contract heading", pattern: /Plan Content Contract/i },
-      { label: "Goal", pattern: /Goal/i },
-      { label: "Architecture", pattern: /Architecture/i },
-      { label: "File Structure", pattern: /File Structure/i },
-      { label: "TDD task steps", pattern: /TDD task steps/i },
-      { label: "commands with expected output", pattern: /commands? with expected output/i },
-      { label: "risks and stop conditions", pattern: /risks?\s*\/\s*stop conditions|risks?.*stop conditions/i },
+      { label: "compact implementation plan in prose", pattern: /compact implementation plan in prose/i },
+      { label: "capable engineer with little repo context", pattern: /capable engineer.*little repo context|little repo context.*capable engineer/i },
+      { label: "do not use a rigid template", pattern: /do not use a rigid template/i },
+      { label: "natural headings", pattern: /natural headings/i },
+      { label: "exact file paths", pattern: /exact file paths/i },
+      { label: "exact commands with expected outcomes", pattern: /exact commands.*expected outcomes/i },
+      { label: "risks stop conditions change request", pattern: /risks.*stop conditions.*Change Request/i },
       { label: "no placeholders", pattern: /no placeholders|do not use placeholders/i },
+      { label: "no checkbox task tracking", pattern: /Do not include checkbox task tracking|checkbox task tracking/i },
+      { label: "no execution options", pattern: /Do not offer execution options/i },
     ])
 
     assert.deepEqual(missing, [])
+    assert.doesNotMatch(prompt, /must include at least `Goal`, `Architecture`, `File Structure`, `TDD task steps`, `Commands with expected output`, and `Risks \/ Stop Conditions` sections/)
+    assert.doesNotMatch(prompt, /superpowers:subagent-driven-development|executing-plans/)
   })
 
   it("plan-runner prompt separates human plan docs from harness structured state", () => {

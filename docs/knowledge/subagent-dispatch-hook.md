@@ -37,6 +37,11 @@ OpenCode 的全局文件型 agent 由 `userconf/agents/*.md` 维护，并通过
 schema 没有 `agents.paths` 配置，不能在 `opencode.json` 中增加自定义 agents
 目录字段。
 
+`userconf/agents.json` 是全局 inline agent 配置来源，由 `init_opencode.sh` 合并到
+`opencode.json.agent`。`executor` agent 定位为确定性执行器：`temperature = 0` 控制低随机性，
+`effort/reasoningEffort = low` 避免执行器过度推理；需要深度方案推理时应交给主 agent 或
+plan-runner，而不是提高 executor 的 thinking budget。
+
 **Claude/Qwen/Codex 端**：`shared/hooks/subagent-dispatch-hint.sh` 把 policy
 正文包装成 `hookSpecificOutput.additionalContext`，供 SubagentStart hook 使用。
 
@@ -48,9 +53,10 @@ schema 没有 `agents.paths` 配置，不能在 `opencode.json` 中增加自定�
 负责将 brief 细化为可验证 todo、执行、收集 evidence，并在方案需要变化时返回
 Change Request。
 
-多步计划入口不再依赖 `writing-plans` skill。`plan-runner` 的 description 负责启发式
-触发；精简版 Plan Content Contract、`Tn:` todo 协议、并发 worktree 约束和验证方式都
-维护在 `userconf/agents/plan-runner.md`。
+多步计划入口不直接加载 `writing-plans` skill。`plan-runner` 的 description 负责启发式
+触发；计划文档只吸收 writing-plans 的核心写法（低上下文可执行、exact files、small slices、
+RED/GREEN、exact commands、risks），不使用固定六段模板、checkbox tracking 或执行模式
+选择。`Tn:` todo 协议、并发 worktree 约束和验证方式都维护在 `userconf/agents/plan-runner.md`。
 
 `plan-runner` 作为 root executor 可以使用 `task` 工具编排 DAG child subagents，但
 child subagents 必须使用默认 child subagent，不选择自定义 agent；依赖 OpenCode 默认
@@ -79,6 +85,8 @@ per-child worktree。
 - `write_plan` custom tool 的公开协议是 `content: string`。它只负责写
   `docs/plans/<task_id>.md`、保存 sha、推进到 `waiting_for_todo`；plan 文档服务人审、
   external review 和设计承诺，不再作为 harness 结构化账本来源。
+- plan 文档应是紧凑自然语言执行计划，不是固定章节表单；它必须覆盖目标、方案、exact
+  files、任务切片、测试/验证命令和风险/停止条件，但不使用 checkbox 或执行模式选择。
 - harness 结构化账本由首次有效 `todowrite` 派生：每条 todo 必须以精确 `Tn:` 前缀开头；
   `plan_contract.tasks[].id` 使用 `Tn`，`title` 使用去掉前缀后的 todo 文本，完成标准使用
   harness 默认最小条件。旧 `write_plan(tasks/dag/parallel_sets)` 不再是公开协议。

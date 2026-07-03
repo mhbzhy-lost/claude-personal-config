@@ -31,8 +31,8 @@
     "mode": "subagent",
     "temperature": 0,
     "options": {
-      "effort": "high",
-      "reasoningEffort": "high"
+      "effort": "low",
+      "reasoningEffort": "low"
     }
   }
 }

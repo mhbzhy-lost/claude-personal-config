@@ -774,77 +774,30 @@ sync_opencode_tui() {
   echo "[tui] $dst_path 软链已创建"
 }
 
-# ===========================================================================
-# === Library guard =========================================================
-# 单测把 OPENCODE_INIT_AS_LIBRARY=1 之后 source 此脚本，期望只加载上面的
-# sync_opencode_*() 函数定义、跳过下面所有副作用（opencode 安装检查 / 软链
-# 创建 / opencode.json 写入 / ~/.zshrc 注册）。
-# ===========================================================================
-[ "${OPENCODE_INIT_AS_LIBRARY:-0}" = "1" ] && return 0 2>/dev/null
+sync_opencode_json() {
+  mkdir -p "$OPENCODE_CONFIG_DIR"
 
-# ===========================================================================
-# === Main flow =============================================================
-# ===========================================================================
-
-# ── Submodules ──────────────────────────────────────────
-ensure_opencode_required_submodules
-
-# ── 确保 OpenCode 已安装 ────────────────────────────────
-ensure_opencode_installed
-
-# ── Skills ──────────────────────────────────────────────
-# 默认关闭 OpenCode 的 Claude Code 兼容加载，避免把 ~/.claude/CLAUDE.md 和
-# ~/.claude/skills/ 叠加进 OpenCode 首轮上下文；OpenCode 原生 skills / plugin
-# 仍由自身配置加载。
-echo "[skills] OpenCode Claude Code compatibility loading disabled via OPENCODE_DISABLE_CLAUDE_CODE"
-sync_shared_skills
-
-# ── Run sync ────────────────────────────────────────────
-sync_opencode_plugins
-sync_opencode_agents
-sync_opencode_prompts
-configure_opencode_cache_proxy
-sync_opencode_instructions
-sync_opencode_shared
-sync_opencode_docs
-sync_opencode_themes
-sync_opencode_tui
-
-# ── Workflow 子模块配置 ─────────────────────────────────
-# install-opencode.sh 内含 npm install（网络操作），失败不应中断整个 init 流程。
-# 路径通过 OPENCODE_CONFIG_DIR 环境变量传递；脚本无参数。
-workflow_install="$SRC/vendor/opencode-dynamic-workflow/install-opencode.sh"
-if ! should_install_workflow_usage; then
-  echo "[skip]  workflow-usage 未列入 agents/skills.list，跳过 workflow 子模块配置"
-elif [ -f "$workflow_install" ]; then
-  if ! OPENCODE_CONFIG_DIR="$OPENCODE_CONFIG_DIR" AGENTS_SKILLS_DIR="$AGENTS_SKILLS_DIR" bash "$workflow_install"; then
-    echo "[warn]  workflow 子模块安装失败，workflow-usage skill 将无法使用"
+  local py="${PY:-}"
+  if [ -z "$py" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+      py="python3"
+    elif command -v python >/dev/null 2>&1; then
+      py="python"
+    else
+      echo "[error] Python 不可用，无法合并 opencode.json。请安装 Python 后重试"
+      return 1
+    fi
   fi
-else
-  echo "[skip]  vendor/opencode-dynamic-workflow 不存在，跳过 workflow 配置"
-fi
+  PY="$py"
 
-
-mkdir -p "$OPENCODE_CONFIG_DIR"
-
-# 探测 Python 解释器
-if command -v python3 >/dev/null 2>&1; then
-  PY="python3"
-elif command -v python >/dev/null 2>&1; then
-  PY="python"
-else
-  echo "[error] Python 不可用，无法合并 opencode.json。请安装 Python 后重试"
-  exit 1
-fi
-
-# ── MCP：合并到 opencode.json ────────────────────────────
-# 使用 Python 做 JSON 深度比较与合并，保持幂等：
-#   - 已有且值一致 → no-op
-#   - 已有但值不同 → 覆盖（告警）
-#   - 不存在 → 新增
-export OPENCODE_JSON="$OPENCODE_JSON"
-export SRC="$SRC"
-$PY -c '
+  # ── MCP：合并到 opencode.json ────────────────────────────
+  # 使用 Python 做 JSON 深度比较与合并，保持幂等：
+  #   - 已有且值一致 → no-op
+  #   - 已有但值不同 → 覆盖（告警）
+  #   - 不存在 → 新增
+  export OPENCODE_JSON="$OPENCODE_JSON"
+  export SRC="$SRC"
+  "$py" -c '
 import json, os, sys
 
 config_path = os.environ["OPENCODE_JSON"]
@@ -968,7 +921,8 @@ else:
 # 为特定模型注册带自定义 system prompt 的 primary agent。
 # SSOT：userconf/agents.json，按 agent name 合并到 opencode.json.agent。
 # prompt 文件由 sync_opencode_prompts() 软链到 ~/.config/opencode/prompts/。
-# 已有同名 agent 配置不覆盖（用户可能手动调整了 model 指向等字段）。
+# 已有同名 agent 配置不覆盖（用户可能手动调整了 model 指向等字段）；
+# executor 是仓内托管的确定性执行器，配置按 SSOT 刷新。
 agents_json_path = os.path.join(src, "userconf", "agents.json")
 if os.path.exists(agents_json_path):
     try:
@@ -985,11 +939,15 @@ if os.path.exists(agents_json_path):
         if existing is None:
             agents[agent_name] = agent_config
             changed = True
-            print(f"[agent] {agent_name} {'禁用' if is_disable else '新增'}")
+            print("[agent] {} {}".format(agent_name, "禁用" if is_disable else "新增"))
         elif is_disable and existing != agent_config:
             agents[agent_name] = agent_config
             changed = True
             print(f"[agent] {agent_name} 禁用")
+        elif agent_name == "executor" and existing != agent_config:
+            agents[agent_name] = agent_config
+            changed = True
+            print("[agent] executor 配置已更新")
         elif not is_disable and existing.get("prompt") != agent_config.get("prompt"):
             agents[agent_name]["prompt"] = agent_config.get("prompt")
             changed = True
@@ -1007,6 +965,59 @@ if changed:
 else:
     print("[mcp] opencode.json 已是最新，无需改动")
 '
+}
+
+# ===========================================================================
+# === Library guard =========================================================
+# 单测把 OPENCODE_INIT_AS_LIBRARY=1 之后 source 此脚本，期望只加载上面的
+# sync_opencode_*() 函数定义、跳过下面所有副作用（opencode 安装检查 / 软链
+# 创建 / opencode.json 写入 / ~/.zshrc 注册）。
+# ===========================================================================
+[ "${OPENCODE_INIT_AS_LIBRARY:-0}" = "1" ] && return 0 2>/dev/null
+
+# ===========================================================================
+# === Main flow =============================================================
+# ===========================================================================
+
+# ── Submodules ──────────────────────────────────────────
+ensure_opencode_required_submodules
+
+# ── 确保 OpenCode 已安装 ────────────────────────────────
+ensure_opencode_installed
+
+# ── Skills ──────────────────────────────────────────────
+# 默认关闭 OpenCode 的 Claude Code 兼容加载，避免把 ~/.claude/CLAUDE.md 和
+# ~/.claude/skills/ 叠加进 OpenCode 首轮上下文；OpenCode 原生 skills / plugin
+# 仍由自身配置加载。
+echo "[skills] OpenCode Claude Code compatibility loading disabled via OPENCODE_DISABLE_CLAUDE_CODE"
+sync_shared_skills
+
+# ── Run sync ────────────────────────────────────────────
+sync_opencode_plugins
+sync_opencode_agents
+sync_opencode_prompts
+configure_opencode_cache_proxy
+sync_opencode_instructions
+sync_opencode_shared
+sync_opencode_docs
+sync_opencode_themes
+sync_opencode_tui
+
+# ── Workflow 子模块配置 ─────────────────────────────────
+# install-opencode.sh 内含 npm install（网络操作），失败不应中断整个 init 流程。
+# 路径通过 OPENCODE_CONFIG_DIR 环境变量传递；脚本无参数。
+workflow_install="$SRC/vendor/opencode-dynamic-workflow/install-opencode.sh"
+if ! should_install_workflow_usage; then
+  echo "[skip]  workflow-usage 未列入 agents/skills.list，跳过 workflow 子模块配置"
+elif [ -f "$workflow_install" ]; then
+  if ! OPENCODE_CONFIG_DIR="$OPENCODE_CONFIG_DIR" AGENTS_SKILLS_DIR="$AGENTS_SKILLS_DIR" bash "$workflow_install"; then
+    echo "[warn]  workflow 子模块安装失败，workflow-usage skill 将无法使用"
+  fi
+else
+  echo "[skip]  vendor/opencode-dynamic-workflow 不存在，跳过 workflow 配置"
+fi
+
+sync_opencode_json
 
 # ── OpenCode 运行环境注册到 ~/.zshrc ──────────────────
 # OpenCode 的 opencode.json 没有 top-level env 字段（仅 mcp.<name>.environment
