@@ -127,8 +127,8 @@
 
   <!-- ===== Connection Arrows ===== -->
   <line x1="700" y1="110" x2="700" y2="163" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="700" y1="273" x2="700" y2="338" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="700" y1="565" x2="700" y2="448" stroke="#64748B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+  <line x1="700" y1="295" x2="700" y2="338" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="700" y1="513" x2="700" y2="448" stroke="#64748B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
   <line x1="570" y1="740" x2="830" y2="740" stroke="#64748B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
 
   <!-- ===== Legend ===== -->
