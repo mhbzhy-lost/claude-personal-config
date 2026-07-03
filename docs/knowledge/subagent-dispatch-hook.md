@@ -190,12 +190,13 @@ tool/event hook 行为。
 - `finish_plan` deterministic check 会在 Git repo 中要求当前 repo clean、`HEAD` 不等于
   dispatch 时记录的 base commit，且 `base_commit..HEAD` 有 diff。plan-runner 必须在
   `finish_plan` 前创建本地 commit；允许 repair 后追加 commit 或 amend，但禁止 push。
-- task lease 过期后，下次低频边界事件（`session.idle` / `todo.updated`）会把 active
-  task 标为 `stale`；stale 只服务 plan-runner 自身 debug / repair / 状态展示，不影响
-  独立 git push gate。不要在 `message.updated` / token 级事件上全量扫描 task-state。
-- 低频边界事件内必须先消费当前事件可推进的状态，再执行 stale 扫描。特别是 audit
-  child 的 `session.idle` 已有 `pending_audit_text` 时，必须先写 `audit_review_passed` 并继续
-  terminal gate，不能让 lease 过期扫描抢先把 task 标为 `stale`。
+- `lease_expires_at` 仅保留为单次 plan-runner 账本的诊断时间戳；harness event hook
+  不再做 runtime stale 扫描，也不会在 `session.idle` / `todo.updated` 中把旧 task-state
+  自动改写为 `stale`。旧 task-state 可作为磁盘日志残留，是否 reset / 清理由下一次主
+  agent 在用户授权后通过 git 工作区处理；harness 不提供 stale 重入恢复或补偿流程。
+- `session.idle` 只消费当前 session 可推进的 audit / watchdog 状态，不遍历
+  `task-state/tasks/`。audit child 已有 `pending_audit_text` 时，idle 事件应写
+  `audit_review_passed` 并继续 terminal gate；无关的过期旧 state 不参与本次 gate。
 - harness 的 `event` hook 在 plugin instance 内用 Promise 链串行化。原因是各 handler
   都会 read-modify-write 同一 task state；并发 `message.updated` / `session.diff` 否则会
   丢 evidence 或 modified_files。
@@ -224,9 +225,11 @@ tool/event hook 行为。
   `reviews.round` 仅是 harness repair loop 计数，不复用为 external review 轮次。
 - `reviews.round` 只保留 repair 次数观测，不再作为全局 blocked 预算；预算按 gate source
   分别由 `gate_failures[].source` 计数。
-- `validated` / `blocked` / `interrupted` / `stale` 是 `finish_plan` terminal gate 的
-  缓存终态。再次调用 `finish_plan` 只能回放既有结果，不能把 gate 改回 running 或重跑
-  audit/external review；`repairing` 不是终态，仍允许再次调用 `finish_plan` 复核。
+- `validated` / `blocked` / `interrupted` 是 `finish_plan` terminal gate 的缓存终态。
+  `stale` 不再是 completion gate result，也不再是 `finish_plan` terminal status；
+  `finish_plan` 等待超时时只写 `interrupted`。再次调用 `finish_plan` 只能回放既有结果，
+  不能把 gate 改回 running 或重跑 audit/external review；`repairing` 不是终态，仍允许再次调用
+  `finish_plan` 复核。
 - 损坏 task state JSON 的恢复路径由单测覆盖：`session.idle` 不抛异常，坏文件会进入
   `corrupt/tasks/<task_id>.json`。
 

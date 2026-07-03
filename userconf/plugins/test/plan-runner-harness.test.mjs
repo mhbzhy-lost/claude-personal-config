@@ -163,6 +163,31 @@ function auditIdleEvent() {
   return { type: "session.idle", properties: { sessionID: "ses_audit" } }
 }
 
+function expiredTaskState({ taskID = "planrun-expired", status = "repairing", workspace, completionGate } = {}) {
+  const state = {
+    version: 1,
+    task_id: taskID,
+    status,
+    parent_session_id: "ses_parent",
+    dispatch_call_id: "call_dispatch",
+    plan_runner_session_id: "ses_plan_runner",
+    worktree: workspace,
+    updated_at: Date.now() - 20 * 60 * 1000,
+    lease_expires_at: Date.now() - 10 * 60 * 1000,
+    plan_path: null,
+    plan_sha256: null,
+    plan_contract: { tasks: [], dag: [], parallel_sets: [] },
+    todo: { mirrored: false, last_seen: [] },
+    evidence: [],
+    modified_files: [],
+    child_sessions: [],
+    reviews: { round: status === "repairing" ? 1 : 0, audit: [], external: [] },
+    self_check: { status: "completed", round: 1 },
+  }
+  if (completionGate) state.completion_gate = completionGate
+  return state
+}
+
 describe("PlanRunnerHarnessPlugin", () => {
   it("does not export helper functions as plugin entries", async () => {
     const mod = await import("../plan-runner-harness.js")
@@ -605,7 +630,10 @@ describe("PlanRunnerHarnessPlugin", () => {
       writeFileSync(join(stateDir, "sessions", "ses_plan_runner.json"), JSON.stringify({ session_id: "ses_plan_runner", task_id: taskID, role: "plan-runner" }))
       writeFileSync(taskPath, "{not valid json")
 
-      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+      const hooks = await PlanRunnerHarnessPlugin(
+        { directory: workspace, client: { session: { prompt: async () => {} } } },
+        { stateDir },
+      )
 
       await assert.doesNotReject(
         () => hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } }),
@@ -613,6 +641,32 @@ describe("PlanRunnerHarnessPlugin", () => {
 
       assert.equal(existsSync(taskPath), false)
       assert.equal(existsSync(join(stateDir, "corrupt", "tasks", `${taskID}.json`)), true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("does not read plan-runner state on idle when watchdog prompt is unavailable", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const taskID = "corrupt-task-without-prompt"
+      const taskPath = join(stateDir, "tasks", `${taskID}.json`)
+
+      mkdirSync(join(stateDir, "sessions"), { recursive: true })
+      mkdirSync(join(stateDir, "tasks"), { recursive: true })
+      writeFileSync(join(stateDir, "sessions", "ses_plan_runner.json"), JSON.stringify({ session_id: "ses_plan_runner", task_id: taskID, role: "plan-runner" }))
+      writeFileSync(taskPath, "{not valid json")
+
+      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+
+      await assert.doesNotReject(
+        () => hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } }),
+      )
+
+      assert.equal(existsSync(taskPath), true)
+      assert.equal(existsSync(join(stateDir, "corrupt", "tasks", `${taskID}.json`)), false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1534,8 +1588,8 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("watchdog does not nudge when legacy completion gate status is interrupted or stale", async () => {
-    for (const status of ["interrupted", "stale"]) {
+  it("watchdog does not nudge when completion gate status is interrupted", async () => {
+    for (const status of ["interrupted"]) {
       const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
       try {
         const workspace = join(root, "workspace")
@@ -2391,7 +2445,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("consumes audit idle before stale scan when audit output is already pending", async () => {
+  it("consumes audit idle without runtime stale scanning when audit output is already pending", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -3334,47 +3388,37 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
     }
   })
 
-  it("marks expired active task state as stale on the next event", async () => {
-    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
-    try {
-      const workspace = join(root, "workspace")
-      const stateDir = join(root, "state")
-      const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
-      const taskDir = join(stateDir, "tasks")
-      mkdirSync(taskDir, { recursive: true })
-      writeFileSync(join(taskDir, "planrun-expired.json"), JSON.stringify({
-        version: 1,
-        task_id: "planrun-expired",
-        status: "repairing",
-        parent_session_id: "ses_parent",
-        dispatch_call_id: "call_dispatch",
-        plan_runner_session_id: "ses_plan_runner",
-        worktree: workspace,
-        updated_at: Date.now() - 20 * 60 * 1000,
-        lease_expires_at: Date.now() - 10 * 60 * 1000,
-        plan_path: null,
-        plan_sha256: null,
-        plan_contract: { tasks: [], dag: [], parallel_sets: [] },
-        todo: { mirrored: false, last_seen: [] },
-        evidence: [],
-        modified_files: [],
-        child_sessions: [],
-        reviews: { round: 1, audit: [], external: [] },
-        self_check: { status: "completed", round: 1 },
-      }, null, 2) + "\n")
+  it("leaves expired old task state untouched on idle and todo boundary events", async () => {
+    const cases = [
+      { name: "idle", event: { type: "session.idle", properties: { sessionID: "ses_unrelated" } } },
+      { name: "todo", event: { type: "todo.updated", properties: { sessionID: "ses_unrelated", todos: [{ content: "T1: unrelated", status: "completed" }] } } },
+    ]
 
-      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_unrelated" } } })
+    for (const { name, event } of cases) {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+        const taskDir = join(stateDir, "tasks")
+        const taskID = `planrun-expired-${name}`
+        const statePath = join(taskDir, `${taskID}.json`)
+        mkdirSync(taskDir, { recursive: true })
+        writeFileSync(statePath, JSON.stringify(expiredTaskState({ taskID, status: "repairing", workspace }), null, 2) + "\n")
 
-      const state = readJson(join(taskDir, "planrun-expired.json"))
-      assert.equal(state.status, "stale")
-      const events = readFileSync(join(stateDir, "events", "planrun-expired.jsonl"), "utf8")
-      assert.match(events, /"type":"task_stale"/)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
+        await hooks.event({ event })
+
+        const state = readJson(statePath)
+        assert.equal(state.status, "repairing")
+        assert.equal(state.task_id, taskID)
+        assert.equal(existsSync(join(stateDir, "events", `${taskID}.jsonl`)), false)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
     }
   })
 
-  it("does not mark expired task state as stale on high-frequency message events", async () => {
+  it("leaves expired old task state untouched on high-frequency message events", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -3383,34 +3427,49 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
       const taskDir = join(stateDir, "tasks")
       const statePath = join(taskDir, "planrun-expired.json")
       mkdirSync(taskDir, { recursive: true })
-      writeFileSync(statePath, JSON.stringify({
-        version: 1,
-        task_id: "planrun-expired",
-        status: "repairing",
-        parent_session_id: "ses_parent",
-        dispatch_call_id: "call_dispatch",
-        plan_runner_session_id: "ses_plan_runner",
-        worktree: workspace,
-        updated_at: Date.now() - 20 * 60 * 1000,
-        lease_expires_at: Date.now() - 10 * 60 * 1000,
-        plan_path: null,
-        plan_sha256: null,
-        plan_contract: { tasks: [], dag: [], parallel_sets: [] },
-        todo: { mirrored: false, last_seen: [] },
-        evidence: [],
-        modified_files: [],
-        child_sessions: [],
-        reviews: { round: 1, audit: [], external: [] },
-        self_check: { status: "completed", round: 1 },
-      }, null, 2) + "\n")
+      writeFileSync(statePath, JSON.stringify(expiredTaskState({ taskID: "planrun-expired", status: "repairing", workspace }), null, 2) + "\n")
 
       await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_unrelated", info: { id: "msg" } } } })
       assert.equal(readJson(statePath).status, "repairing")
-
-      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_unrelated" } } })
-      assert.equal(readJson(statePath).status, "stale")
+      assert.equal(existsSync(join(stateDir, "events", "planrun-expired.jsonl")), false)
     } finally {
       rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("does not let runtime stale overwrite audit external or repair gate states", async () => {
+    const cases = [
+      { status: "audit_review", gateStatus: "running" },
+      { status: "external_review", gateStatus: "running" },
+      { status: "repairing", gateStatus: "repair_required" },
+    ]
+
+    for (const { status, gateStatus } of cases) {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        const hooks = await PlanRunnerHarnessPlugin({ directory: workspace }, { stateDir })
+        const taskDir = join(stateDir, "tasks")
+        const taskID = `planrun-expired-${status}`
+        const statePath = join(taskDir, `${taskID}.json`)
+        mkdirSync(taskDir, { recursive: true })
+        writeFileSync(statePath, JSON.stringify(expiredTaskState({
+          taskID,
+          status,
+          workspace,
+          completionGate: { mode: "finish_plan", status: gateStatus, source: "test", reasons: ["pending gate"] },
+        }), null, 2) + "\n")
+
+        await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_unrelated" } } })
+
+        const state = readJson(statePath)
+        assert.equal(state.status, status)
+        assert.equal(state.completion_gate.status, gateStatus)
+        assert.equal(existsSync(join(stateDir, "events", `${taskID}.jsonl`)), false)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
     }
   })
 
@@ -3678,7 +3737,7 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
     }
   })
 
-  it("binds repair diff evidence to the missing completed task before stale active todos", async () => {
+  it("binds repair diff evidence to the missing completed task before unrelated in-progress todos", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")

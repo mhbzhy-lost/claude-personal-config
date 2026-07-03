@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { access, appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises"
+import { access, appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import { createHash, randomUUID } from "node:crypto"
 import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, normalize, relative } from "node:path"
@@ -11,9 +11,8 @@ const TODO_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "ski
 const EXECUTION_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "edit", "write", "apply_patch", "bash", "task", "todowrite", "finish_plan"])
 const EXECUTION_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash", "task"])
 const TERMINAL_GATE_TASK_RE = /\bfinish_plan\b|final report|最终报告|终态门禁/i
-const ACTIVE_STATUSES = new Set(["dispatching", "planning_required", "waiting_for_todo", "ready_to_execute", "executing", "audit_review", "external_review", "repairing", "interrupted"])
-const COMPLETION_GATE_RESULT_STATUSES = new Set(["validated", "repairing", "blocked", "interrupted", "stale"])
-const TERMINAL_COMPLETION_GATE_STATUSES = new Set(["validated", "blocked", "interrupted", "stale"])
+const COMPLETION_GATE_RESULT_STATUSES = new Set(["validated", "repairing", "blocked", "interrupted"])
+const TERMINAL_COMPLETION_GATE_STATUSES = new Set(["validated", "blocked", "interrupted"])
 const MAX_AUDIT_INVALID_JSON_ATTEMPTS = 2
 const MAX_GATE_FAILURES = 2
 const MAX_WATCHDOG_NUDGES = 1
@@ -147,31 +146,6 @@ async function readTaskStateForSession(stateDir, sessionID, allowedRoles = ["pla
   if (!index) return null
   if (allowedRoles && !allowedRoles.includes(index.role)) return null
   return readTaskState(stateDir, index.task_id)
-}
-
-async function markExpiredTasks(stateDir) {
-  const tasksDir = join(stateDir, "tasks")
-  let entries
-  try {
-    entries = await readdir(tasksDir, { withFileTypes: true })
-  } catch (error) {
-    if (error?.code === "ENOENT") return
-    throw error
-  }
-
-  const now = Date.now()
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) continue
-    const taskID = entry.name.slice(0, -5)
-    const state = await readTaskState(stateDir, taskID)
-    if (!state || !ACTIVE_STATUSES.has(state.status)) continue
-    if (!state.lease_expires_at || state.lease_expires_at > now) continue
-
-    state.status = "stale"
-    state.updated_at = now
-    await writeTaskState(stateDir, state)
-    await appendEvent(stateDir, state.task_id, { type: "task_stale" })
-  }
 }
 
 async function writeTaskState(stateDir, state) {
@@ -1324,10 +1298,6 @@ async function handlePlanRunnerWatchdogIdle({ stateDir, client, directory, event
   await appendEvent(stateDir, index.task_id, { type: "watchdog_nudge_sent", session_id: sessionID, count: nextState.watchdog_nudge.count })
 }
 
-function shouldCheckExpiredTasks(event) {
-  return event?.type === "session.idle" || event?.type === "todo.updated"
-}
-
 async function recordAuditDispatchFailure({ stateDir, client, directory, sessionID, state, error, auditSessionID = null, externalReview }) {
   const failedState = cloneState(state)
   const reason = formatDiagnosticError(error)
@@ -1662,7 +1632,6 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       await handleMessageDiff(stateDir, event)
       await handleAuditReviewMessage(stateDir, event)
       await handleAuditReviewIdle({ stateDir, client, directory: worktree, event, externalReview })
-      if (shouldCheckExpiredTasks(event)) await markExpiredTasks(stateDir)
       await handlePlanRunnerWatchdogIdle({ stateDir, client, directory: worktree, event })
     }),
   }
