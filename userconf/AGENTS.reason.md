@@ -74,8 +74,8 @@ skill 本身不可修改，原 reason 保留在下方备查：
 
 ## 并发与 Subagent
 
-> **原因**：并发阈值（<3 用 subagent，≥3 用 Dynamic Workflow）是经验性分界线——
-> 3 个以下并发在 LLM 单 turn 内可管理，再多则 LLM 容易遗漏 DAG 依赖或重复派发，
+> **原因**：并发阈值（<5 用 subagent，≥5 用 Dynamic Workflow）是经验性分界线——
+> 5 个以下并发在 LLM 单 turn 内可管理，再多则 LLM 容易遗漏 DAG 依赖或重复派发，
 > 脚本编排比 turn-by-turn 更可靠。
 >
 > "串行多步也用 subagent" 是为了保护主对话上下文。主对话的每一轮 tool call 和
@@ -105,6 +105,15 @@ skill 本身不可修改，原 reason 保留在下方备查：
 
 > **原因**：LLM 默认倾向"performative agreement"——收到反馈立刻同意并照做，
 > 即使反馈本身有误。强制先验证再采纳避免 reviewer 的误报被 agent 放大成错误修改。
+
+### `writing-plans`
+
+> **原因**：writing-plans skill 原始提供两种执行方式（subagent-driven /
+> inline execution），但两者都依赖未纳入白名单的 sub-skill（`subagent-driven-development`、
+> `executing-plans` → `finishing-a-development-branch` + `using-git-worktrees`），
+> 且不提供 harness 门禁。覆盖为 plan-runner + inline 两种：plan-runner 作为
+> 推荐项提供完整的质量门禁（deterministic check、audit review、external review、
+> terminal gate）；inline 不引入额外 skill，直接按 todowrite 逐任务执行即可。
 
 ---
 

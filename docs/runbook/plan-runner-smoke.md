@@ -2,7 +2,7 @@
 
 ## 目的
 
-验证重启后的 OpenCode 已加载当前仓库的 plan-runner plugin、agent 与 skill 栈，能走通：写计划、同步 todo、执行最小改动、运行验证、由 harness 接管 terminal gate 并进入 review loop。
+验证重启后的 OpenCode 已加载当前仓库的 plan-runner plugin、agent 与 skill 栈，能走通：`write_plan({ tasks })` 结构化计划、`start_task` / `complete_task` 状态推进、至少一次 harness-managed child worktree 派发、运行验证、由 harness 接管 terminal gate 并进入 review loop。
 
 ## Live smoke 记录
 
@@ -15,19 +15,23 @@
 
 1. 重启 OpenCode，并在 clean 的主工作区启动会话；不要从 `git worktree add` 创建的 linked worktree 启动。若当前主工作区不干净，先由主 agent/用户提交或清理既有改动，再派发 `plan-runner`。
 2. 在主会话派发一个小型 `plan-runner` 文档任务，要求：
-    - 先调用 `write_plan({ content })`，content 写成紧凑的自然语言实现计划，并覆盖必要执行事实；
-   - 不再向 `write_plan` 传 `tasks/dag/parallel_sets` 作为 harness 账本；
-   - 用 `todowrite` 的 `Tn:` 前缀列表镜像计划项，harness 从 todo 派生结构化状态；
-    - 不要把“最终报告/汇报 smoke 结果”写成 plan task，最终报告发生在所有 plan todo completed 之后；
-     - 所有 plan todo completed 且验证命令完成后，先创建本地 commit，确认 repo clean，再调用 `finish_plan`，只有返回 `validated` 后再写最终报告；
+    - 先调用 `write_plan({ tasks })`，tasks 写清 id、标题、文件范围、验证命令、停止条件；
+    - 不再调用 `todowrite`，不再让 harness 从 todo 派生结构化状态；
+    - 每个执行切片先调用 `start_task({ id })`，实现与验证完成后调用 `complete_task({ id })`；
+    - 至少通过 `task(background=true, ...)` 派发一个 child 工作，确认 harness 注入 child worktree / branch 信息；
+    - child 只改自己的 worktree，root 合并回主工作区后再运行最终验证；
+    - 不要把“审计 / external review / finish_plan / 汇报 smoke 结果”写成 plan task；
+    - 所有 plan tasks completed 且验证命令完成后，先创建本地 commit，确认 repo clean，再调用 `finish_plan`，只有返回 `validated` 后再写最终报告；
     - 只改动约定的文档文件；
-   - 至少运行文档相关检查和 `git diff --check`；
-   - 创建本地 commit，但不推送。
+    - 至少运行文档相关检查和 `git diff --check`；
+    - 创建本地 commit，但不推送。
 3. 等待 plan-runner 返回最终报告。
 
 ## 通过标准
 
-- `docs/plans/<task_id>.md` 已生成，正文是紧凑的自然语言实现计划，覆盖目标、方案、精确文件、小步可验证切片、验证命令、风险或停止条件，不要求固定模板章节或 checkbox 任务跟踪。
+- `docs/plans/<task_id>.md` 已生成，正文是紧凑的自然语言执行 brief，覆盖目标、方案、精确文件、小步可验证切片、验证命令、风险或停止条件，不要求固定模板章节或 checkbox 任务跟踪。
+- task-state 中 `version == 2`，`tasks[]` 来自 `write_plan({ tasks })`，状态通过 `start_task` / `complete_task` 推进；不应出现 `todo` 或 `plan_contract` 作为新账本。
+- 至少一个 child session 记录了独立 worktree、branch、base commit；child prompt 或 task output 可见 `Child worktree` / `Child branch` 元数据。
 - plan-runner 创建了本地 commit；external review 范围是 dispatch 时记录的 base commit 到当前 `HEAD`。
 - 最终报告列出修改文件、验证命令与结果。
 - `git diff --check` 通过。
@@ -39,7 +43,7 @@
 
 ## 失败处理
 
-- 若没有 `write_plan` 或 `todowrite` 记录，说明新 agent/skill 指令未生效，先确认 OpenCode 已重启。
+- 若没有 `write_plan({ tasks })`、`start_task` 或 `complete_task` 记录，说明新 agent/skill 指令未生效，先确认 OpenCode 已重启。
 - 若 task 派发被 `plan_runner_requires_clean_repo` 阻断，说明主工作区已有未提交改动；不要让 plan-runner 自动处理，先由主 agent/用户决定提交或清理。
 - 若 task 派发被 `plan_runner_disallowed_linked_worktree` 阻断，说明从 linked worktree 启动了 plan-runner；回到主工作区重新派发。
 - 若 `finish_plan` 返回 `plan_runner_requires_clean_repo_before_review` 或 `plan_runner_requires_commit_range`，说明 plan-runner 未把本次改动完整落入本地 commit，需提交后重跑验证并再次调用 `finish_plan`。
@@ -50,4 +54,4 @@
 - 若 audit 失败原因是 `external-llm-review or reviewer.py must still run`，检查 audit prompt；audit 上下文不应出现 external review / reviewer 信息，这些是 harness 内部后续 gate。
 - 若进入 external review 后返回 `unavailable`，先在 `userconf/skills/external-llm-review` 跑 `uv run --script _healthcheck.py`；默认 provider 配额耗尽时应确认 plan-runner harness 是否按 provider chain fallback 到可用 provider。
 - 若 repair 后 DB 出现 `agent-switched: build`，检查 harness 回投原 session 的 `promptAsync` 是否带 `body.agent = "plan-runner"`。
-- 若 `apply_patch` 或 `verification-before-completion` skill 被 phase gate 拦截，检查工具 allowlist 是否包含 `apply_patch` 和 `skill`；普通执行阶段还要确认当前只有一个 `in_progress` todo，repair 阶段则不应要求 agent 调用 `todowrite`。
+- 若 `apply_patch` 或 `verification-before-completion` skill 被 phase gate 拦截，检查工具 allowlist 是否包含 `apply_patch` 和 `skill`；普通执行阶段还要确认当前只有一个 active task，repair 阶段则不应要求 agent 调用 `todowrite`。

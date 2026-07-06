@@ -29,10 +29,22 @@
   "executor": {
     "description": "Deterministic code executor. Temperature 0, low divergence, precise tool calls, minimal-diff edits. Not for exploration or brainstorming.",
     "mode": "subagent",
+    "model": "openai/gpt-5.3-codex-spark",
     "temperature": 0,
     "options": {
       "effort": "low",
       "reasoningEffort": "low"
+    },
+    "permission": {
+      "skill": {
+        "*": "allow",
+        "external-llm-review": "deny",
+        "writing-plans": "deny",
+        "verification-before-completion": "deny",
+        "plan-runner-dispatch": "deny",
+        "workflow-usage": "deny",
+        "receiving-code-review": "deny"
+      }
     }
   }
 }

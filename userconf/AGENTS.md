@@ -63,8 +63,8 @@ Ref: #2847
 ## 并发与 Subagent
 
 **subagent 优先**：用并发数量决定编排方式。
-- 并发 < 3 → 用 subagent
-- 并发 ≥ 3 → 用 Dynamic Workflow
+- 并发 < 5 → 用 subagent
+- 并发 ≥ 5 → 用 Dynamic Workflow
 - 串行多步操作也用 subagent，节省主对话上下文，避免 tool call 堆积
 
 派发规则：
@@ -97,6 +97,18 @@ Ref: #2847
 必须先判断反馈是否技术上成立，再决定采纳。
 
 禁止：无验证地表演式同意，无脑采纳 reviewer 的一切反馈。
+
+### `writing-plans`
+计划文档必须使用中文撰写（代码片段、命令、文件路径等技术标识除外）。
+
+计划完成后提供三种执行方式（覆盖 skill 原始的两种）：
+
+1. **Plan-Runner（推荐）** — 加载 `plan-runner-dispatch` skill，由 plan-runner
+   subagent 接管执行，自带 harness 门禁、audit review 和 terminal gate
+2. **Subagent-Driven** — 主 agent 按计划逐任务派发 subagent 执行，任务间可审查，
+   适合 plan-runner 不稳定或需要主 agent 保持控制的场景
+3. **Inline Execution** — 按 skill 原始流程在当前会话逐任务执行，适合简单计划
+   或无需门禁的场景；忽略其引用的未纳入白名单的 sub-skill
 
 # Superpowers
 
@@ -140,6 +152,7 @@ Currently linked Superpowers skills in `~/.agents/skills`:
 - `verification-before-completion`
 - `receiving-code-review`
 - `writing-skills`
+- `writing-plans`
 
 ## Red Flags
 

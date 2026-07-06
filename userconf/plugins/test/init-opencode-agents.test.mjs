@@ -501,11 +501,14 @@ describe("init_opencode agents sync", () => {
   it("plan-runner audit agent returns the JSON contract consumed by the harness", () => {
     const agent = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner-audit.md"), "utf8")
 
+    assert.doesNotMatch(agent, /^model:/m)
+    assert.match(agent, /inherit.*parent.*model|parent.*session.*model/i)
     assert.match(agent, /Return only a JSON object/i)
     assert.match(agent, /"result": "pass" \| "fail"/)
     assert.match(agent, /"required_fixes": \[\]/)
     assert.match(agent, /only.*result.*required_fixes/i)
-    assert.match(agent, /todo list/i)
+    assert.match(agent, /structured task contract/i)
+    assert.doesNotMatch(agent, /todo list/i)
     assert.match(agent, /interface shell|stub|only satisfy tests/i)
     assert.doesNotMatch(agent, /"rejected_tasks"/)
     assert.doesNotMatch(agent, /"unknown_tasks"/)
@@ -568,47 +571,47 @@ describe("init_opencode agents sync", () => {
     }
   })
 
-  it("plan-runner may orchestrate default child subagents without recursive delegation", () => {
+  it("plan-runner delegates child agent selection to harness-managed dispatch", () => {
     const prompt = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
 
     assert.match(prompt, /task:\s*allow/)
-    assert.match(prompt, /default child subagent/i)
-    assert.match(prompt, /do not use custom agents/i)
+    assert.match(prompt, /harness-managed child dispatch|harness.*owns.*agent selection/i)
+    assert.match(prompt, /task\(background=true/i)
+    assert.doesNotMatch(prompt, /\bexecutor\b/i)
+    assert.doesNotMatch(prompt, /default child subagent/i)
+    assert.doesNotMatch(prompt, /do not use custom agents/i)
     assert.doesNotMatch(prompt, /return evidence only/i)
   })
 
-  it("plan-runner prompt uses writing-plans style without a rigid plan template", () => {
+  it("plan-runner prompt uses write_plan tasks and harness task status tools", () => {
     const prompt = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
 
     const missing = missingPromptClauses(prompt, [
-      { label: "compact implementation plan in prose", pattern: /compact implementation plan in prose/i },
-      { label: "capable engineer with little repo context", pattern: /capable engineer.*little repo context|little repo context.*capable engineer/i },
-      { label: "do not use a rigid template", pattern: /do not use a rigid template/i },
-      { label: "natural headings", pattern: /natural headings/i },
-      { label: "exact file paths", pattern: /exact file paths/i },
-      { label: "exact commands with expected outcomes", pattern: /exact commands.*expected outcomes/i },
-      { label: "risks stop conditions change request", pattern: /risks.*stop conditions.*Change Request/i },
-      { label: "no placeholders", pattern: /no placeholders|do not use placeholders/i },
-      { label: "no checkbox task tracking", pattern: /Do not include checkbox task tracking|checkbox task tracking/i },
-      { label: "no execution options", pattern: /Do not offer execution options/i },
+      { label: "write_plan tasks", pattern: /write_plan\(\{\s*tasks/i },
+      { label: "start_task", pattern: /start_task/i },
+      { label: "complete_task", pattern: /complete_task/i },
+      { label: "tasks are single source of truth", pattern: /tasks.*single source of truth|single source of truth.*tasks/i },
+      { label: "audit external lifecycle gates", pattern: /audit.*external.*lifecycle gates|lifecycle gates.*audit.*external/i },
     ])
 
     assert.deepEqual(missing, [])
-    assert.doesNotMatch(prompt, /must include at least `Goal`, `Architecture`, `File Structure`, `TDD task steps`, `Commands with expected output`, and `Risks \/ Stop Conditions` sections/)
+    assert.match(prompt, /todowrite:\s*deny/)
+    assert.doesNotMatch(prompt, /Tn:\s*todo/i)
+    assert.doesNotMatch(prompt, /mirror.*todo/i)
     assert.doesNotMatch(prompt, /superpowers:subagent-driven-development|executing-plans/)
   })
 
-  it("plan-runner prompt separates human plan docs from harness structured state", () => {
+  it("plan-runner prompt separates the execution brief from harness task state", () => {
     const prompt = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
 
     const missing = missingPromptClauses(prompt, [
-      { label: "human review", pattern: /human review/i },
-      { label: "external review", pattern: /external review/i },
-      { label: "design commitment", pattern: /design commitment/i },
-      { label: "structured state comes from todowrite", pattern: /structured state.*todowrite|todowrite.*structured state/i },
+      { label: "Execution Brief", pattern: /Execution Brief/i },
+      { label: "machine execution contract", pattern: /machine execution contract/i },
+      { label: "tasks single source", pattern: /tasks.*single source of truth|single source of truth.*tasks/i },
     ])
 
     assert.deepEqual(missing, [])
+    assert.doesNotMatch(prompt, /structured state.*todowrite|todowrite.*structured state/i)
   })
 
   it("plan-runner prompt requires independent worktrees for all concurrent child work", () => {
@@ -617,7 +620,7 @@ describe("init_opencode agents sync", () => {
     const missing = missingPromptClauses(prompt, [
       { label: "no concurrency in main workspace", pattern: /no concurrency.*main workspace|main workspace.*no concurrency/i },
       { label: "parallel or DAG branches", pattern: /parallel\/DAG|parallel.*DAG/i },
-      { label: "every child/executor in independent git worktree", pattern: /every child\/executor.*independent git worktree|independent git worktree.*every child\/executor/i },
+      { label: "child worktree managed by harness", pattern: /harness.*worktree|worktree.*harness/i },
       { label: "child only edits its worktree", pattern: /child only edits its worktree/i },
       { label: "root merges back", pattern: /root merges back/i },
       { label: "root handles conflicts failures validation", pattern: /root handles.*conflicts.*failures.*validation/i },
@@ -630,8 +633,11 @@ describe("init_opencode agents sync", () => {
     const prompt = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
 
     assert.match(prompt, /write_plan:\s*allow/)
+    assert.match(prompt, /start_task:\s*allow/)
+    assert.match(prompt, /complete_task:\s*allow/)
     assert.match(prompt, /finish_plan:\s*allow/)
-    assert.match(prompt, /call `write_plan`/i)
+    assert.match(prompt, /question:\s*deny/)
+    assert.match(prompt, /call `write_plan\(\{ tasks \}\)`|call `write_plan` with `tasks`/i)
     assert.match(prompt, /create a local git commit/i)
     assert.match(prompt, /Do not push/i)
     assert.match(prompt, /repo is clean/i)

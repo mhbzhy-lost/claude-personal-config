@@ -5,10 +5,11 @@ import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, normalize, relative } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
-const STATE_VERSION = 1
+const STATE_VERSION = 2
 const PLANNING_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "write_plan"])
+const READY_TO_EXECUTE_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "start_task", "finish_plan"])
 const TODO_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "todowrite"])
-const EXECUTION_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "edit", "write", "apply_patch", "bash", "task", "todowrite", "finish_plan"])
+const EXECUTION_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "edit", "write", "apply_patch", "bash", "task", "complete_task", "finish_plan"])
 const EXECUTION_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash", "task"])
 const TERMINAL_GATE_TASK_RE = /\bfinish_plan\b|final report|最终报告|终态门禁/i
 const COMPLETION_GATE_RESULT_STATUSES = new Set(["validated", "repairing", "blocked", "interrupted"])
@@ -80,6 +81,7 @@ function statePaths(stateDir, taskID) {
   return {
     task: join(stateDir, "tasks", `${taskID}.json`),
     events: join(stateDir, "events", `${taskID}.jsonl`),
+    brief: join(stateDir, "briefs", `${taskID}.md`),
   }
 }
 
@@ -156,11 +158,35 @@ function isPlanRunnerDispatch(args = {}) {
   return args.subagent_type === "plan-runner" || args.agent === "plan-runner"
 }
 
+function isInsidePath(base, target) {
+  if (!base || !target) return false
+  const normalizedBase = normalize(base)
+  const normalizedTarget = normalize(isAbsolute(target) ? target : join(normalizedBase, target))
+  const rel = relative(normalizedBase, normalizedTarget)
+  return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel))
+}
+
 function ensureHarnessMarker(prompt, taskID) {
   const marker = `Harness Task ID: ${taskID}`
   const text = String(prompt || "")
   if (text.includes(marker)) return text
   return `${marker}\n\n${text}`.trim()
+}
+
+function ensureChildWorktreePrompt(prompt, child) {
+  const text = String(prompt || "")
+  if (text.includes(`Assigned child worktree: ${child.worktree}`)) return text
+  return [
+    `Assigned child worktree: ${child.worktree}`,
+    `Child branch: ${child.branch}`,
+    `Child base commit: ${child.base_commit}`,
+    `Root plan task: ${child.task_id}`,
+    "Use the assigned child worktree for all file operations and bash workdir values.",
+    "Do not modify the main workspace or any other child worktree.",
+    "Return a concise outcome with files touched, commands run, validation output, blockers, and risks.",
+    "",
+    text,
+  ].join("\n").trim()
 }
 
 function createInitialState({ taskID, parentSessionID, dispatchCallID, worktree }) {
@@ -175,18 +201,10 @@ function createInitialState({ taskID, parentSessionID, dispatchCallID, worktree 
     git_base: null,
     updated_at: Date.now(),
     lease_expires_at: Date.now() + 10 * 60 * 1000,
-    plan_path: null,
-    plan_sha256: null,
-    plan_contract: {
-      tasks: [],
-      dag: [],
-      parallel_sets: [],
-    },
-    todo: {
-      mirrored: false,
-      last_seen: [],
-    },
-    evidence: [],
+    brief_path: null,
+    brief_sha256: null,
+    tasks: [],
+    active_task: null,
     modified_files: [],
     child_sessions: [],
     reviews: {
@@ -201,6 +219,39 @@ function createInitialState({ taskID, parentSessionID, dispatchCallID, worktree 
   }
 }
 
+function normalizePlanTasks(tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) throw new Error("write_plan requires tasks")
+  return tasks.map((task, index) => {
+    const id = `T${index + 1}`
+    if (task?.id !== id) throw new Error(`write_plan tasks must use contiguous ids; expected ${id}`)
+    if (!task.title) throw new Error(`write_plan task ${id} requires title`)
+    return {
+      id,
+      title: String(task.title),
+      files: Array.isArray(task.files) ? task.files.map(String) : [],
+      checks: Array.isArray(task.checks) ? task.checks.map(String) : [],
+      negative_checks: Array.isArray(task.negative_checks) ? task.negative_checks.map(String) : [],
+      status: "pending",
+      evidence: [],
+    }
+  })
+}
+
+function findTask(state, id) {
+  return (state.tasks || []).find((task) => task.id === id) || null
+}
+
+function updateTask(state, id, patch) {
+  const index = (state.tasks || []).findIndex((task) => task.id === id)
+  if (index < 0) throw new Error(`unknown plan task: ${id}`)
+  state.tasks[index] = { ...state.tasks[index], ...patch }
+  return state.tasks[index]
+}
+
+function activeTask(state) {
+  return state.active_task ? findTask(state, state.active_task) : null
+}
+
 async function currentGitHead(worktree) {
   try {
     const { stdout } = await execFileAsync("git", ["-C", worktree, "rev-parse", "HEAD"], { timeout: 10000 })
@@ -213,6 +264,27 @@ async function currentGitHead(worktree) {
 async function gitCommand(worktree, args) {
   const { stdout } = await execFileAsync("git", ["-C", worktree, ...args], { timeout: 10000 })
   return stdout.trim()
+}
+
+async function createChildWorktree(stateDir, state, callID) {
+  if (!state.git?.is_git_repo) throw new Error("plan-runner child worktree requires a git repository")
+  const baseCommit = state.base_commit || state.git_base || state.git?.head || "HEAD"
+  const childRoot = join(stateDir, "child-worktrees", state.task_id)
+  const worktree = join(childRoot, safeId(callID))
+  const branch = `planrunner/${safeId(state.task_id)}/${safeId(callID)}`
+  await ensureDir(childRoot)
+  if (!(await pathExists(worktree))) {
+    await execFileAsync("git", ["-C", state.worktree, "worktree", "add", "-b", branch, worktree, baseCommit], { timeout: 30000 })
+  }
+  return { worktree, branch, base_commit: baseCommit }
+}
+
+function childSessionByCall(state, callID) {
+  return (state.child_sessions || []).find((child) => child.call_id === callID) || null
+}
+
+function childSessionBySessionID(state, sessionID) {
+  return (state.child_sessions || []).find((child) => child.session_id === sessionID) || null
 }
 
 async function inspectGitWorktree(worktree) {
@@ -385,6 +457,14 @@ function originalTodos(state) {
 }
 
 function repairEvidenceTaskIDs(state) {
+  if (Array.isArray(state.tasks)) {
+    const failed = state.tasks
+      .filter((task) => task.status === "completed" && taskEvidenceFailures(state, task).length > 0)
+      .map((task) => task.id)
+    if (failed.length) return failed
+    return completedTaskIDs(state)
+  }
+
   const completed = new Set(completedTaskIDs(state))
   const missingEvidenceTasks = state.plan_contract.tasks
     .filter((task) => completed.has(task.id) && taskEvidenceFailures(state, task).length > 0)
@@ -401,6 +481,10 @@ function repairEvidenceTaskIDs(state) {
 }
 
 function evidenceTaskIDs(state) {
+  if (Array.isArray(state.tasks)) {
+    if (state.status === "repairing") return repairEvidenceTaskIDs(state)
+    return state.active_task ? [state.active_task] : []
+  }
   if (state.status === "repairing") return repairEvidenceTaskIDs(state)
   const activeTaskID = activeTodoTaskID(state.todo.last_seen, state.plan_contract.tasks)
   if (activeTaskID) return [activeTaskID]
@@ -414,6 +498,8 @@ function todosCoverTasks(todos = [], tasks = []) {
 async function enforcePhaseGate(stateDir, input) {
   const state = await readTaskStateForSession(stateDir, input.sessionID)
   if (!state) return
+
+  if (input.tool === "todowrite") throw new Error("plan-runner phase gate: todowrite is forbidden for plan-runner")
 
   if (state.status === "planning_required") {
     if (!PLANNING_TOOLS.has(input.tool)) throw new Error(`plan-runner phase gate: ${input.tool} is not allowed during planning_required`)
@@ -430,16 +516,133 @@ async function enforcePhaseGate(stateDir, input) {
   }
 
   if (state.status === "ready_to_execute" || state.status === "executing" || state.status === "repairing") {
-    if (state.status === "repairing" && input.tool === "todowrite") throw new Error("plan-runner phase gate: todowrite is not allowed during repairing")
+    if (!Array.isArray(state.tasks)) {
+      if (state.status === "repairing" && input.tool === "todowrite") throw new Error("plan-runner phase gate: todowrite is not allowed during repairing")
+      if (!EXECUTION_TOOLS.has(input.tool) && input.tool !== "todowrite") throw new Error(`plan-runner phase gate: ${input.tool} is not allowed during ${state.status}`)
+      if (state.status !== "repairing" && EXECUTION_CONTEXT_TOOLS.has(input.tool) && countInProgressTodos(state.todo.last_seen) !== 1) {
+        throw new Error("plan-runner phase gate: exactly one in_progress todo is required for execution tools")
+      }
+      if (state.status === "ready_to_execute" && EXECUTION_CONTEXT_TOOLS.has(input.tool)) {
+        state.status = "executing"
+        state.updated_at = Date.now()
+        await writeTaskState(stateDir, state)
+      }
+      return
+    }
+
+    if (state.status === "ready_to_execute") {
+      if (!READY_TO_EXECUTE_TOOLS.has(input.tool)) throw new Error(`plan-runner phase gate: start_task is required before execution tools during ${state.status}`)
+      return
+    }
     if (!EXECUTION_TOOLS.has(input.tool)) throw new Error(`plan-runner phase gate: ${input.tool} is not allowed during ${state.status}`)
-    if (state.status !== "repairing" && EXECUTION_CONTEXT_TOOLS.has(input.tool) && countInProgressTodos(state.todo.last_seen) !== 1) {
-      throw new Error("plan-runner phase gate: exactly one in_progress todo is required for execution tools")
+    if (EXECUTION_CONTEXT_TOOLS.has(input.tool) && !activeTask(state)) {
+      throw new Error("plan-runner phase gate: start_task is required before execution tools")
     }
-    if (state.status === "ready_to_execute" && EXECUTION_CONTEXT_TOOLS.has(input.tool)) {
-      state.status = "executing"
-      state.updated_at = Date.now()
-      await writeTaskState(stateDir, state)
+  }
+}
+
+async function prepareChildDispatch(stateDir, input, output, sessionIndex) {
+  const state = await readTaskState(stateDir, sessionIndex.task_id)
+  if (!state) throw new Error("plan-runner child dispatch state is not readable")
+  if (state.plan_runner_session_id !== input.sessionID) throw new Error("plan-runner child dispatch must run in the bound plan-runner session")
+  if (!Array.isArray(state.tasks)) throw new Error("plan-runner child dispatch requires structured tasks")
+  const task = activeTask(state)
+  if (!task) throw new Error("plan-runner child dispatch requires an active task")
+
+  const worktree = await createChildWorktree(stateDir, state, input.callID)
+  const child = {
+    call_id: input.callID,
+    session_id: null,
+    role: "executor",
+    status: "dispatching",
+    task_id: task.id,
+    ...worktree,
+  }
+
+  state.child_sessions = (state.child_sessions || []).filter((item) => item.call_id !== input.callID)
+  state.child_sessions.push(child)
+  state.updated_at = Date.now()
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, state.task_id, {
+    type: "child_worktree_created",
+    call_id: input.callID,
+    task_id: task.id,
+    worktree: child.worktree,
+    branch: child.branch,
+    base_commit: child.base_commit,
+  })
+
+  output.args = output.args || {}
+  output.args.background = true
+  output.args.subagent_type = "executor"
+  output.args.prompt = ensureChildWorktreePrompt(output.args.prompt, child)
+}
+
+async function bindChildDispatch(stateDir, input, output, sessionIndex) {
+  const state = await readTaskState(stateDir, sessionIndex.task_id)
+  if (!state) return
+  const childSessionID = output.metadata?.sessionId
+  const parentSessionID = output.metadata?.parentSessionId
+  if (!childSessionID || parentSessionID !== input.sessionID) return
+  const child = childSessionByCall(state, input.callID)
+  if (!child) return
+
+  state.child_sessions = (state.child_sessions || []).map((item) => (
+    item.call_id === input.callID
+      ? { ...item, session_id: childSessionID, status: "running" }
+      : item
+  ))
+  state.updated_at = Date.now()
+  await writeTaskState(stateDir, state)
+  await writeSessionIndex(stateDir, childSessionID, state.task_id, "child")
+  await appendEvent(stateDir, state.task_id, {
+    type: "child_session_bound",
+    call_id: input.callID,
+    session_id: childSessionID,
+    worktree: child.worktree,
+    branch: child.branch,
+  })
+}
+
+function childToolPaths(tool, args = {}) {
+  const paths = []
+  for (const key of ["filePath", "file_path", "path"]) {
+    if (typeof args[key] === "string" && args[key].trim()) paths.push({ key, path: args[key] })
+  }
+  if (tool === "apply_patch") {
+    for (const path of patchFileNames(args.patchText)) paths.push({ key: "patchText", path, patch: true })
+  }
+  return paths
+}
+
+async function enforceChildSessionGate(stateDir, input, output, sessionIndex) {
+  const state = await readTaskState(stateDir, sessionIndex.task_id)
+  if (!state) return
+  const child = childSessionBySessionID(state, input.sessionID)
+  if (!child) throw new Error("plan-runner child session is not bound to a child worktree")
+  if (state.status === "audit_review" || state.status === "external_review") {
+    throw new Error(`plan-runner terminal gate: child ${input.tool} is not allowed during ${state.status}`)
+  }
+  if (input.tool === "task") throw new Error("plan-runner child sessions cannot dispatch nested tasks")
+
+  output.args = output.args || {}
+  if (input.tool === "bash") {
+    const requestedWorkdir = output.args.workdir || output.args.cwd
+    if (requestedWorkdir && !isInsidePath(child.worktree, requestedWorkdir)) {
+      throw new Error("plan-runner child tool path is outside assigned child worktree")
     }
+    output.args.workdir = child.worktree
+  }
+
+  for (const item of childToolPaths(input.tool, output.args)) {
+    const absolute = isAbsolute(item.path) ? normalize(item.path) : normalize(join(child.worktree, item.path))
+    if (!isInsidePath(child.worktree, absolute)) {
+      throw new Error("plan-runner child tool path is outside assigned child worktree")
+    }
+    if (item.patch && !isAbsolute(item.path)) {
+      throw new Error("plan-runner child apply_patch paths must be absolute inside assigned child worktree")
+    }
+    if (!item.patch && !isAbsolute(item.path)) output.args[item.key] = absolute
   }
 }
 
@@ -453,6 +656,7 @@ async function handleTodoUpdated(stateDir, event) {
   if (!index || index.role !== "plan-runner") return
   const state = await readTaskState(stateDir, index.task_id)
   if (!state) return
+  if (Array.isArray(state.tasks)) return
   state.todo.last_seen = todos
   let mirrorDiagnostic = null
   if (!state.plan_contract?.tasks?.length) {
@@ -476,7 +680,7 @@ async function recordToolEvidence(stateDir, input, output) {
     return
   }
 
-  const state = await readTaskStateForSession(stateDir, input.sessionID)
+  const state = await readTaskStateForSession(stateDir, input.sessionID, ["plan-runner", "child"])
   if (!state || input.tool !== "bash") return
 
   const taskIDs = evidenceTaskIDs(state)
@@ -493,14 +697,22 @@ async function recordToolEvidence(stateDir, input, output) {
     exit_code: exitCode,
   }
 
-  state.evidence = state.evidence.filter((item) => item.id !== evidence.id)
-  state.evidence.push(evidence)
+  if (Array.isArray(state.tasks)) {
+    const task = findTask(state, taskIDs[0])
+    if (!task) return
+    task.evidence = (task.evidence || []).filter((item) => item.id !== evidence.id)
+    task.evidence.push(evidence)
+  } else {
+    state.evidence = state.evidence.filter((item) => item.id !== evidence.id)
+    state.evidence.push(evidence)
+  }
   state.updated_at = Date.now()
   await writeTaskState(stateDir, state)
-  await appendEvent(stateDir, state.task_id, { type: "evidence_recorded", evidence_id: evidence.id, tool: input.tool, call_id: input.callID })
+  await appendEvent(stateDir, state.task_id, { type: "evidence_recorded", evidence_id: evidence.id, tool: input.tool, call_id: input.callID, task_id: taskIDs[0] })
 }
 
 function completedTaskIDs(state) {
+  if (Array.isArray(state.tasks)) return state.tasks.filter((task) => task.status === "completed").map((task) => task.id)
   return originalPlanTasks(state)
     .filter((task) => state.todo.last_seen.some((todo) => todo.status === "completed" && todoMatchesTask(todo, task)))
     .map((task) => task.id)
@@ -508,6 +720,16 @@ function completedTaskIDs(state) {
 
 function findDeterministicCheckFailures(state) {
   const reasons = []
+  if (Array.isArray(state.tasks)) {
+    if (!state.tasks.length) reasons.push("write_plan task contract is empty")
+    if (state.active_task) reasons.push(`active task is still running: ${state.active_task}`)
+    for (const task of state.tasks) {
+      if (task.status !== "completed") reasons.push(`${task.id} is not completed`)
+      if (task.status === "completed") reasons.push(...taskEvidenceFailures(state, task))
+    }
+    return reasons
+  }
+
   if (!state.plan_path || !state.plan_sha256) reasons.push("plan is not written")
   if (state.plan_path && state.plan_sha256 && state.plan_contract.tasks.length === 0) reasons.push("todo-derived plan contract is empty; rewrite todowrite items with Tn: prefixes")
   if (!state.todo.mirrored) reasons.push("todo list does not mirror all plan tasks")
@@ -544,11 +766,31 @@ async function gitCommitBoundaryFailures(state) {
 }
 
 function taskEvidenceFailures(state, task) {
+  if (Array.isArray(state.tasks)) {
+    const evidence = task.evidence || []
+    const diffFiles = new Set(evidence.filter((item) => item.type === "diff").flatMap((item) => item.files || []))
+    const successfulCommands = new Set(evidence.filter((item) => item.type === "command" && item.success).map((item) => item.command))
+    const failedCommands = new Set(evidence.filter((item) => item.type === "command" && !item.success).map((item) => item.command))
+    const reasons = []
+    for (const file of task.files || []) {
+      if (!diffFiles.has(file)) reasons.push(`${task.id} missing diff evidence for ${file}`)
+    }
+    for (const command of task.checks || []) {
+      if (!successfulCommands.has(command)) reasons.push(`${task.id} missing successful check: ${command}`)
+    }
+    for (const command of task.negative_checks || []) {
+      if (!failedCommands.has(command)) reasons.push(`${task.id} missing failing negative check: ${command}`)
+    }
+    return reasons
+  }
   if (!state.evidence.some((item) => item.type === "diff" && item.task_ids?.includes(task.id))) return [`${task.id} has no diff evidence`]
   return []
 }
 
 function isCompletionAttempt(state) {
+  if (Array.isArray(state.tasks)) {
+    return state.tasks.length > 0 && !state.active_task && state.tasks.every((task) => task.status === "completed")
+  }
   if (!state.plan_path || !state.plan_sha256 || state.plan_contract.tasks.length === 0) return false
   if (!state.todo.mirrored) return false
   if (completedTaskIDs(state).length === 0) return false
@@ -589,6 +831,25 @@ function watchdogNudgePromptText(state) {
 function auditPromptText(state) {
   const modifiedFiles = Array.isArray(state.modified_files) ? state.modified_files : []
   const files = modifiedFiles.length ? modifiedFiles.map((file) => `- ${file}`) : ["- none recorded"]
+  if (Array.isArray(state.tasks)) {
+    const tasks = state.tasks.length
+      ? state.tasks.map((task) => `- ${task.id}: ${task.status} - ${task.title}; files: ${(task.files || []).join(", ") || "none"}; checks: ${(task.checks || []).join(" | ") || "none"}`)
+      : ["- none recorded"]
+    return [
+      "Plan-runner audit_review_required: deterministic checks passed; audit the completed scope before the harness continues.",
+      "- You are the harness-dispatched audit subagent. Do not modify files.",
+      "- Check whether each completed task has a complete implementation, not just an interface shell, stub, mock, or code that only satisfies tests.",
+      "- Review the injected Execution Brief, structured task contract, observed files, and observed validation commands.",
+      "- Return only fields consumed by the harness: result, required_fixes.",
+      `- Harness Task ID: ${state.task_id}`,
+      `- Brief path: ${state.brief_path}`,
+      "- Structured tasks:",
+      ...tasks,
+      "- Modified files observed by harness:",
+      ...files,
+    ].join("\n")
+  }
+
   const planTasks = originalPlanTasks(state)
   const tasks = planTasks.length
     ? planTasks.map((task) => `- ${task.id}: ${task.title}; completion: ${task.completion_criteria.join("; ")}`)
@@ -867,7 +1128,8 @@ async function runExternalReviewCommand(state, options = {}) {
     "--max-issues",
     "25",
   ]
-  if (state.plan_path) baseArgs.push("--spec", state.plan_path)
+  if (state.brief_path) baseArgs.push("--spec", state.brief_path)
+  else if (state.version === 1 && state.plan_path) baseArgs.push("--spec", state.plan_path)
 
   const providers = externalReviewProviders(options)
   const attempts = providers.length ? providers : [null]
@@ -1050,6 +1312,32 @@ async function finishPlanTool(args, context, stateDir, { client, directory, exte
 async function finalCompletenessFailures(state) {
   const reasons = []
   if (state.status !== "external_review") reasons.push(`status is ${state.status}, expected external_review`)
+  if (Array.isArray(state.tasks)) {
+    if (!state.brief_path || !state.brief_sha256) reasons.push("dispatch brief is not written")
+    else {
+      try {
+        const brief = await readFile(state.brief_path, "utf8")
+        if (sha256(brief) !== state.brief_sha256) reasons.push("brief file hash does not match task state")
+      } catch (error) {
+        reasons.push(`brief file is not readable: ${formatDiagnosticError(error)}`)
+      }
+    }
+    if (!state.tasks.length) reasons.push("write_plan task contract is empty")
+    if (state.active_task) reasons.push(`active task is still running: ${state.active_task}`)
+    for (const task of state.tasks) {
+      if (task.status !== "completed") reasons.push(`${task.id} has no completed task status`)
+      if (task.status === "completed") reasons.push(...taskEvidenceFailures(state, task))
+    }
+    const evidenceFiles = new Set(state.tasks.flatMap((task) => task.evidence || []).filter((item) => item.type === "diff").flatMap((item) => item.files || []))
+    for (const file of state.modified_files || []) {
+      if (!evidenceFiles.has(file)) reasons.push(`modified file is not mapped to evidence: ${file}`)
+    }
+    if (state.child_sessions?.some((child) => child.status === "running")) reasons.push("child sessions are still running")
+    if (!state.reviews.audit.length && !gateFailedOpen(state, "audit_review")) reasons.push("audit review did not run")
+    if (state.reviews.external.at(-1)?.result !== "pass" && !gateFailedOpen(state, "external_review")) reasons.push("latest external review did not pass")
+    return reasons
+  }
+
   if (!state.plan_path || !state.plan_sha256) reasons.push("plan is not written")
   else {
     try {
@@ -1411,7 +1699,7 @@ function normalizeEvidenceFile(state, file) {
 
 async function recordDiffEvidence(stateDir, { sessionID, files, eventID }) {
   if (!sessionID) return
-  const state = await readTaskStateForSession(stateDir, sessionID)
+  const state = await readTaskStateForSession(stateDir, sessionID, ["plan-runner", "child"])
   if (!state) return
 
   const taskIDs = evidenceTaskIDs(state)
@@ -1428,11 +1716,18 @@ async function recordDiffEvidence(stateDir, { sessionID, files, eventID }) {
     event_ids: [eventID],
     files: normalizedFiles,
   }
-  state.evidence = state.evidence.filter((item) => item.id !== evidence.id)
-  state.evidence.push(evidence)
+  if (Array.isArray(state.tasks)) {
+    const task = findTask(state, taskIDs[0])
+    if (!task) return
+    task.evidence = (task.evidence || []).filter((item) => item.id !== evidence.id)
+    task.evidence.push(evidence)
+  } else {
+    state.evidence = state.evidence.filter((item) => item.id !== evidence.id)
+    state.evidence.push(evidence)
+  }
   state.updated_at = Date.now()
   await writeTaskState(stateDir, state)
-  await appendEvent(stateDir, state.task_id, { type: "evidence_recorded", evidence_id: evidence.id, event_id: eventID })
+  await appendEvent(stateDir, state.task_id, { type: "evidence_recorded", evidence_id: evidence.id, event_id: eventID, task_id: taskIDs[0] })
 }
 
 async function handleSessionDiff(stateDir, event) {
@@ -1501,6 +1796,45 @@ async function completeSelfCheck({ stateDir, sessionID, state, boundary }) {
   await appendEvent(stateDir, state.task_id, { type: "self_check_completed", session_id: sessionID, boundary })
 }
 
+async function startTaskTool(args, context, stateDir) {
+  if (context.agent !== "plan-runner") throw new Error("start_task is only available to the plan-runner agent")
+  const sessionIndex = await readSessionIndex(stateDir, context.sessionID)
+  if (!sessionIndex) throw new Error("start_task session is not bound to a plan-runner task")
+  const state = await readTaskState(stateDir, sessionIndex.task_id)
+  if (!state) throw new Error("start_task task state is not readable")
+  if (state.plan_runner_session_id !== context.sessionID) throw new Error("start_task must run in the bound plan-runner session")
+  if (state.active_task) throw new Error(`active task is already running: ${state.active_task}`)
+
+  const task = findTask(state, args?.id)
+  if (!task) throw new Error(`unknown plan task: ${args?.id}`)
+  if (task.status !== "pending") throw new Error(`start_task requires pending status for ${task.id}, got ${task.status}`)
+
+  updateTask(state, task.id, { status: "in_progress" })
+  state.active_task = task.id
+  state.status = "executing"
+  state.updated_at = Date.now()
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, state.task_id, { type: "task_started", task_id: task.id })
+  return { output: `task started: ${task.id}`, metadata: { task_id: state.task_id, active_task: task.id } }
+}
+
+async function completeTaskTool(args, context, stateDir) {
+  if (context.agent !== "plan-runner") throw new Error("complete_task is only available to the plan-runner agent")
+  const sessionIndex = await readSessionIndex(stateDir, context.sessionID)
+  if (!sessionIndex) throw new Error("complete_task session is not bound to a plan-runner task")
+  const state = await readTaskState(stateDir, sessionIndex.task_id)
+  if (!state) throw new Error("complete_task task state is not readable")
+  if (state.plan_runner_session_id !== context.sessionID) throw new Error("complete_task must run in the bound plan-runner session")
+  if (state.active_task !== args?.id) throw new Error(`complete_task requires active task ${state.active_task || "none"}, got ${args?.id}`)
+
+  updateTask(state, args.id, { status: "completed" })
+  state.active_task = null
+  state.updated_at = Date.now()
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, state.task_id, { type: "task_completed", task_id: args.id })
+  return { output: `task completed: ${args.id}`, metadata: { task_id: state.task_id, completed_task: args.id } }
+}
+
 async function writePlanTool(args, context, stateDir) {
   if (context.agent !== "plan-runner") throw new Error("write_plan is only available to the plan-runner agent")
 
@@ -1512,27 +1846,50 @@ async function writePlanTool(args, context, stateDir) {
   if (state.status !== "planning_required") throw new Error(`write_plan requires planning_required status, got ${state.status}`)
 
   const markdown = String(args?.content || "")
-  if (!markdown.trim()) throw new Error("write_plan requires non-empty content; structured tasks/dag fields are no longer accepted as the plan contract")
-  const worktree = state.worktree || context.worktree || context.directory
-  const planPath = join(worktree, "docs", "plans", `${state.task_id}.md`)
-  await ensureDir(dirname(planPath))
-  await writeFile(planPath, markdown)
+  if (markdown.trim() && Array.isArray(args?.tasks) && args.tasks.length) {
+    const worktree = state.worktree || context.worktree || context.directory
+    const planPath = join(worktree, "docs", "plans", `${state.task_id}.md`)
+    await ensureDir(dirname(planPath))
+    await writeFile(planPath, markdown)
 
-  state.status = "waiting_for_todo"
+    state.version = 1
+    state.status = "waiting_for_todo"
+    state.updated_at = Date.now()
+    state.lease_expires_at = Date.now() + 10 * 60 * 1000
+    state.plan_path = planPath
+    state.plan_sha256 = sha256(markdown)
+    state.plan_contract = { tasks: [], dag: [], parallel_sets: [] }
+    state.todo = { mirrored: false, last_seen: [] }
+    state.evidence = []
+    delete state.tasks
+    delete state.active_task
+    await writeTaskState(stateDir, state)
+    await appendEvent(stateDir, state.task_id, { type: "plan_written", plan_path: planPath, plan_sha256: state.plan_sha256 })
+
+    return {
+      output: `plan written: ${planPath}`,
+      metadata: {
+        task_id: state.task_id,
+        plan_path: planPath,
+        plan_sha256: state.plan_sha256,
+      },
+    }
+  }
+
+  const tasks = normalizePlanTasks(args?.tasks)
+  state.status = "ready_to_execute"
   state.updated_at = Date.now()
   state.lease_expires_at = Date.now() + 10 * 60 * 1000
-  state.plan_path = planPath
-  state.plan_sha256 = sha256(markdown)
-  state.plan_contract = { tasks: [], dag: [], parallel_sets: [] }
+  state.tasks = tasks
+  state.active_task = null
   await writeTaskState(stateDir, state)
-  await appendEvent(stateDir, state.task_id, { type: "plan_written", plan_path: planPath, plan_sha256: state.plan_sha256 })
+  await appendEvent(stateDir, state.task_id, { type: "plan_contract_written", task_count: tasks.length })
 
   return {
-    output: `plan written: ${planPath}`,
+    output: `task contract written: ${tasks.length} tasks`,
     metadata: {
       task_id: state.task_id,
-      plan_path: planPath,
-      plan_sha256: state.plan_sha256,
+      task_count: tasks.length,
     },
   }
 }
@@ -1556,11 +1913,26 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
   return {
     tool: {
       write_plan: tool({
-        description: "Write a reviewer-facing plan-runner execution plan from markdown content and advance harness state.",
+        description: "Write the structured plan-runner task contract and advance harness state.",
         args: {
-          content: tool.schema.string().min(1),
+          content: tool.schema.string().optional(),
+          tasks: tool.schema.array(tool.schema.object({})).min(1),
         },
         execute: (args, context) => writePlanTool(args, context, stateDir),
+      }),
+      start_task: tool({
+        description: "Mark one structured plan-runner task as in progress.",
+        args: {
+          id: tool.schema.string().min(1),
+        },
+        execute: (args, context) => startTaskTool(args, context, stateDir),
+      }),
+      complete_task: tool({
+        description: "Mark the active structured plan-runner task as completed.",
+        args: {
+          id: tool.schema.string().min(1),
+        },
+        execute: (args, context) => completeTaskTool(args, context, stateDir),
       }),
       finish_plan: tool({
         description: "Run and wait for the plan-runner terminal gate before returning a final report.",
@@ -1576,6 +1948,16 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
     },
 
     "tool.execute.before": async (input, output) => {
+      const sessionIndex = await readSessionIndex(stateDir, input.sessionID)
+      if (sessionIndex?.role === "child") {
+        await enforceChildSessionGate(stateDir, input, output, sessionIndex)
+        return
+      }
+      if (input.tool === "task" && sessionIndex?.role === "plan-runner") {
+        await enforcePhaseGate(stateDir, input)
+        await prepareChildDispatch(stateDir, input, output, sessionIndex)
+        return
+      }
       if (input.tool !== "task" || !isPlanRunnerDispatch(output.args)) {
         await enforcePhaseGate(stateDir, input)
         return
@@ -1593,6 +1975,12 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       state.git = gitInfo
       state.base_commit = gitInfo.head || null
       state.git_base = gitInfo.head || await currentGitHead(worktree)
+      const briefContent = String(output.args.prompt || "")
+      const paths = statePaths(stateDir, taskID)
+      await ensureDir(dirname(paths.brief))
+      await writeFile(paths.brief, briefContent)
+      state.brief_path = paths.brief
+      state.brief_sha256 = sha256(briefContent)
       if (blocker) {
         await blockPlanRunnerDispatch({ stateDir, state, parentSessionID: input.sessionID, blocker })
       }
@@ -1603,6 +1991,11 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
     },
 
     "tool.execute.after": async (input, output) => {
+      const sessionIndex = await readSessionIndex(stateDir, input.sessionID)
+      if (input.tool === "task" && sessionIndex?.role === "plan-runner") {
+        await bindChildDispatch(stateDir, input, output, sessionIndex)
+        return
+      }
       if (input.tool !== "task" || !isPlanRunnerDispatch(input.args)) {
         await recordToolEvidence(stateDir, input, output)
         return
