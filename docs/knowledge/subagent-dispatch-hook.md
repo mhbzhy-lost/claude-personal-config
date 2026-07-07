@@ -13,7 +13,7 @@ applies_to:
   - userconf/agents/plan-runner.md
   - userconf/plugins/plan-runner-harness.js
   - scripts/opencode-subagent-event-probe.mjs
-last_verified: 2026-07-03
+last_verified: 2026-07-07
 source: opencode plan-runner agent
 ---
 
@@ -89,9 +89,13 @@ session 的 bash / file 工具做路径门禁。
   `tasks` 是唯一机器执行契约；不再从 OpenCode `todowrite` 派生任务账本。
 - execution brief 是紧凑自然语言执行计划，不是固定章节表单；它必须覆盖目标、方案、exact
   files、任务切片、测试/验证命令和风险/停止条件，但不使用 checkbox 或执行模式选择。
-- `start_task({ id })` 是进入任务执行的唯一 cursor API；执行类工具在 `ready_to_execute` /
-  普通执行阶段必须有 active task。`complete_task({ id })` 是任务完成状态入口，完成前仍由
-  harness 通过工具事件、Git diff 和命令 exit 判断 evidence。
+- `start_task({ id })` 是进入任务执行和切换到下一个 pending structured task 的唯一
+  cursor API；它必须在首个任务前调用，也必须在每个 `complete_task({ id })` 清空
+  active cursor 后再次调用。执行类工具在 `ready_to_execute` / 普通执行 / repair 阶段必须有
+  active task；唯一例外是全部 structured tasks 完成后的 completion boundary，plan-runner
+  可执行只包含 `git ...` shell segment 的 `bash` 命令来创建/修正本地 commit 边界。
+  `complete_task({ id })` 是任务完成状态入口，完成前仍由 harness 通过工具事件、Git diff
+  和命令 exit 判断 evidence。
 - `finish_plan` custom tool 是 plan-runner 的 terminal gate 入口。plan-runner 完成 tasks
   和验证命令后必须先调用该工具；工具等待 deterministic / audit / external review。返回
   `repair_required` 时 findings 只回到 plan-runner session，返回 `validated` 后 agent 才能写最终报告。
@@ -105,10 +109,21 @@ session 的 bash / file 工具做路径门禁。
   仍在 phase gate 中兜底拒绝 plan-runner session 的 `todowrite` 调用。
 - phase gate 在 `planning_required` / `ready_to_execute` / execution / terminal gate 阶段限制工具；`skill`
   作为只读上下文工具可用于普通执行阶段，`apply_patch` 作为执行类变更工具在执行阶段需要 active task，repair 阶段由 harness 推导 evidence 绑定目标。
+  所有任务完成后的 `git status/add/commit/diff/worktree/...` 等 git-only `bash` 可用于
+  `finish_plan` preflight 修复；普通编辑、patch 和 child dispatch 仍不得绕过 active task。
 - `tool.execute.after(start_task)`、`tool.execute.after(complete_task)`、`tool.execute.after(bash)`、
   `tool.execute.after(write|edit).input.filePath`、`tool.execute.after(apply_patch).input.patchText`、`message.updated.info.summary.diffs`、
   `message.part.updated` patch、`session.diff` 写入
   evidence 索引；harness 自己生成的 `docs/plans/<task_id>.md` 不计入实现 diff evidence。
+- 普通 harness-managed executor child 的 `session.idle` 会把对应 `child_sessions[]` 从
+  `running` 标记为 `completed` 并写入 `child_session_completed` event；audit child 继续由
+  audit 专用 idle handler 消费 JSON 结果并推进后续 gate。
+- harness 会在 `task` 工具 description 中补充说明：plan-runner 派发 child subagent 时会
+  自动为该 child 创建独立 git worktree，并把 assigned worktree / branch 注入 child prompt。
+- `finish_plan` 的 deterministic commit boundary 会先做同步 preflight：检查 root repo clean、
+  base..HEAD 有 diff，也检查所有 harness-managed child worktree 已合并并清理。root dirty、无
+  commit range 或残留 child worktree 会返回 `preflight_blocked`，但不把 state 切到
+  `repairing`，plan-runner 应在同一 session 用 git-only `bash` 修正后再次调用 `finish_plan`。
 - `finish_plan` 首次完成尝试时由 harness 直接写 `self_check_completed`，随后做 deterministic check，不再回投 self-check prompt 给原 agent。
   deterministic check 通过后不能只停在 `audit_review`，必须由 harness 直接创建 audit
   child session，并用 `agent: plan-runner-audit` 后台投递 `audit_review_required` prompt。

@@ -9,7 +9,7 @@ const STATE_VERSION = 2
 const PLANNING_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "write_plan"])
 const READY_TO_EXECUTE_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "start_task", "finish_plan"])
 const TODO_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "todowrite"])
-const EXECUTION_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "edit", "write", "apply_patch", "bash", "task", "complete_task", "finish_plan"])
+const EXECUTION_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "start_task", "edit", "write", "apply_patch", "bash", "task", "complete_task", "finish_plan"])
 const EXECUTION_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash", "task"])
 const TERMINAL_GATE_TASK_RE = /\bfinish_plan\b|final report|最终报告|终态门禁/i
 const COMPLETION_GATE_RESULT_STATUSES = new Set(["validated", "repairing", "blocked", "interrupted"])
@@ -252,6 +252,20 @@ function activeTask(state) {
   return state.active_task ? findTask(state, state.active_task) : null
 }
 
+function gitBoundaryRepairBash(command) {
+  const segments = String(command || "")
+    .split(/\s*(?:&&|;)\s*/)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+  return segments.length > 0 && segments.every((segment) => /^git(?:\s|$)/.test(segment))
+}
+
+function completionBoundaryExecutionAllowed(state, input, output) {
+  if (input.tool !== "bash") return false
+  if (!isCompletionAttempt(state)) return false
+  return gitBoundaryRepairBash(output?.args?.command || input.args?.command)
+}
+
 async function currentGitHead(worktree) {
   try {
     const { stdout } = await execFileAsync("git", ["-C", worktree, "rev-parse", "HEAD"], { timeout: 10000 })
@@ -264,6 +278,35 @@ async function currentGitHead(worktree) {
 async function gitCommand(worktree, args) {
   const { stdout } = await execFileAsync("git", ["-C", worktree, ...args], { timeout: 10000 })
   return stdout.trim()
+}
+
+async function registeredGitWorktrees(worktree) {
+  const output = await gitCommand(worktree, ["worktree", "list", "--porcelain"])
+  return new Set(output
+    .split("\n")
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => normalize(line.slice("worktree ".length))))
+}
+
+async function childWorktreeCleanupFailures(state) {
+  const children = (state.child_sessions || []).filter((child) => child.worktree)
+  if (!children.length) return []
+
+  let registered = new Set()
+  try {
+    registered = await registeredGitWorktrees(state.worktree)
+  } catch {
+    registered = new Set()
+  }
+
+  const reasons = []
+  for (const child of children) {
+    const childWorktree = normalize(child.worktree)
+    if (await pathExists(childWorktree) || registered.has(childWorktree)) {
+      reasons.push(`plan_runner_requires_child_worktree_cleanup: ${childWorktree}`)
+    }
+  }
+  return reasons
 }
 
 async function createChildWorktree(stateDir, state, callID) {
@@ -285,6 +328,16 @@ function childSessionByCall(state, callID) {
 
 function childSessionBySessionID(state, sessionID) {
   return (state.child_sessions || []).find((child) => child.session_id === sessionID) || null
+}
+
+function ensureChildWorktreeTaskToolDescription(input, output) {
+  const toolName = input?.tool || input?.name || output?.name
+  if (toolName !== "task") return
+  const description = output?.description
+  if (typeof description !== "string") return
+  const worktreeDescription = "When the plan-runner agent uses this tool to dispatch a child subagent, the harness automatically creates a dedicated git worktree for that child and injects the assigned worktree and branch into the child prompt."
+  if (description.includes(worktreeDescription)) return
+  output.description = `${description}\n\n${worktreeDescription}`
 }
 
 async function inspectGitWorktree(worktree) {
@@ -495,7 +548,7 @@ function todosCoverTasks(todos = [], tasks = []) {
   return !todoMirrorDiagnostic(todos, tasks)
 }
 
-async function enforcePhaseGate(stateDir, input) {
+async function enforcePhaseGate(stateDir, input, output = {}) {
   const state = await readTaskStateForSession(stateDir, input.sessionID)
   if (!state) return
 
@@ -536,6 +589,7 @@ async function enforcePhaseGate(stateDir, input) {
     }
     if (!EXECUTION_TOOLS.has(input.tool)) throw new Error(`plan-runner phase gate: ${input.tool} is not allowed during ${state.status}`)
     if (EXECUTION_CONTEXT_TOOLS.has(input.tool) && !activeTask(state)) {
+      if (completionBoundaryExecutionAllowed(state, input, output)) return
       throw new Error("plan-runner phase gate: start_task is required before execution tools")
     }
   }
@@ -751,6 +805,7 @@ async function gitCommitBoundaryFailures(state) {
   if (!gitInfo.is_git_repo) return []
 
   const reasons = []
+  reasons.push(...await childWorktreeCleanupFailures(state))
   if (gitInfo.is_linked_worktree) reasons.push("plan_runner_disallowed_linked_worktree: plan-runner cannot finish from a linked git worktree")
   if (gitInfo.status_porcelain) reasons.push(`plan_runner_requires_clean_repo_before_review: ${gitInfo.status_porcelain}`)
   if (gitInfo.head === baseCommit) reasons.push(`plan_runner_requires_commit_range: HEAD equals base commit ${baseCommit}`)
@@ -1261,6 +1316,23 @@ function completionGateResultText(state) {
   return lines.join("\n")
 }
 
+function preflightBlockResultText(state, reasons) {
+  return [
+    "Result: preflight_blocked",
+    "",
+    `Harness Task ID: ${state?.task_id || "unknown"}`,
+    "",
+    "Reasons:",
+    ...reasons.map((reason) => `- ${reason}`),
+    "",
+    "Next Steps:",
+    "- Fix the preflight reasons in this same plan-runner session.",
+    "- For dirty root repos, git add/commit the completed work and confirm git status --short is clean.",
+    "- For child worktrees, merge or intentionally discard their work, then remove the child worktree.",
+    "- Call finish_plan again only after the preflight checks are clean.",
+  ].join("\n")
+}
+
 async function finishPlanTool(args, context, stateDir, { client, directory, externalReview, pollMs, timeoutMs }) {
   if (context.agent !== "plan-runner") throw new Error("finish_plan is only available to the plan-runner agent")
   const sessionID = context.sessionID
@@ -1275,6 +1347,21 @@ async function finishPlanTool(args, context, stateDir, { client, directory, exte
         status: state.status,
         completion_gate: state.completion_gate || null,
       },
+    }
+  }
+
+  if (isCompletionAttempt(state)) {
+    const preflightReasons = await gitCommitBoundaryFailures(state)
+    if (preflightReasons.length) {
+      await appendEvent(stateDir, state.task_id, { type: "finish_plan_preflight_blocked", reasons: preflightReasons })
+      return {
+        output: preflightBlockResultText(state, preflightReasons),
+        metadata: {
+          task_id: state.task_id,
+          status: "preflight_blocked",
+          reasons: preflightReasons,
+        },
+      }
     }
   }
 
@@ -1546,6 +1633,26 @@ async function handleAuditReviewIdle({ stateDir, client, directory, event, exter
 
   await appendEvent(stateDir, state.task_id, { type: "audit_review_passed" })
   await runExternalReview({ stateDir, client, directory, state: nextState, externalReview })
+}
+
+async function handleChildSessionIdle(stateDir, event) {
+  if (event.type !== "session.idle") return
+  const sessionID = event.properties?.sessionID
+  if (!sessionID) return
+  const index = await readSessionIndex(stateDir, sessionID)
+  if (!index || index.role !== "child") return
+
+  const state = await readTaskState(stateDir, index.task_id)
+  if (!state) return
+  const child = childSessionBySessionID(state, sessionID)
+  if (!child || child.status !== "running") return
+
+  state.child_sessions = (state.child_sessions || []).map((item) => (
+    item.session_id === sessionID ? { ...item, status: "completed" } : item
+  ))
+  state.updated_at = Date.now()
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, state.task_id, { type: "child_session_completed", session_id: sessionID })
 }
 
 async function handlePlanRunnerWatchdogIdle({ stateDir, client, directory, event }) {
@@ -1947,6 +2054,10 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       }),
     },
 
+    "tool.definition": async (input, output) => {
+      ensureChildWorktreeTaskToolDescription(input, output)
+    },
+
     "tool.execute.before": async (input, output) => {
       const sessionIndex = await readSessionIndex(stateDir, input.sessionID)
       if (sessionIndex?.role === "child") {
@@ -1954,12 +2065,12 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
         return
       }
       if (input.tool === "task" && sessionIndex?.role === "plan-runner") {
-        await enforcePhaseGate(stateDir, input)
+        await enforcePhaseGate(stateDir, input, output)
         await prepareChildDispatch(stateDir, input, output, sessionIndex)
         return
       }
       if (input.tool !== "task" || !isPlanRunnerDispatch(output.args)) {
-        await enforcePhaseGate(stateDir, input)
+        await enforcePhaseGate(stateDir, input, output)
         return
       }
 
@@ -2024,6 +2135,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       await handleSessionDiff(stateDir, event)
       await handleMessageDiff(stateDir, event)
       await handleAuditReviewMessage(stateDir, event)
+      await handleChildSessionIdle(stateDir, event)
       await handleAuditReviewIdle({ stateDir, client, directory: worktree, event, externalReview })
       await handlePlanRunnerWatchdogIdle({ stateDir, client, directory: worktree, event })
     }),

@@ -43,7 +43,7 @@ Required workflow:
 10. Run the required validation, or explain exactly why it cannot be run.
 11. After all implementation tasks are completed and validation commands are run, create a local git commit containing the plan-runner changes. Do not push.
 12. Confirm the repo is clean after the local commit, then call `finish_plan` before writing any final report.
-13. If `finish_plan` returns `repair_required`, repair the listed issues inside the same session, run the needed validation, create an additional local commit or amend the existing local commit, confirm the repo is clean, and call `finish_plan` again. Do not ask the main agent to handle these findings.
+13. If `finish_plan` returns `preflight_blocked`, fix the listed commit-boundary or child-worktree cleanup issues with git-only `bash` commands in the same session, confirm the repo is clean, and call `finish_plan` again. If `finish_plan` returns `repair_required`, repair the listed issues inside the same session, run the needed validation, create an additional local commit or amend the existing local commit, confirm the repo is clean, and call `finish_plan` again. Do not ask the main agent to handle these findings.
 14. Only after `finish_plan` returns `validated`, return a concise final report with result, commit range, modified files, validation summary, scope deviations, and remaining risks.
 
 Plan document requirements:
