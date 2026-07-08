@@ -36,6 +36,10 @@ git-commit skill 默认要求"主分支先建分支"——本仓覆盖：跳过�
 是 AGENTS.md 每条规则的"why"伴文（节标题一一对应），改 AGENTS.md 时必须同步
 更新或新增 reason.md 对应节。两文件不同步视为规则失约束，回退重做。
 
+修改 `agents/skills.list`（共享 skill 暴露白名单）后必须同步检查并更新
+`userconf/AGENTS.md` 的 Superpowers / Using Skills 相关描述；若新增、移除或重命名
+Superpowers workflow skill，不允许只改白名单而让全局规则继续引用旧集合。
+
 ## opencode 环境初始化
 
 `init_opencode.sh` **不具备自动清理旧配置的功能**，仅负责按当前路径建立软链

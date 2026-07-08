@@ -101,7 +101,7 @@ Ref: #2847
 ### `writing-plans`
 计划文档必须使用中文撰写（代码片段、命令、文件路径等技术标识除外）。
 
-计划完成后提供三种执行方式（覆盖 skill 原始的两种）：
+计划完成后使用提问工具（question）让用户选择执行方式（覆盖 skill 原始的两种）：
 
 1. **Plan-Runner（推荐）** — 加载 `plan-runner-dispatch` skill，由 plan-runner
    subagent 接管执行，自带 harness 门禁、audit review 和 terminal gate
@@ -118,61 +118,82 @@ Superpowers skills override default system prompt behavior where they apply, but
 **user and repository instructions always take precedence**:
 
 1. **User's explicit instructions** (`AGENTS.md`, direct requests)
-2. **Linked Superpowers skills** exposed through `~/.agents/skills`
+2. **Whitelisted linked skills** exposed through `~/.agents/skills`
 3. **Default system prompt**
 
 If repository rules exempt a workflow, follow the repository. For example, if a
 repo says a one-line change is exempt from TDD, that exemption wins.
 
+## Skill Availability
+
+This section governs Superpowers workflow discipline. This repo does not expose
+all skills from `vendor/superpowers`; for Superpowers workflows, use only skills
+that are both listed in the runtime available-skills list and selected by
+`agents/skills.list` / local project skills.
+
+The current whitelisted Superpowers workflow skills are:
+
+- `systematic-debugging`
+- `test-driven-development`
+- `receiving-code-review`
+- `writing-skills`
+- `writing-plans`
+
+Other runtime-available skills may be project, dispatch, review, provider, or
+platform skills; trigger them from their own descriptions. Do not rely on
+unlisted Superpowers skills even if their source exists under `vendor/superpowers`.
+
 ## How to Access Skills
 
 Use the available skills list and load the relevant skill content through the
-native skill mechanism. In this repo, `~/.agents/skills` is the source for
-selected native skills. Read the current linked skill content before relying on
-memory of its workflow.
+native skill mechanism. Skill invocation loads the current content; follow it
+directly instead of relying on memory.
 
 **Do not** use plugin installation for `vendor/superpowers`. This repo
 deliberately exposes only selected skills by symlink. The selection is managed
-by `agents/skills.list`; worker dispatch skills are excluded from
-`~/.agents/skills`.
+by `agents/skills.list` and optional local project skills.
 
 # Using Skills
 
 ## The Rule
 
-**Use relevant or requested linked skills before acting.** If a linked skill
-clearly applies, load it and follow it before answering, asking clarifying
-questions, reading files, or making tool calls. If no linked skill applies,
-proceed normally.
+**Invoke relevant or requested skills before any response or action.** Even a 1%
+chance that a runtime-available skill might apply means you must load it before
+answering, asking clarifying questions, reading files, or making tool calls. For
+Superpowers workflow discipline, only the whitelisted workflow skills above are
+mandatory triggers. If the loaded skill is wrong for the situation, stop using it
+and proceed normally.
 
 ## Red Flags
 
-These thoughts mean STOP and check the linked skills:
+These thoughts mean STOP and check the runtime-available skills:
 
 | Thought | Reality |
 |---------|---------|
+| "This is just a simple question" | Questions are tasks. Check for skills. |
+| "I need more context first" | Skill check comes before clarifying questions or file reads. |
+| "Let me explore the codebase first" | Skills tell you how to explore. Check first. |
 | "This bug is obvious" | Use `systematic-debugging` first. |
 | "I'll write tests after" | Use `test-driven-development` first unless exempt. |
-| "I'll claim it works from inspection" | Use `verification-before-completion` before completion claims. |
 | "This review comment sounds right" | Use `receiving-code-review` to verify it first. |
 | "I'll create/edit a skill" | Use `writing-skills` first; it requires `test-driven-development` background. |
 | "I remember this skill" | Skills evolve. Read the current linked version. |
-| "Maybe another Superpowers skill exists" | If it is not linked into `~/.agents/skills`, do not rely on it. |
+| "Maybe another Superpowers skill exists" | If it is not whitelisted and available, do not rely on it. |
 
 ## Skill Priority
 
-When multiple linked skills could apply, use this order:
+When multiple whitelisted skills could apply, use this order:
 
 1. **Process skills first**:
    - bugs, failures, unexpected behavior: `systematic-debugging`
    - review feedback: `receiving-code-review`
-2. **Implementation discipline second**:
+2. **Planning discipline second**:
+   - specs or multi-step tasks before touching code: `writing-plans`
+3. **Implementation discipline third**:
    - code or behavior changes: `test-driven-development`
-3. **Skill authoring discipline when applicable**:
+4. **Skill authoring discipline when applicable**:
    - creating, editing, or verifying skills: `writing-skills`
    - `writing-skills` requires understanding `test-driven-development`
-4. **Delivery checks last**:
-   - before saying work is complete: `verification-before-completion`
 
 Examples:
 
@@ -182,17 +203,18 @@ Examples:
   explicitly exempt it.
 - "Review says this is wrong" -> `receiving-code-review` before accepting or
   rejecting the feedback.
+- "Write a multi-step plan" -> `writing-plans` before touching code.
 - "Create a skill for this workflow" -> `test-driven-development` background,
   then `writing-skills`.
 
 ## Skill Types
 
-**Rigid** (`systematic-debugging`, `test-driven-development`,
-`verification-before-completion`): follow exactly unless user or repository rules
-explicitly override.
+**Rigid** (`systematic-debugging`, `test-driven-development`): follow exactly
+unless user or repository rules explicitly override.
 
-**Structured** (`receiving-code-review`, `writing-skills`): follow the workflow,
-but adapt the level of detail to the task.
+**Structured** (`receiving-code-review`, `writing-skills`, `writing-plans`):
+follow the workflow, but adapt the level of detail to the task. Local overrides
+above still apply.
 
 ## User Instructions
 

@@ -23,7 +23,7 @@ source: docs/bugs/bug-external-llm-review-stale-symlink.md
 - `~/.config/opencode/skills/` 只保留 OpenCode 专属技能或子模块安装入口，不作为本仓共享 skill 的主同步目标。
 - 本仓自维护 skill 源目录是 `userconf/skills/<name>`，不要再使用废弃的 `claude-skills/<name>`。
 - `agents/skills.list` 是共享 skill 白名单；`init_opencode.sh` 按该列表逐项软链到 `~/.agents/skills/`。
-- `userconf/AGENTS.md` 不再硬编码“当前 linked skills”清单；运行时可用 linked skill 以 `agents/skills.list` 和实际初始化出的 `~/.agents/skills/` 为准，避免规则文档与软链结果漂移。
+- `userconf/AGENTS.md` 不硬编码全部 runtime skills，但会显式列出参与 Superpowers 流程编排的 workflow skill 子集。修改 `agents/skills.list` 时必须同步检查该章节，避免全局规则引用未暴露 Superpowers skill 或遗漏新增 workflow skill；平台/项目类 runtime skills 仍按各自 description 触发。
 
 - `.agents/skills/<name>/SKILL.md` 用于本仓局部 project skill，例如 `plan-runner-troubleshooting`；它不加入 `agents/skills.list`，也不由 `init_opencode.sh` 同步到全局目录。
 
@@ -31,7 +31,7 @@ source: docs/bugs/bug-external-llm-review-stale-symlink.md
 - 源路径解析顺序：先 `userconf/skills/<name>`，再 `vendor/superpowers/skills/<name>`，最后 `vendor/opencode-dynamic-workflow/skills/<name>`。
 - `<name>` 只允许字母、数字、下划线和连字符；空值或包含路径分隔符的条目会被初始化脚本拒绝。
 - `workflow-usage` 统一暴露在 `~/.agents/skills/workflow-usage`；旧的 `~/.config/opencode/skills/workflow-usage` 本仓软链会被初始化脚本清理，避免 OpenCode 专属目录和共享目录重复。
-- `plan-runner-dispatch` 是给 OpenCode 主 agent 的召回 shim：触发词命中后只负责要求主 agent 后台派发 `plan-runner` subagent，不替代 `plan-runner` 本身。派发前必须先跑 `git status --short`；只在 clean worktree 时 dispatch，dirty 时报告文件并要求用户 commit、stash 或 clean。
+- `plan-runner-dispatch` 是给 OpenCode 主 agent 的召回 shim：触发词命中后只负责要求主 agent 调用专用 `start_plan_runner` tool，不替代 `plan-runner` 本身，也不再引导原生 `task` 派发 plan-runner。`start_plan_runner` 应由 harness 负责创建并绑定 dedicated harness-owned worktree；若 tool 不可用，skill 要求停止并报告配置不一致。
 - `plan-runner-troubleshooting` 是本仓 project skill，用于其他会话排查 plan-runner 的 task-state、events、child worktree、`finish_plan` preflight、audit/external review 停点。
 
 ## 原因
@@ -42,7 +42,8 @@ OpenCode 不会把 `~/.agents/AGENTS.md` 当全局指令，但会扫描 `~/.agen
 
 - 新增共享 skill 时，把源目录放到 `userconf/skills/<name>`，并把 `<name>` 加入 `agents/skills.list`。
 - 新增只服务本仓维护工作的 project skill 时，放到 `.agents/skills/<name>/SKILL.md`，不要加入 `agents/skills.list`，除非希望所有 install 点都通过 `~/.agents/skills` 暴露。
-- 引入 Superpowers skill 时，只把白名单名加入 `agents/skills.list`，源目录来自 `vendor/superpowers/skills/<name>`。
+- 引入 Superpowers skill 时，只把白名单名加入 `agents/skills.list`，源目录来自 `vendor/superpowers/skills/<name>`；若该 skill 参与 Superpowers 流程编排，必须同步更新 `userconf/AGENTS.md` / `userconf/AGENTS.reason.md`。
+- 移除或重命名白名单 skill 时，同步搜索 `userconf/AGENTS.md`，删除未暴露 skill 的强制引用。
 - 修改 `agents/skills.list` 时不要加入路径片段、相对路径或注释后的空名称；非法名称会让同步失败。
 - `init_opencode.sh` 只会自动替换本仓自管路径下的旧软链；如果目标是未知路径或真实目录，会保留并告警，避免覆盖用户本地内容。
 - `SKILL.md` 示例命令必须引用 `userconf/skills/<name>`，不要写 `claude-skills/<name>`。

@@ -8,16 +8,14 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 const STATE_VERSION = 2
 const PLANNING_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "write_plan"])
 const READY_TO_EXECUTE_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "start_task", "finish_plan"])
-const TODO_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "todowrite"])
 const EXECUTION_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "start_task", "edit", "write", "apply_patch", "bash", "task", "complete_task", "finish_plan"])
 const EXECUTION_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash", "task"])
-const TERMINAL_GATE_TASK_RE = /\bfinish_plan\b|final report|最终报告|终态门禁/i
+const REPAIR_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash"])
 const COMPLETION_GATE_RESULT_STATUSES = new Set(["validated", "repairing", "blocked", "interrupted"])
 const TERMINAL_COMPLETION_GATE_STATUSES = new Set(["validated", "blocked", "interrupted"])
 const MAX_AUDIT_INVALID_JSON_ATTEMPTS = 2
 const MAX_GATE_FAILURES = 2
 const MAX_WATCHDOG_NUDGES = 1
-const DEFAULT_TODO_COMPLETION_CRITERION = "todo reaches completed status with harness-observed evidence when required"
 
 function defaultStateDir() {
   return join(homedir(), ".config", "opencode", "task-state")
@@ -82,6 +80,7 @@ function statePaths(stateDir, taskID) {
     task: join(stateDir, "tasks", `${taskID}.json`),
     events: join(stateDir, "events", `${taskID}.jsonl`),
     brief: join(stateDir, "briefs", `${taskID}.md`),
+    plan: join(stateDir, "plans", `${taskID}.md`),
   }
 }
 
@@ -222,8 +221,9 @@ function createInitialState({ taskID, parentSessionID, dispatchCallID, worktree 
 function normalizePlanTasks(tasks) {
   if (!Array.isArray(tasks) || tasks.length === 0) throw new Error("write_plan requires tasks")
   return tasks.map((task, index) => {
-    const id = `T${index + 1}`
-    if (task?.id !== id) throw new Error(`write_plan tasks must use contiguous ids; expected ${id}`)
+    const expectedID = `T${index + 1}`
+    const id = task?.id ? String(task.id) : expectedID
+    if (id !== expectedID) throw new Error(`write_plan tasks must use contiguous ids; expected ${expectedID}`)
     if (!task.title) throw new Error(`write_plan task ${id} requires title`)
     return {
       id,
@@ -393,159 +393,19 @@ async function blockPlanRunnerDispatch({ stateDir, state, parentSessionID, block
   throw new Error(`${blocker.code}: ${blocker.message}`)
 }
 
-function countInProgressTodos(todos = []) {
-  return todos.filter((todo) => todo.status === "in_progress").length
-}
-
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
-
-function todoContentMatchesTaskID(content, taskID) {
-  if (!taskID) return false
-  return new RegExp(`(^|[^A-Za-z0-9_])${escapeRegExp(taskID)}(?=$|[^A-Za-z0-9_])`).test(String(content || ""))
-}
-
-function todoTaskPrefix(content) {
-  const match = String(content || "").match(/^T([1-9]\d*):\s*(\S.*)$/)
-  if (!match) return null
-  return {
-    id: `T${match[1]}`,
-    number: Number(match[1]),
-    title: match[2].trim(),
-  }
-}
-
-function todoDerivationDiagnostic(todos = []) {
-  if (!todos.length) return "todo list is empty; rewrite todowrite items with exact Tn: prefixes, for example T1: implement the first task"
-
-  const invalid = todos.filter((todo) => !todoTaskPrefix(todo?.content))
-  if (invalid.length) {
-    const first = String(invalid[0]?.content || "").trim() || "<empty todo>"
-    return `todo list must derive plan tasks from an exact Tn: prefix on every item; rewrite '${first}' as 'T1: ${first === "<empty todo>" ? "describe the task" : first}'`
-  }
-
-  const seen = new Set()
-  const duplicates = new Set()
-  for (const todo of todos) {
-    const task = todoTaskPrefix(todo?.content)
-    if (!task) continue
-    if (seen.has(task.id)) duplicates.add(task.id)
-    seen.add(task.id)
-  }
-  if (duplicates.size) return `todo list contains duplicate Tn task ids: ${[...duplicates].join(", ")}; each task id must appear once`
-
-  const numbers = [...seen].map((id) => Number(id.slice(1)))
-  const max = Math.max(...numbers)
-  const missing = []
-  for (let index = 1; index <= max; index += 1) {
-    const id = `T${index}`
-    if (!seen.has(id)) missing.push(id)
-  }
-  if (missing.length) return `todo list has non-contiguous Tn task ids; missing ${missing.join(", ")}; rewrite todos as T1:, T2:, ... without gaps`
-
-  return null
-}
-
-function derivePlanContractFromTodos(todos = []) {
-  const diagnostic = todoDerivationDiagnostic(todos)
-  if (diagnostic) return { diagnostic }
-
-  const tasks = todos
-    .map((todo) => todoTaskPrefix(todo?.content))
-    .sort((left, right) => left.number - right.number)
-    .map((task) => ({
-      id: task.id,
-      title: task.title,
-      completion_criteria: [DEFAULT_TODO_COMPLETION_CRITERION],
-    }))
-
-  return {
-    contract: {
-      tasks,
-      dag: [],
-      parallel_sets: [],
-    },
-  }
-}
-
-function todoMatchesTask(todo, task) {
-  return todoContentMatchesTaskID(todo?.content, task?.id)
-}
-
-function todoMirrorDiagnostic(todos = [], tasks = []) {
-  if (!tasks.length) return todoDerivationDiagnostic(todos)
-  const missing = tasks.filter((task) => !todos.some((todo) => todoMatchesTask(todo, task))).map((task) => task.id)
-  if (!missing.length) return null
-  const examples = missing.slice(0, 3).map((taskID) => `${taskID}: ...`).join(", ")
-  return `todo list must mirror every plan task id as a standalone token, preferably with a Tn: prefix; missing ${missing.join(", ")}; rewrite todowrite items like ${examples}`
-}
-
-function activeTodoTaskID(todos = [], tasks = []) {
-  const active = todos.find((todo) => todo.status === "in_progress")
-  if (!active) return null
-  return tasks.find((task) => !isTerminalGateTask(task) && todoMatchesTask(active, task))?.id || null
-}
-
-function isTerminalGateTask(task = {}) {
-  return TERMINAL_GATE_TASK_RE.test([task.title, ...(task.completion_criteria || [])].filter(Boolean).join("\n"))
-}
-
-function taskForTodo(state, todo) {
-  return state.plan_contract.tasks.find((task) => todoMatchesTask(todo, task)) || null
-}
-
-function isTerminalGateTodo(state, todo) {
-  if (TERMINAL_GATE_TASK_RE.test(String(todo?.content || ""))) return true
-  const task = taskForTodo(state, todo)
-  return task ? isTerminalGateTask(task) : false
-}
-
-function originalPlanTasks(state) {
-  return state.plan_contract.tasks.filter((task) => !isTerminalGateTask(task))
-}
-
-function originalTodos(state) {
-  return state.todo.last_seen.filter((todo) => !isTerminalGateTodo(state, todo))
-}
-
 function repairEvidenceTaskIDs(state) {
-  if (Array.isArray(state.tasks)) {
-    const failed = state.tasks
-      .filter((task) => task.status === "completed" && taskEvidenceFailures(state, task).length > 0)
-      .map((task) => task.id)
-    if (failed.length) return failed
-    return completedTaskIDs(state)
-  }
-
-  const completed = new Set(completedTaskIDs(state))
-  const missingEvidenceTasks = state.plan_contract.tasks
-    .filter((task) => completed.has(task.id) && taskEvidenceFailures(state, task).length > 0)
+  if (!Array.isArray(state.tasks)) return []
+  const failed = state.tasks
+    .filter((task) => task.status === "completed" && taskEvidenceFailures(state, task).length > 0)
     .map((task) => task.id)
-  if (missingEvidenceTasks.length) return missingEvidenceTasks
-
-  const taskIDs = new Set(state.plan_contract.tasks.map((task) => task.id))
-  const latestAudit = state.reviews?.audit?.at(-1) || {}
-  const auditTasks = [...(latestAudit.rejected_tasks || []), ...(latestAudit.unknown_tasks || [])]
-    .filter((taskID) => taskIDs.has(taskID))
-  if (auditTasks.length) return [...new Set(auditTasks)]
-
+  if (failed.length) return failed
   return completedTaskIDs(state)
 }
 
 function evidenceTaskIDs(state) {
-  if (Array.isArray(state.tasks)) {
-    if (state.status === "repairing") return repairEvidenceTaskIDs(state)
-    return state.active_task ? [state.active_task] : []
-  }
+  if (!Array.isArray(state.tasks)) return []
   if (state.status === "repairing") return repairEvidenceTaskIDs(state)
-  const activeTaskID = activeTodoTaskID(state.todo.last_seen, state.plan_contract.tasks)
-  if (activeTaskID) return [activeTaskID]
-  return []
-}
-
-function todosCoverTasks(todos = [], tasks = []) {
-  return !todoMirrorDiagnostic(todos, tasks)
+  return state.active_task ? [state.active_task] : []
 }
 
 async function enforcePhaseGate(stateDir, input, output = {}) {
@@ -559,36 +419,18 @@ async function enforcePhaseGate(stateDir, input, output = {}) {
     return
   }
 
-  if (state.status === "waiting_for_todo") {
-    if (!TODO_TOOLS.has(input.tool)) throw new Error(`plan-runner phase gate: ${input.tool} is not allowed during waiting_for_todo`)
-    return
-  }
-
   if (state.status === "audit_review" || state.status === "external_review") {
     throw new Error(`plan-runner terminal gate: ${input.tool} is not allowed during ${state.status}`)
   }
 
   if (state.status === "ready_to_execute" || state.status === "executing" || state.status === "repairing") {
-    if (!Array.isArray(state.tasks)) {
-      if (state.status === "repairing" && input.tool === "todowrite") throw new Error("plan-runner phase gate: todowrite is not allowed during repairing")
-      if (!EXECUTION_TOOLS.has(input.tool) && input.tool !== "todowrite") throw new Error(`plan-runner phase gate: ${input.tool} is not allowed during ${state.status}`)
-      if (state.status !== "repairing" && EXECUTION_CONTEXT_TOOLS.has(input.tool) && countInProgressTodos(state.todo.last_seen) !== 1) {
-        throw new Error("plan-runner phase gate: exactly one in_progress todo is required for execution tools")
-      }
-      if (state.status === "ready_to_execute" && EXECUTION_CONTEXT_TOOLS.has(input.tool)) {
-        state.status = "executing"
-        state.updated_at = Date.now()
-        await writeTaskState(stateDir, state)
-      }
-      return
-    }
-
     if (state.status === "ready_to_execute") {
       if (!READY_TO_EXECUTE_TOOLS.has(input.tool)) throw new Error(`plan-runner phase gate: start_task is required before execution tools during ${state.status}`)
       return
     }
     if (!EXECUTION_TOOLS.has(input.tool)) throw new Error(`plan-runner phase gate: ${input.tool} is not allowed during ${state.status}`)
     if (EXECUTION_CONTEXT_TOOLS.has(input.tool) && !activeTask(state)) {
+      if (state.status === "repairing" && REPAIR_CONTEXT_TOOLS.has(input.tool)) return
       if (completionBoundaryExecutionAllowed(state, input, output)) return
       throw new Error("plan-runner phase gate: start_task is required before execution tools")
     }
@@ -700,33 +542,6 @@ async function enforceChildSessionGate(stateDir, input, output, sessionIndex) {
   }
 }
 
-async function handleTodoUpdated(stateDir, event) {
-  if (event.type !== "todo.updated") return
-  const sessionID = event.properties?.sessionID
-  const todos = event.properties?.todos
-  if (!sessionID || !Array.isArray(todos)) return
-
-  const index = await readSessionIndex(stateDir, sessionID)
-  if (!index || index.role !== "plan-runner") return
-  const state = await readTaskState(stateDir, index.task_id)
-  if (!state) return
-  if (Array.isArray(state.tasks)) return
-  state.todo.last_seen = todos
-  let mirrorDiagnostic = null
-  if (!state.plan_contract?.tasks?.length) {
-    const derived = derivePlanContractFromTodos(todos)
-    if (derived.contract) state.plan_contract = derived.contract
-    else mirrorDiagnostic = derived.diagnostic
-  }
-  if (!mirrorDiagnostic) mirrorDiagnostic = todoMirrorDiagnostic(todos, state.plan_contract.tasks)
-  state.todo.mirrored = !mirrorDiagnostic
-  state.todo.mirror_diagnostic = mirrorDiagnostic
-  if (state.status === "waiting_for_todo" && state.todo.mirrored) state.status = "ready_to_execute"
-  state.updated_at = Date.now()
-  await writeTaskState(stateDir, state)
-  await appendEvent(stateDir, state.task_id, { type: "todo_updated", session_id: sessionID, mirrored: state.todo.mirrored, todo_mirror_diagnostic: mirrorDiagnostic || undefined })
-}
-
 async function recordToolEvidence(stateDir, input, output) {
   if (input.tool === "write" || input.tool === "edit" || input.tool === "apply_patch") {
     const files = input.tool === "apply_patch" ? patchFileNames(input.args?.patchText) : [input.args?.filePath].filter((file) => typeof file === "string")
@@ -751,47 +566,27 @@ async function recordToolEvidence(stateDir, input, output) {
     exit_code: exitCode,
   }
 
-  if (Array.isArray(state.tasks)) {
-    const task = findTask(state, taskIDs[0])
-    if (!task) return
-    task.evidence = (task.evidence || []).filter((item) => item.id !== evidence.id)
-    task.evidence.push(evidence)
-  } else {
-    state.evidence = state.evidence.filter((item) => item.id !== evidence.id)
-    state.evidence.push(evidence)
-  }
+  const task = findTask(state, taskIDs[0])
+  if (!task) return
+  task.evidence = (task.evidence || []).filter((item) => item.id !== evidence.id)
+  task.evidence.push(evidence)
   state.updated_at = Date.now()
   await writeTaskState(stateDir, state)
   await appendEvent(stateDir, state.task_id, { type: "evidence_recorded", evidence_id: evidence.id, tool: input.tool, call_id: input.callID, task_id: taskIDs[0] })
 }
 
 function completedTaskIDs(state) {
-  if (Array.isArray(state.tasks)) return state.tasks.filter((task) => task.status === "completed").map((task) => task.id)
-  return originalPlanTasks(state)
-    .filter((task) => state.todo.last_seen.some((todo) => todo.status === "completed" && todoMatchesTask(todo, task)))
-    .map((task) => task.id)
+  if (!Array.isArray(state.tasks)) return []
+  return state.tasks.filter((task) => task.status === "completed").map((task) => task.id)
 }
 
 function findDeterministicCheckFailures(state) {
   const reasons = []
-  if (Array.isArray(state.tasks)) {
-    if (!state.tasks.length) reasons.push("write_plan task contract is empty")
-    if (state.active_task) reasons.push(`active task is still running: ${state.active_task}`)
-    for (const task of state.tasks) {
-      if (task.status !== "completed") reasons.push(`${task.id} is not completed`)
-      if (task.status === "completed") reasons.push(...taskEvidenceFailures(state, task))
-    }
-    return reasons
-  }
-
-  if (!state.plan_path || !state.plan_sha256) reasons.push("plan is not written")
-  if (state.plan_path && state.plan_sha256 && state.plan_contract.tasks.length === 0) reasons.push("todo-derived plan contract is empty; rewrite todowrite items with Tn: prefixes")
-  if (!state.todo.mirrored) reasons.push("todo list does not mirror all plan tasks")
-  if (originalTodos(state).some((todo) => todo.status === "pending" || todo.status === "in_progress")) reasons.push("todo list still has pending or in_progress items")
-
-  for (const taskID of completedTaskIDs(state)) {
-    const task = state.plan_contract.tasks.find((item) => item.id === taskID)
-    reasons.push(...taskEvidenceFailures(state, task || { id: taskID }))
+  if (!Array.isArray(state.tasks) || !state.tasks.length) reasons.push("write_plan task contract is empty")
+  if (state.active_task) reasons.push(`active task is still running: ${state.active_task}`)
+  for (const task of state.tasks || []) {
+    if (task.status !== "completed") reasons.push(`${task.id} is not completed`)
+    if (task.status === "completed") reasons.push(...taskEvidenceFailures(state, task))
   }
 
   return reasons
@@ -821,35 +616,25 @@ async function gitCommitBoundaryFailures(state) {
 }
 
 function taskEvidenceFailures(state, task) {
-  if (Array.isArray(state.tasks)) {
-    const evidence = task.evidence || []
-    const diffFiles = new Set(evidence.filter((item) => item.type === "diff").flatMap((item) => item.files || []))
-    const successfulCommands = new Set(evidence.filter((item) => item.type === "command" && item.success).map((item) => item.command))
-    const failedCommands = new Set(evidence.filter((item) => item.type === "command" && !item.success).map((item) => item.command))
-    const reasons = []
-    for (const file of task.files || []) {
-      if (!diffFiles.has(file)) reasons.push(`${task.id} missing diff evidence for ${file}`)
-    }
-    for (const command of task.checks || []) {
-      if (!successfulCommands.has(command)) reasons.push(`${task.id} missing successful check: ${command}`)
-    }
-    for (const command of task.negative_checks || []) {
-      if (!failedCommands.has(command)) reasons.push(`${task.id} missing failing negative check: ${command}`)
-    }
-    return reasons
+  const evidence = task.evidence || []
+  const diffFiles = new Set(evidence.filter((item) => item.type === "diff").flatMap((item) => item.files || []))
+  const successfulCommands = new Set(evidence.filter((item) => item.type === "command" && item.success).map((item) => item.command))
+  const failedCommands = new Set(evidence.filter((item) => item.type === "command" && !item.success).map((item) => item.command))
+  const reasons = []
+  for (const file of task.files || []) {
+    if (!diffFiles.has(file)) reasons.push(`${task.id} missing diff evidence for ${file}`)
   }
-  if (!state.evidence.some((item) => item.type === "diff" && item.task_ids?.includes(task.id))) return [`${task.id} has no diff evidence`]
-  return []
+  for (const command of task.checks || []) {
+    if (!successfulCommands.has(command)) reasons.push(`${task.id} missing successful check: ${command}`)
+  }
+  for (const command of task.negative_checks || []) {
+    if (!failedCommands.has(command)) reasons.push(`${task.id} missing failing negative check: ${command}`)
+  }
+  return reasons
 }
 
 function isCompletionAttempt(state) {
-  if (Array.isArray(state.tasks)) {
-    return state.tasks.length > 0 && !state.active_task && state.tasks.every((task) => task.status === "completed")
-  }
-  if (!state.plan_path || !state.plan_sha256 || state.plan_contract.tasks.length === 0) return false
-  if (!state.todo.mirrored) return false
-  if (completedTaskIDs(state).length === 0) return false
-  return !originalTodos(state).some((todo) => todo.status === "pending" || todo.status === "in_progress")
+  return Array.isArray(state.tasks) && state.tasks.length > 0 && !state.active_task && state.tasks.every((task) => task.status === "completed")
 }
 
 function hasRunningChildSession(state) {
@@ -886,49 +671,20 @@ function watchdogNudgePromptText(state) {
 function auditPromptText(state) {
   const modifiedFiles = Array.isArray(state.modified_files) ? state.modified_files : []
   const files = modifiedFiles.length ? modifiedFiles.map((file) => `- ${file}`) : ["- none recorded"]
-  if (Array.isArray(state.tasks)) {
-    const tasks = state.tasks.length
-      ? state.tasks.map((task) => `- ${task.id}: ${task.status} - ${task.title}; files: ${(task.files || []).join(", ") || "none"}; checks: ${(task.checks || []).join(" | ") || "none"}`)
-      : ["- none recorded"]
-    return [
-      "Plan-runner audit_review_required: deterministic checks passed; audit the completed scope before the harness continues.",
-      "- You are the harness-dispatched audit subagent. Do not modify files.",
-      "- Check whether each completed task has a complete implementation, not just an interface shell, stub, mock, or code that only satisfies tests.",
-      "- Review the injected Execution Brief, structured task contract, observed files, and observed validation commands.",
-      "- Return only fields consumed by the harness: result, required_fixes.",
-      `- Harness Task ID: ${state.task_id}`,
-      `- Brief path: ${state.brief_path}`,
-      "- Structured tasks:",
-      ...tasks,
-      "- Modified files observed by harness:",
-      ...files,
-    ].join("\n")
-  }
-
-  const planTasks = originalPlanTasks(state)
-  const tasks = planTasks.length
-    ? planTasks.map((task) => `- ${task.id}: ${task.title}; completion: ${task.completion_criteria.join("; ")}`)
-    : ["- none recorded"]
-  const todos = planTasks.length
-    ? planTasks.map((task) => {
-      const todo = state.todo.last_seen.find((item) => todoMatchesTask(item, task))
-      const status = todo?.status || "missing"
-      return `- ${task.id}: ${status} - ${task.title}`
-    })
+  const tasks = Array.isArray(state.tasks) && state.tasks.length
+    ? state.tasks.map((task) => `- ${task.id}: ${task.status} - ${task.title}; files: ${(task.files || []).join(", ") || "none"}; checks: ${(task.checks || []).join(" | ") || "none"}`)
     : ["- none recorded"]
   return [
     "Plan-runner audit_review_required: deterministic checks passed; audit the completed scope before the harness continues.",
     "- You are the harness-dispatched audit subagent. Do not modify files.",
-    "- You must consume the Todo state observed by harness below; do not pass work that merely marks todos complete.",
-    "- Check whether each completed todo has a complete implementation, not just an interface shell, stub, mock, or code that only satisfy tests.",
-    "- Review the plan path, task contract, todo state, modified files, and observed validation context.",
+    "- Check whether each completed task has a complete implementation, not just an interface shell, stub, mock, or code that only satisfies tests.",
+    "- Review the write_plan artifact, injected Execution Brief, structured task contract, observed files, and observed validation commands.",
     "- Return only fields consumed by the harness: result, required_fixes.",
     `- Harness Task ID: ${state.task_id}`,
-    `- Plan path: ${state.plan_path}`,
-    "- Task contract:",
+    `- Plan path: ${state.plan_path || "none"}`,
+    `- Brief path: ${state.brief_path}`,
+    "- Structured tasks:",
     ...tasks,
-    "- Todo state observed by harness:",
-    ...todos,
     "- Modified files observed by harness:",
     ...files,
   ].join("\n")
@@ -1183,8 +939,8 @@ async function runExternalReviewCommand(state, options = {}) {
     "--max-issues",
     "25",
   ]
-  if (state.brief_path) baseArgs.push("--spec", state.brief_path)
-  else if (state.version === 1 && state.plan_path) baseArgs.push("--spec", state.plan_path)
+  if (state.plan_path) baseArgs.push("--spec", state.plan_path)
+  else if (state.brief_path) baseArgs.push("--spec", state.brief_path)
 
   const providers = externalReviewProviders(options)
   const attempts = providers.length ? providers : [null]
@@ -1399,49 +1155,22 @@ async function finishPlanTool(args, context, stateDir, { client, directory, exte
 async function finalCompletenessFailures(state) {
   const reasons = []
   if (state.status !== "external_review") reasons.push(`status is ${state.status}, expected external_review`)
-  if (Array.isArray(state.tasks)) {
-    if (!state.brief_path || !state.brief_sha256) reasons.push("dispatch brief is not written")
-    else {
-      try {
-        const brief = await readFile(state.brief_path, "utf8")
-        if (sha256(brief) !== state.brief_sha256) reasons.push("brief file hash does not match task state")
-      } catch (error) {
-        reasons.push(`brief file is not readable: ${formatDiagnosticError(error)}`)
-      }
-    }
-    if (!state.tasks.length) reasons.push("write_plan task contract is empty")
-    if (state.active_task) reasons.push(`active task is still running: ${state.active_task}`)
-    for (const task of state.tasks) {
-      if (task.status !== "completed") reasons.push(`${task.id} has no completed task status`)
-      if (task.status === "completed") reasons.push(...taskEvidenceFailures(state, task))
-    }
-    const evidenceFiles = new Set(state.tasks.flatMap((task) => task.evidence || []).filter((item) => item.type === "diff").flatMap((item) => item.files || []))
-    for (const file of state.modified_files || []) {
-      if (!evidenceFiles.has(file)) reasons.push(`modified file is not mapped to evidence: ${file}`)
-    }
-    if (state.child_sessions?.some((child) => child.status === "running")) reasons.push("child sessions are still running")
-    if (!state.reviews.audit.length && !gateFailedOpen(state, "audit_review")) reasons.push("audit review did not run")
-    if (state.reviews.external.at(-1)?.result !== "pass" && !gateFailedOpen(state, "external_review")) reasons.push("latest external review did not pass")
-    return reasons
-  }
-
-  if (!state.plan_path || !state.plan_sha256) reasons.push("plan is not written")
+  if (!state.brief_path || !state.brief_sha256) reasons.push("dispatch brief is not written")
   else {
     try {
-      const plan = await readFile(state.plan_path, "utf8")
-      if (sha256(plan) !== state.plan_sha256) reasons.push("plan file hash does not match task state")
+      const brief = await readFile(state.brief_path, "utf8")
+      if (sha256(brief) !== state.brief_sha256) reasons.push("brief file hash does not match task state")
     } catch (error) {
-      reasons.push(`plan file is not readable: ${formatDiagnosticError(error)}`)
+      reasons.push(`brief file is not readable: ${formatDiagnosticError(error)}`)
     }
   }
-  if (!state.todo.mirrored) reasons.push("todo list does not mirror all plan tasks")
-  if (originalTodos(state).some((todo) => todo.status === "pending" || todo.status === "in_progress")) reasons.push("todo list still has pending or in_progress items")
-  const completed = new Set(completedTaskIDs(state))
-  for (const task of originalPlanTasks(state)) {
-    if (!completed.has(task.id)) reasons.push(`${task.id} has no completed todo`)
-    reasons.push(...taskEvidenceFailures(state, task))
+  if (!Array.isArray(state.tasks) || !state.tasks.length) reasons.push("write_plan task contract is empty")
+  if (state.active_task) reasons.push(`active task is still running: ${state.active_task}`)
+  for (const task of state.tasks || []) {
+    if (task.status !== "completed") reasons.push(`${task.id} has no completed task status`)
+    if (task.status === "completed") reasons.push(...taskEvidenceFailures(state, task))
   }
-  const evidenceFiles = new Set(state.evidence.filter((item) => item.type === "diff").flatMap((item) => item.files || []))
+  const evidenceFiles = new Set((state.tasks || []).flatMap((task) => task.evidence || []).filter((item) => item.type === "diff").flatMap((item) => item.files || []))
   for (const file of state.modified_files || []) {
     if (!evidenceFiles.has(file)) reasons.push(`modified file is not mapped to evidence: ${file}`)
   }
@@ -1828,9 +1557,6 @@ async function recordDiffEvidence(stateDir, { sessionID, files, eventID }) {
     if (!task) return
     task.evidence = (task.evidence || []).filter((item) => item.id !== evidence.id)
     task.evidence.push(evidence)
-  } else {
-    state.evidence = state.evidence.filter((item) => item.id !== evidence.id)
-    state.evidence.push(evidence)
   }
   state.updated_at = Date.now()
   await writeTaskState(stateDir, state)
@@ -1953,44 +1679,26 @@ async function writePlanTool(args, context, stateDir) {
   if (state.status !== "planning_required") throw new Error(`write_plan requires planning_required status, got ${state.status}`)
 
   const markdown = String(args?.content || "")
-  if (markdown.trim() && Array.isArray(args?.tasks) && args.tasks.length) {
-    const worktree = state.worktree || context.worktree || context.directory
-    const planPath = join(worktree, "docs", "plans", `${state.task_id}.md`)
+  if (markdown.trim()) {
+    const planPath = statePaths(stateDir, state.task_id).plan
     await ensureDir(dirname(planPath))
     await writeFile(planPath, markdown)
 
-    state.version = 1
-    state.status = "waiting_for_todo"
-    state.updated_at = Date.now()
-    state.lease_expires_at = Date.now() + 10 * 60 * 1000
     state.plan_path = planPath
     state.plan_sha256 = sha256(markdown)
-    state.plan_contract = { tasks: [], dag: [], parallel_sets: [] }
-    state.todo = { mirrored: false, last_seen: [] }
-    state.evidence = []
-    delete state.tasks
-    delete state.active_task
-    await writeTaskState(stateDir, state)
-    await appendEvent(stateDir, state.task_id, { type: "plan_written", plan_path: planPath, plan_sha256: state.plan_sha256 })
-
-    return {
-      output: `plan written: ${planPath}`,
-      metadata: {
-        task_id: state.task_id,
-        plan_path: planPath,
-        plan_sha256: state.plan_sha256,
-      },
-    }
   }
 
   const tasks = normalizePlanTasks(args?.tasks)
+  state.version = STATE_VERSION
   state.status = "ready_to_execute"
   state.updated_at = Date.now()
   state.lease_expires_at = Date.now() + 10 * 60 * 1000
   state.tasks = tasks
   state.active_task = null
+  delete state.todo
+  delete state.plan_contract
   await writeTaskState(stateDir, state)
-  await appendEvent(stateDir, state.task_id, { type: "plan_contract_written", task_count: tasks.length })
+  await appendEvent(stateDir, state.task_id, { type: "plan_contract_written", task_count: tasks.length, plan_path: state.plan_path || null })
 
   return {
     output: `task contract written: ${tasks.length} tasks`,
@@ -2131,7 +1839,6 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
     },
 
     event: async ({ event }) => enqueueEvent(async () => {
-      await handleTodoUpdated(stateDir, event)
       await handleSessionDiff(stateDir, event)
       await handleMessageDiff(stateDir, event)
       await handleAuditReviewMessage(stateDir, event)

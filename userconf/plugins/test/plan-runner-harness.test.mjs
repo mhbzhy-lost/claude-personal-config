@@ -46,7 +46,7 @@ function planContent(title = "Harness Slice") {
     "Exercise the plan-runner harness behavior under test.",
     "",
     "## Architecture",
-    "Use reviewer-facing prose; harness structure is derived from Tn todos.",
+    "Use reviewer-facing prose; harness structure is supplied through write_plan tasks.",
     "",
     "## File Structure",
     "- userconf/plugins/plan-runner-harness.js",
@@ -83,26 +83,44 @@ function structuredPlanTasks() {
   ]
 }
 
-async function prepareAuditReviewState({ hooks, workspace, stateDir }) {
-  const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
-  await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
+async function dispatchPlanRunner({ hooks, workspace, parentSessionID = "ses_parent", planRunnerSessionID = "ses_plan_runner", callID = "call_dispatch", prompt = "Implement." }) {
+  mkdirSync(workspace, { recursive: true })
+  const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt } }
+  await hooks["tool.execute.before"]({ tool: "task", sessionID: parentSessionID, callID }, taskOutput)
   await hooks["tool.execute.after"](
-    { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
-    { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
+    { tool: "task", sessionID: parentSessionID, callID, args: taskOutput.args },
+    { metadata: { parentSessionId: parentSessionID, sessionId: planRunnerSessionID } },
   )
+  return join("tasks", `planrun-${parentSessionID}-${callID}.json`)
+}
+
+async function startStructuredTask({ hooks, workspace, id = "T1", sessionID = "ses_plan_runner" }) {
+  await hooks.tool.start_task.execute({ id }, makeContext({ sessionID, workspace }))
+}
+
+async function completeStructuredTask({ hooks, workspace, id = "T1", sessionID = "ses_plan_runner" }) {
+  await hooks.tool.complete_task.execute({ id }, makeContext({ sessionID, workspace }))
+}
+
+function oneTask({ id = "T1", title = "Edit file", files = ["probe-output.txt"], checks = [], negative_checks = [] } = {}) {
+  return { id, title, files, checks, negative_checks }
+}
+
+async function prepareAuditReviewState({ hooks, workspace, stateDir }) {
+  await dispatchPlanRunner({ hooks, workspace })
   await hooks.tool.write_plan.execute(
     {
       content: planContent("Audit Consumption Slice"),
       title: "Audit Consumption Slice",
-      tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
+      tasks: [oneTask()],
       dag: [],
       parallel_sets: [],
     },
     makeContext({ sessionID: "ses_plan_runner", workspace }),
   )
-  await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
+  await startStructuredTask({ hooks, workspace })
   await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
-  await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
+  await completeStructuredTask({ hooks, workspace })
   const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
   const finish = hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
     .catch((error) => ({ error }))
@@ -118,27 +136,25 @@ async function prepareAuditReviewState({ hooks, workspace, stateDir }) {
 }
 
 async function prepareCompletionReadyState({ hooks, workspace, stateDir }) {
-  const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
-  await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
-  await hooks["tool.execute.after"](
-    { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
-    { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
-  )
+  await dispatchPlanRunner({ hooks, workspace })
+  const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
   await hooks.tool.write_plan.execute(
     {
       content: planContent("Completion Gate Slice"),
       title: "Completion Gate Slice",
-      tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
+      tasks: [oneTask()],
       dag: [],
       parallel_sets: [],
     },
     makeContext({ sessionID: "ses_plan_runner", workspace }),
   )
-  await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
+  await startStructuredTask({ hooks, workspace })
+  const stateForWorktree = readJson(statePath)
+  writeFileSync(join(stateForWorktree.worktree || workspace, "probe-output.txt"), "completed probe output\n")
   await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
-  await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
+  await completeStructuredTask({ hooks, workspace })
 
-  return join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
+  return statePath
 }
 
 async function waitUntil(condition, timeoutMs = 1000) {
@@ -184,7 +200,7 @@ function auditIdleEvent() {
 
 function expiredTaskState({ taskID = "planrun-expired", status = "repairing", workspace, completionGate } = {}) {
   const state = {
-    version: 1,
+    version: 2,
     task_id: taskID,
     status,
     parent_session_id: "ses_parent",
@@ -193,11 +209,10 @@ function expiredTaskState({ taskID = "planrun-expired", status = "repairing", wo
     worktree: workspace,
     updated_at: Date.now() - 20 * 60 * 1000,
     lease_expires_at: Date.now() - 10 * 60 * 1000,
-    plan_path: null,
-    plan_sha256: null,
-    plan_contract: { tasks: [], dag: [], parallel_sets: [] },
-    todo: { mirrored: false, last_seen: [] },
-    evidence: [],
+    brief_path: null,
+    brief_sha256: null,
+    tasks: [],
+    active_task: null,
     modified_files: [],
     child_sessions: [],
     reviews: { round: status === "repairing" ? 1 : 0, audit: [], external: [] },
@@ -637,7 +652,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("write_plan ignores legacy tasks and dag fields when content is present", async () => {
+  it("write_plan keeps structured tasks as SSOT when content is present", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -651,10 +666,18 @@ describe("PlanRunnerHarnessPlugin", () => {
         { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
       )
 
+      const tasks = [{
+        id: "T1",
+        title: "Structured task",
+        files: ["docs/example.md"],
+        checks: ["git diff --check"],
+        negative_checks: [],
+      }]
+
       await hooks.tool.write_plan.execute(
         {
           content: "# Reviewer-facing plan\n\nThis prose is the only plan document source.",
-          tasks: [{ title: "Legacy task", completion_criteria: ["must be ignored"] }],
+          tasks,
           dag: [["T1", "T1"]],
           parallel_sets: [["T1"]],
         },
@@ -662,14 +685,28 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
-      assert.deepEqual(state.plan_contract, { tasks: [], dag: [], parallel_sets: [] })
+      assert.equal(state.version, 2)
+      assert.equal(state.status, "ready_to_execute")
+      assert.equal(state.active_task, null)
+      assert.deepEqual(state.tasks, tasks.map((task) => ({ ...task, status: "pending", evidence: [] })))
+      assert.equal("todo" in state, false)
+      assert.equal("plan_contract" in state, false)
+      assert.equal(state.plan_path, join(stateDir, "plans", "planrun-ses_parent-call_dispatch.md"))
+      assert.equal(existsSync(join(workspace, "docs", "plans", "planrun-ses_parent-call_dispatch.md")), false)
       assert.equal(readFileSync(state.plan_path, "utf8"), "# Reviewer-facing plan\n\nThis prose is the only plan document source.")
+
+      await hooks["tool.execute.before"]({ tool: "start_task", sessionID: "ses_plan_runner", callID: "call_start_t1" }, { args: { id: "T1" } })
+      await hooks.tool.start_task.execute({ id: "T1" }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+
+      const started = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.equal(started.status, "executing")
+      assert.equal(started.active_task, "T1")
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
 
-  it("write_plan uses the persisted task worktree when tool context reports root", async () => {
+  it("write_plan stores plan content under stateDir when tool context reports root", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -704,8 +741,9 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
-      assert.equal(state.plan_path, join(workspace, "docs", "plans", "planrun-ses_parent-call_dispatch.md"))
+      assert.equal(state.plan_path, join(stateDir, "plans", "planrun-ses_parent-call_dispatch.md"))
       assert.ok(existsSync(state.plan_path))
+      assert.equal(existsSync(join(workspace, "docs", "plans", "planrun-ses_parent-call_dispatch.md")), false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -735,7 +773,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("write_plan rejects missing content instead of accepting a legacy DAG contract", async () => {
+  it("write_plan ignores legacy DAG fields and derives task ids from array order", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -749,21 +787,24 @@ describe("PlanRunnerHarnessPlugin", () => {
         { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
       )
 
-      await assert.rejects(
-        () => hooks.tool.write_plan.execute(
-          {
-            title: "Cyclic DAG",
-            tasks: [
-              { title: "First", completion_criteria: ["first done"] },
-              { title: "Second", completion_criteria: ["second done"] },
-            ],
-            dag: [["T1", "T2"], ["T2", "T1"]],
-            parallel_sets: [],
-          },
-          makeContext({ sessionID: "ses_plan_runner", workspace }),
-        ),
-        /write_plan requires tasks|contiguous ids/,
+      await hooks.tool.write_plan.execute(
+        {
+          title: "Cyclic DAG",
+          tasks: [
+            { title: "First", completion_criteria: ["first done"] },
+            { title: "Second", completion_criteria: ["second done"] },
+          ],
+          dag: [["T1", "T2"], ["T2", "T1"]],
+          parallel_sets: [],
+        },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
+
+      const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.equal(state.status, "ready_to_execute")
+      assert.deepEqual(state.tasks.map((task) => task.id), ["T1", "T2"])
+      assert.equal("plan_contract" in state, false)
+      assert.equal("todo" in state, false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -849,7 +890,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("phase gate blocks execution until plan is written and todos mirror all tasks", async () => {
+  it("phase gate blocks execution until write_plan and start_task select a structured task", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -902,9 +943,9 @@ describe("PlanRunnerHarnessPlugin", () => {
       await assert.rejects(
         () => hooks["tool.execute.before"](
           { tool: "bash", sessionID: "ses_plan_runner", callID: "call_bash" },
-          { args: { command: "printf before-todo" } },
+          { args: { command: "printf before-start" } },
         ),
-        /waiting_for_todo/,
+        /start_task is required/,
       )
 
       await assert.doesNotReject(() => hooks["tool.execute.before"](
@@ -912,32 +953,22 @@ describe("PlanRunnerHarnessPlugin", () => {
         { args: { name: "verification-before-completion" } },
       ))
 
-      await hooks.event({
-        event: {
-          type: "todo.updated",
-          properties: {
-            sessionID: "ses_plan_runner",
-            todos: [
-              { content: "T1: Persist state", status: "in_progress" },
-              { content: "T2: Write markdown", status: "pending" },
-            ],
-          },
-        },
-      })
-
-      const stateAfterTodo = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
-      assert.equal(stateAfterTodo.status, "ready_to_execute")
-      assert.equal(stateAfterTodo.todo.mirrored, true)
+      const stateAfterPlan = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      assert.equal(stateAfterPlan.status, "ready_to_execute")
+      assert.equal("todo" in stateAfterPlan, false)
+      assert.equal("plan_contract" in stateAfterPlan, false)
 
       await assert.doesNotReject(() => hooks["tool.execute.before"](
         { tool: "skill", sessionID: "ses_plan_runner", callID: "call_skill_execute" },
         { args: { name: "verification-before-completion" } },
       ))
 
-      await assert.doesNotReject(() => hooks["tool.execute.before"](
+      await assert.rejects(() => hooks["tool.execute.before"](
         { tool: "apply_patch", sessionID: "ses_plan_runner", callID: "call_patch" },
         { args: { patchText: "*** Begin Patch\n*** End Patch" } },
-      ))
+      ), /start_task is required/)
+
+      await startStructuredTask({ hooks, workspace, id: "T1" })
 
       await assert.doesNotReject(() => hooks["tool.execute.before"](
         { tool: "bash", sessionID: "ses_plan_runner", callID: "call_bash" },
@@ -948,7 +979,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("keeps waiting_for_todo with an actionable diagnostic when todo text omits harness task ids", async () => {
+  it("ignores todo.updated events after structured write_plan", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -990,18 +1021,18 @@ describe("PlanRunnerHarnessPlugin", () => {
       })
 
       const stateAfterTodo = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
-      assert.equal(stateAfterTodo.status, "waiting_for_todo")
-      assert.equal(stateAfterTodo.todo.mirrored, false)
-      assert.match(stateAfterTodo.todo.mirror_diagnostic, /Tn: prefix/i)
-      assert.match(stateAfterTodo.todo.mirror_diagnostic, /T1: Persist state/i)
+      assert.equal(stateAfterTodo.status, "ready_to_execute")
+      assert.deepEqual(stateAfterTodo.tasks.map((task) => task.id), ["T1", "T2"])
+      assert.equal("todo" in stateAfterTodo, false)
+      assert.equal("plan_contract" in stateAfterTodo, false)
       const events = readFileSync(join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl"), "utf8")
-      assert.match(events, /todo_mirror_diagnostic/)
+      assert.doesNotMatch(events, /todo_mirror_diagnostic/)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
 
-  it("maps T10 todo evidence to T10 instead of treating it as T1", async () => {
+  it("maps command evidence to the active structured T10 task", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -1024,18 +1055,7 @@ describe("PlanRunnerHarnessPlugin", () => {
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
 
-      await hooks.event({
-        event: {
-          type: "todo.updated",
-          properties: {
-            sessionID: "ses_plan_runner",
-            todos: tasks.map((task, index) => ({
-              content: `T${index + 1}: ${task.title}`,
-              status: index === 9 ? "in_progress" : "pending",
-            })),
-          },
-        },
-      })
+      await startStructuredTask({ hooks, workspace, id: "T10" })
 
       await hooks["tool.execute.before"](
         { tool: "bash", sessionID: "ses_plan_runner", callID: "call_bash" },
@@ -1047,7 +1067,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
 
       const stateAfterEvidence = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
-      const commandEvidence = stateAfterEvidence.evidence.find((item) => item.id === "ev-command-call_bash")
+      const commandEvidence = stateAfterEvidence.tasks[9].evidence.find((item) => item.id === "ev-command-call_bash")
       assert.deepEqual(commandEvidence.task_ids, ["T10"])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -1075,16 +1095,6 @@ describe("PlanRunnerHarnessPlugin", () => {
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({
-        event: {
-          type: "todo.updated",
-          properties: {
-            sessionID: "ses_plan_runner",
-            todos: [{ content: "T1: Finish gate", status: "in_progress", priority: "high" }],
-          },
-        },
-      })
-
       const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
       const state = readJson(statePath)
       state.status = "repairing"
@@ -1092,7 +1102,7 @@ describe("PlanRunnerHarnessPlugin", () => {
         mode: "finish_plan",
         status: "repair_required",
         source: "deterministic_check",
-        reasons: ["todo list still has pending or in_progress items"],
+        reasons: ["structured task is still active"],
       }
       writeFileSync(statePath, JSON.stringify(state, null, 2))
 
@@ -1108,7 +1118,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("ignores finish_plan gate todos when deterministic checks decide whether original work is complete", async () => {
+  it("runs deterministic checks from structured task status instead of finish_plan todos", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -1137,38 +1147,13 @@ describe("PlanRunnerHarnessPlugin", () => {
         {
           content: planContent("Gate Todo Smoke"),
           title: "Gate Todo Smoke",
-          tasks: [
-            { title: "Edit file", completion_criteria: ["diff evidence exists"] },
-            { title: "Call finish_plan", completion_criteria: ["finish_plan returns validated"] },
-          ],
+          tasks: [oneTask()],
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({
-        event: {
-          type: "todo.updated",
-          properties: {
-            sessionID: "ses_plan_runner",
-            todos: [
-              { content: "T1: Edit file", status: "in_progress", priority: "high" },
-              { content: "T2: Call finish_plan", status: "pending", priority: "high" },
-            ],
-          },
-        },
-      })
+      await startStructuredTask({ hooks, workspace })
       await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
-      await hooks.event({
-        event: {
-          type: "todo.updated",
-          properties: {
-            sessionID: "ses_plan_runner",
-            todos: [
-              { content: "T1: Edit file", status: "completed", priority: "high" },
-              { content: "T2: Call finish_plan", status: "in_progress", priority: "high" },
-            ],
-          },
-        },
-      })
+      await completeStructuredTask({ hooks, workspace })
 
       const finish = hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
       const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
@@ -1190,7 +1175,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.equal(state.completion_gate.status, "repair_required")
       assert.equal(state.completion_gate.source, "audit_review")
       assert.ok(prompts.some((payload) => payload.path?.id === "ses_audit"))
-      assert.doesNotMatch(String(result.output), /todo list still has pending or in_progress items/)
+      assert.doesNotMatch(String(result.output), /not completed/)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1219,7 +1204,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("records command evidence for execution tools and maps it to the active todo", async () => {
+  it("records command evidence for execution tools and maps it to the active structured task", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -1241,21 +1226,13 @@ describe("PlanRunnerHarnessPlugin", () => {
         {
           content: planContent("Evidence Slice"),
           title: "Evidence Slice",
-          tasks: [{ title: "Run command", completion_criteria: ["command evidence exists"] }],
+          tasks: [{ ...oneTask({ title: "Run command", files: [], checks: ["node --test userconf/plugins/test/plan-runner-harness.test.mjs"] }) }],
           dag: [],
           parallel_sets: [],
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({
-        event: {
-          type: "todo.updated",
-          properties: {
-            sessionID: "ses_plan_runner",
-            todos: [{ content: "T1: Run command", status: "in_progress" }],
-          },
-        },
-      })
+      await startStructuredTask({ hooks, workspace })
 
       await hooks["tool.execute.before"](
         { tool: "bash", sessionID: "ses_plan_runner", callID: "call_test" },
@@ -1276,8 +1253,8 @@ describe("PlanRunnerHarnessPlugin", () => {
       )
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
-      assert.equal(state.evidence.length, 1)
-      assert.deepEqual(state.evidence[0], {
+      assert.equal(state.tasks[0].evidence.length, 1)
+      assert.deepEqual(state.tasks[0].evidence[0], {
         id: "ev-command-call_test",
         type: "command",
         task_ids: ["T1"],
@@ -1313,21 +1290,13 @@ describe("PlanRunnerHarnessPlugin", () => {
         {
           content: planContent("Diff Slice"),
           title: "Diff Slice",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
+          tasks: [oneTask({ files: ["userconf/plugins/plan-runner-harness.js"] })],
           dag: [],
           parallel_sets: [],
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({
-        event: {
-          type: "todo.updated",
-          properties: {
-            sessionID: "ses_plan_runner",
-            todos: [{ content: "T1: Edit file", status: "in_progress" }],
-          },
-        },
-      })
+      await startStructuredTask({ hooks, workspace })
 
       await hooks.event({
         event: {
@@ -1342,7 +1311,7 @@ describe("PlanRunnerHarnessPlugin", () => {
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
       assert.deepEqual(state.modified_files, ["userconf/plugins/plan-runner-harness.js"])
-      assert.deepEqual(state.evidence[0], {
+      assert.deepEqual(state.tasks[0].evidence[0], {
         id: "ev-diff-evt_diff_1",
         type: "diff",
         task_ids: ["T1"],
@@ -1376,21 +1345,13 @@ describe("PlanRunnerHarnessPlugin", () => {
         {
           content: planContent("Message Diff Slice"),
           title: "Message Diff Slice",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
+          tasks: [oneTask()],
           dag: [],
           parallel_sets: [],
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({
-        event: {
-          type: "todo.updated",
-          properties: {
-            sessionID: "ses_plan_runner",
-            todos: [{ content: "T1: Edit file", status: "in_progress" }],
-          },
-        },
-      })
+      await startStructuredTask({ hooks, workspace })
 
       await hooks.event({
         event: {
@@ -1406,19 +1367,11 @@ describe("PlanRunnerHarnessPlugin", () => {
           },
         },
       })
-      await hooks.event({
-        event: {
-          type: "todo.updated",
-          properties: {
-            sessionID: "ses_plan_runner",
-            todos: [{ content: "T1: Edit file", status: "completed" }],
-          },
-        },
-      })
+      await completeStructuredTask({ hooks, workspace })
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
       assert.deepEqual(state.modified_files, ["probe-output.txt"])
-      assert.deepEqual(state.evidence[0], {
+      assert.deepEqual(state.tasks[0].evidence[0], {
         id: "ev-diff-msg_with_diff",
         type: "diff",
         task_ids: ["T1"],
@@ -1446,13 +1399,13 @@ describe("PlanRunnerHarnessPlugin", () => {
         {
           content: planContent("Concurrent Diff Slice"),
           title: "Concurrent Diff Slice",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
+          tasks: [oneTask({ files: ["a.txt", "b.txt"] })],
           dag: [],
           parallel_sets: [],
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
+      await startStructuredTask({ hooks, workspace })
 
       await Promise.all([
         hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_a", summary: { diffs: [{ file: "a.txt" }] } } } } }),
@@ -1461,7 +1414,7 @@ describe("PlanRunnerHarnessPlugin", () => {
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
       assert.deepEqual([...state.modified_files].sort(), ["a.txt", "b.txt"])
-      assert.deepEqual(state.evidence.map((item) => item.id).sort(), ["ev-diff-msg_a", "ev-diff-msg_b"])
+      assert.deepEqual(state.tasks[0].evidence.map((item) => item.id).sort(), ["ev-diff-msg_a", "ev-diff-msg_b"])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1488,23 +1441,24 @@ describe("PlanRunnerHarnessPlugin", () => {
         {
           content: planContent("Plan Diff Only"),
           title: "Plan Diff Only",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
+          tasks: [oneTask()],
           dag: [],
           parallel_sets: [],
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
-      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_plan_diff", summary: { diffs: [{ file: join("docs", "plans", "planrun-ses_parent-call_dispatch.md") }] } } } } })
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
+      await startStructuredTask({ hooks, workspace })
+      const stateWithPlan = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
+      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_plan_diff", summary: { diffs: [{ file: stateWithPlan.plan_path }] } } } } })
+      await completeStructuredTask({ hooks, workspace })
 
       const finishResult = await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
       assert.equal(state.status, "repairing")
-      assert.equal(state.evidence.length, 0)
+      assert.equal(state.tasks[0].evidence.length, 0)
       assert.equal(prompts.length, 0)
-      assert.match(String(finishResult.output || finishResult), /T1 has no diff evidence/)
+      assert.match(String(finishResult.output || finishResult), /T1 missing diff evidence for probe-output\.txt/)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1527,13 +1481,13 @@ describe("PlanRunnerHarnessPlugin", () => {
         {
           content: planContent("Tool File Evidence"),
           title: "Tool File Evidence",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
+          tasks: [oneTask({ files: [join("src", "created.txt"), join("src", "updated.txt"), join("src", "patched.txt"), join("src", "renamed-from.txt"), join("src", "renamed-to.txt")] })],
           dag: [],
           parallel_sets: [],
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
+      await startStructuredTask({ hooks, workspace })
 
       await hooks["tool.execute.after"](
         { tool: "write", sessionID: "ses_plan_runner", callID: "call_write", args: { filePath: join(workspace, "src", "created.txt") } },
@@ -1573,7 +1527,7 @@ describe("PlanRunnerHarnessPlugin", () => {
         join("src", "renamed-from.txt"),
         join("src", "renamed-to.txt"),
       ])
-      assert.deepEqual(state.evidence.map((item) => item.files), [
+      assert.deepEqual(state.tasks[0].evidence.map((item) => item.files), [
         [join("src", "created.txt")],
         [join("src", "updated.txt")],
         [join("src", "patched.txt"), join("src", "renamed-from.txt"), join("src", "renamed-to.txt")],
@@ -1607,31 +1561,13 @@ describe("PlanRunnerHarnessPlugin", () => {
         { stateDir, completionGatePollMs: 5, completionGateTimeoutMs: 100 },
       )
 
-      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
-      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
-      await hooks["tool.execute.after"](
-        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
-        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
-      )
-      await hooks.tool.write_plan.execute(
-        {
-          content: planContent("Self Check Slice"),
-          title: "Self Check Slice",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
-          dag: [],
-          parallel_sets: [],
-        },
-        makeContext({ sessionID: "ses_plan_runner", workspace }),
-      )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
-      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
+      await prepareCompletionReadyState({ hooks, workspace, stateDir })
 
       await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
       await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
 
       const state = readJson(join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json"))
-      assert.equal(state.status, "ready_to_execute")
+      assert.equal(state.status, "executing")
       assert.deepEqual(state.self_check, { status: "not_started", round: 0 })
       assert.equal(state.completion_gate, undefined)
       assert.equal(prompts.length, 1)
@@ -1863,25 +1799,7 @@ describe("PlanRunnerHarnessPlugin", () => {
         { stateDir, completionGatePollMs: 5, completionGateTimeoutMs: 100 },
       )
 
-      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
-      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
-      await hooks["tool.execute.after"](
-        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
-        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
-      )
-      await hooks.tool.write_plan.execute(
-        {
-          content: planContent("Synchronous Audit Prompt"),
-          title: "Synchronous Audit Prompt",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
-          dag: [],
-          parallel_sets: [],
-        },
-        makeContext({ sessionID: "ses_plan_runner", workspace }),
-      )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
-      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
+      await prepareCompletionReadyState({ hooks, workspace, stateDir })
 
       const finish = hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
         .catch(() => {})
@@ -1893,6 +1811,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.equal(prompts.length, 1)
       assert.equal(prompts[0].path.id, "ses_audit")
       assert.equal(prompts[0].body.agent, "plan-runner-audit")
+      assert.match(prompts[0].body.parts[0].text, new RegExp(`Plan path: ${state.plan_path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`))
       await finish
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -1918,25 +1837,7 @@ describe("PlanRunnerHarnessPlugin", () => {
         },
         { stateDir, completionGatePollMs: 5, completionGateTimeoutMs: 100 },
       )
-      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
-      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
-      await hooks["tool.execute.after"](
-        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
-        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
-      )
-      await hooks.tool.write_plan.execute(
-        {
-          content: planContent("Audit Consumption Slice"),
-          title: "Audit Consumption Slice",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
-          dag: [],
-          parallel_sets: [],
-        },
-        makeContext({ sessionID: "ses_plan_runner", workspace }),
-      )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
-      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
+      await prepareCompletionReadyState({ hooks, workspace, stateDir })
       const finish = hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
         .catch(() => {})
       await waitUntil(() => prompts.some((payload) => payload.body?.agent === "plan-runner-audit"))
@@ -1978,31 +1879,12 @@ describe("PlanRunnerHarnessPlugin", () => {
         { stateDir, completionGatePollMs: 5, completionGateTimeoutMs: 100 },
       )
 
-      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
-      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
-      await hooks["tool.execute.after"](
-        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
-        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
-      )
-      await hooks.tool.write_plan.execute(
-        {
-          content: planContent("Legacy State Slice"),
-          title: "Legacy State Slice",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
-          dag: [],
-          parallel_sets: [],
-        },
-        makeContext({ sessionID: "ses_plan_runner", workspace }),
-      )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
-      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
-
       const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
-      const legacyState = readJson(statePath)
-      delete legacyState.modified_files
-      delete legacyState.child_sessions
-      writeFileSync(statePath, JSON.stringify(legacyState, null, 2) + "\n")
+      await prepareCompletionReadyState({ hooks, workspace, stateDir })
+      const stateMissingOptionalArrays = readJson(statePath)
+      delete stateMissingOptionalArrays.modified_files
+      delete stateMissingOptionalArrays.child_sessions
+      writeFileSync(statePath, JSON.stringify(stateMissingOptionalArrays, null, 2) + "\n")
 
       const finish = hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
         .catch(() => {})
@@ -2039,25 +1921,7 @@ describe("PlanRunnerHarnessPlugin", () => {
         { stateDir, completionGatePollMs: 5, completionGateTimeoutMs: 100 },
       )
 
-      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
-      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
-      await hooks["tool.execute.after"](
-        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
-        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
-      )
-      await hooks.tool.write_plan.execute(
-        {
-          content: planContent("Unwrapped Create Result"),
-          title: "Unwrapped Create Result",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
-          dag: [],
-          parallel_sets: [],
-        },
-        makeContext({ sessionID: "ses_plan_runner", workspace }),
-      )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
-      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
+      await prepareCompletionReadyState({ hooks, workspace, stateDir })
 
       const finish = hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
         .catch(() => {})
@@ -2095,25 +1959,7 @@ describe("PlanRunnerHarnessPlugin", () => {
         { stateDir },
       )
 
-      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
-      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
-      await hooks["tool.execute.after"](
-        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
-        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
-      )
-      await hooks.tool.write_plan.execute(
-        {
-          content: planContent("Prompt Failure"),
-          title: "Prompt Failure",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
-          dag: [],
-          parallel_sets: [],
-        },
-        makeContext({ sessionID: "ses_plan_runner", workspace }),
-      )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
-      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
+      await prepareCompletionReadyState({ hooks, workspace, stateDir })
 
       await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
 
@@ -2161,25 +2007,7 @@ describe("PlanRunnerHarnessPlugin", () => {
         { stateDir },
       )
 
-      const taskOutput = { args: { background: true, subagent_type: "plan-runner", prompt: "Implement." } }
-      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_parent", callID: "call_dispatch" }, taskOutput)
-      await hooks["tool.execute.after"](
-        { tool: "task", sessionID: "ses_parent", callID: "call_dispatch", args: taskOutput.args },
-        { metadata: { parentSessionId: "ses_parent", sessionId: "ses_plan_runner" } },
-      )
-      await hooks.tool.write_plan.execute(
-        {
-          content: planContent("SDK Error Audit Dispatch"),
-          title: "SDK Error Audit Dispatch",
-          tasks: [{ title: "Edit file", completion_criteria: ["diff evidence exists"] }],
-          dag: [],
-          parallel_sets: [],
-        },
-        makeContext({ sessionID: "ses_plan_runner", workspace }),
-      )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "in_progress" }] } } })
-      await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_with_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Edit file", status: "completed" }] } } })
+      await prepareCompletionReadyState({ hooks, workspace, stateDir })
 
       await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
 
@@ -2981,7 +2809,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       git(workspace, ["commit", "-m", "docs(smoke): 准备门禁状态"])
       const stateBeforeRecheck = readJson(statePath)
       stateBeforeRecheck.status = "repairing"
-      stateBeforeRecheck.evidence = []
+      stateBeforeRecheck.tasks[0].evidence = []
       stateBeforeRecheck.gate_failures = [
         { source: "deterministic_check", attempt: 1, reasons: ["previous deterministic failure"], failed_open: false },
         { source: "completeness_check", attempt: 1, reasons: ["previous completeness failure"], failed_open: false },
@@ -3002,7 +2830,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.equal(externalCalls.length, 1)
       assert.equal(state.gate_failures.filter((item) => item.source === "deterministic_check").length, 2)
       assert.equal(state.gate_failures.at(-1).failed_open, true)
-      assert.match(state.gate_failures.at(-1).reasons.join("\n"), /T1 has no diff evidence/)
+      assert.match(state.gate_failures.at(-1).reasons.join("\n"), /T1 missing diff evidence for probe-output\.txt/)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -3264,6 +3092,8 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
         },
       )
       const { statePath, finish } = await prepareAuditReviewState({ hooks, workspace, stateDir })
+      const eventPath = join(stateDir, "events", "planrun-ses_parent-call_dispatch.jsonl")
+      await waitUntil(() => readFileSync(eventPath, "utf8").includes("audit_review_dispatched"))
       const stateBeforeAudit = readJson(statePath)
       stateBeforeAudit.base_commit = "base-commit-sha"
       stateBeforeAudit.git_base = "base-commit-sha"
@@ -3283,9 +3113,13 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
       await finish
 
       const args = JSON.parse(readFileSync(capturedArgs, "utf8"))
+      const state = readJson(statePath)
       assert.equal(args[0], "base-commit-sha")
       assert.equal(args[1], "HEAD")
       assert.equal(args.includes("WORKTREE"), false)
+      const specIndex = args.indexOf("--spec")
+      assert.notEqual(specIndex, -1)
+      assert.equal(args[specIndex + 1], state.plan_path)
     } finally {
       if (oldCapturedArgs === undefined) delete process.env.CAPTURED_REVIEWER_ARGS
       else process.env.CAPTURED_REVIEWER_ARGS = oldCapturedArgs
@@ -3636,7 +3470,50 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
     }
   })
 
-  it("leaves expired old task state untouched on idle and todo boundary events", async () => {
+  it("allows repair execution tools after review findings without restarting a completed task", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      const hooks = await PlanRunnerHarnessPlugin(
+        {
+          directory: workspace,
+          client: {
+            session: {
+              create: async () => ({ data: { id: "ses_audit" } }),
+              prompt: async () => {},
+              promptAsync: async () => {},
+            },
+          },
+        },
+        {
+          stateDir,
+          completionGatePollMs: 5,
+          completionGateTimeoutMs: 1000,
+          externalReview: async () => ({ result: "issues", provider: "test-provider", findings: "Fix src/app.js" }),
+        },
+      )
+      const { statePath, finish } = await prepareAuditReviewState({ hooks, workspace, stateDir })
+      await hooks.event({ event: auditTextPartEvent(JSON.stringify({ result: "pass", required_fixes: [] })) })
+      await hooks.event({ event: auditIdleEvent() })
+
+      const finishResult = await finish
+      const state = readJson(statePath)
+      assert.match(String(finishResult.output || finishResult), /Result: repair_required/)
+      assert.equal(state.status, "repairing")
+      assert.equal(state.active_task, null)
+      assert.deepEqual(state.tasks.map((task) => task.status), ["completed"])
+
+      await assert.doesNotReject(() => hooks["tool.execute.before"](
+        { tool: "apply_patch", sessionID: "ses_plan_runner", callID: "call_repair_patch" },
+        { args: { patchText: "*** Begin Patch\n*** Update File: src/app.js\n@@\n-old\n+new\n*** End Patch" } },
+      ))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("leaves expired task state untouched on idle and ignored todo events", async () => {
     const cases = [
       { name: "idle", event: { type: "session.idle", properties: { sessionID: "ses_unrelated" } } },
       { name: "todo", event: { type: "todo.updated", properties: { sessionID: "ses_unrelated", todos: [{ content: "T1: unrelated", status: "completed" }] } } },
@@ -3666,7 +3543,7 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
     }
   })
 
-  it("leaves expired old task state untouched on high-frequency message events", async () => {
+  it("leaves expired task state untouched on high-frequency message events", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -3721,14 +3598,14 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
     }
   })
 
-  it("does not revive legacy self_checking prompted task states", async () => {
+  it("does not revive stale self_checking prompted task states", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
       const stateDir = join(root, "state")
       const taskDir = join(stateDir, "tasks")
       const sessionDir = join(stateDir, "sessions")
-      const taskID = "planrun-legacy-self-check"
+      const taskID = "planrun-stale-self-check"
       mkdirSync(taskDir, { recursive: true })
       mkdirSync(sessionDir, { recursive: true })
       writeFileSync(join(sessionDir, "ses_plan_runner.json"), JSON.stringify({
@@ -3737,7 +3614,7 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
         role: "plan-runner",
       }, null, 2) + "\n")
       writeFileSync(join(taskDir, `${taskID}.json`), JSON.stringify({
-        version: 1,
+        version: 2,
         task_id: taskID,
         status: "self_checking",
         parent_session_id: "ses_parent",
@@ -3746,11 +3623,18 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
         worktree: workspace,
         updated_at: Date.now(),
         lease_expires_at: Date.now() + 10 * 60 * 1000,
-        plan_path: join(workspace, "docs", "plans", `${taskID}.md`),
-        plan_sha256: "sha",
-        plan_contract: { tasks: [{ id: "T1", title: "Edit file", completion_criteria: ["done"], evidence_required: ["diff"] }], dag: [], parallel_sets: [] },
-        todo: { mirrored: true, last_seen: [{ content: "T1: Edit file", status: "completed" }] },
-        evidence: [{ id: "ev-diff", type: "diff", task_ids: ["T1"], event_ids: ["evt"], files: ["probe-output.txt"] }],
+        brief_path: join(workspace, "briefs", `${taskID}.md`),
+        brief_sha256: "sha",
+        tasks: [{
+          id: "T1",
+          title: "Edit file",
+          files: ["probe-output.txt"],
+          checks: [],
+          negative_checks: [],
+          status: "completed",
+          evidence: [{ id: "ev-diff", type: "diff", task_ids: ["T1"], event_ids: ["evt"], files: ["probe-output.txt"] }],
+        }],
+        active_task: null,
         modified_files: ["probe-output.txt"],
         child_sessions: [],
         reviews: { round: 0, audit: [], external: [] },
@@ -3814,28 +3698,28 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
         {
           content: planContent("Command Evidence"),
           title: "Command Evidence",
-          tasks: [{ title: "Run validation", completion_criteria: ["command evidence exists"], evidence_required: ["command"] }],
+          tasks: [{ ...oneTask({ title: "Run validation" }), evidence_required: ["command"] }],
           dag: [],
           parallel_sets: [],
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Run validation", status: "in_progress" }] } } })
+      await startStructuredTask({ hooks, workspace })
       await hooks["tool.execute.after"](
         { tool: "bash", sessionID: "ses_plan_runner", callID: "call_validate", args: { command: "node --test" } },
         { metadata: { exit: 0 }, output: "ok" },
       )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Run validation", status: "completed" }] } } })
+      await completeStructuredTask({ hooks, workspace })
 
       const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
-      assert.equal("evidence_required" in readJson(statePath).plan_contract.tasks[0], false)
+      assert.equal("evidence_required" in readJson(statePath).tasks[0], false)
 
       const finishResult = await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
 
       const state = readJson(statePath)
       assert.equal(state.status, "repairing")
       assert.match(String(finishResult.output || finishResult), /Result: repair_required/)
-      assert.match(String(finishResult.output || finishResult), /T1 has no diff evidence/)
+      assert.match(String(finishResult.output || finishResult), /T1 missing diff evidence for probe-output\.txt/)
       assert.equal(prompts.length, 0)
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -3872,24 +3756,25 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
         {
           content: planContent("Command Only"),
           title: "Command Only",
-          tasks: [{ title: "Implement code", completion_criteria: ["diff evidence exists"] }],
+          tasks: [oneTask({ title: "Implement code" })],
           dag: [],
           parallel_sets: [],
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Implement code", status: "completed" }] } } })
+      await startStructuredTask({ hooks, workspace })
       await hooks["tool.execute.after"](
         { tool: "bash", sessionID: "ses_plan_runner", callID: "call_test", args: { command: "node --test" } },
         { metadata: { exit: 0 }, output: "ok" },
       )
+      await completeStructuredTask({ hooks, workspace })
 
       const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
       const finishResult = await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
 
       assert.equal(prompts.length, 0)
       assert.match(String(finishResult.output || finishResult), /Result: repair_required/)
-      assert.match(String(finishResult.output || finishResult), /T1 has no diff evidence/)
+      assert.match(String(finishResult.output || finishResult), /T1 missing diff evidence for probe-output\.txt/)
       assert.equal(readJson(statePath).status, "repairing")
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -3926,19 +3811,20 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
         {
           content: planContent("Repair Completion Boundary"),
           title: "Repair Completion Boundary",
-          tasks: [{ title: "Implement file", completion_criteria: ["diff evidence exists"] }],
+          tasks: [oneTask({ title: "Implement file", files: ["src/app.js"] })],
           dag: [],
           parallel_sets: [],
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({ event: { type: "todo.updated", properties: { sessionID: "ses_plan_runner", todos: [{ content: "T1: Implement file", status: "completed" }] } } })
+      await startStructuredTask({ hooks, workspace })
+      await completeStructuredTask({ hooks, workspace })
 
       const statePath = join(stateDir, "tasks", "planrun-ses_parent-call_dispatch.json")
       const firstFinish = await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace }))
 
       assert.equal(readJson(statePath).status, "repairing")
-      assert.match(String(firstFinish.output || firstFinish), /T1 has no diff evidence/)
+      assert.match(String(firstFinish.output || firstFinish), /T1 missing diff evidence for src\/app\.js/)
 
       const patchText = [
         "*** Begin Patch",
@@ -3987,7 +3873,7 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
     }
   })
 
-  it("binds repair diff evidence to the missing completed task before unrelated in-progress todos", async () => {
+  it("binds repair diff evidence to the missing completed task before unrelated active work", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -4003,7 +3889,7 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
         role: "plan-runner",
       }, null, 2) + "\n")
       writeFileSync(join(taskDir, `${taskID}.json`), JSON.stringify({
-        version: 1,
+        version: 2,
         task_id: taskID,
         status: "repairing",
         parent_session_id: "ses_parent",
@@ -4012,26 +3898,14 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
         worktree: workspace,
         updated_at: Date.now(),
         lease_expires_at: Date.now() + 10 * 60 * 1000,
-        plan_path: join(workspace, "docs", "plans", `${taskID}.md`),
-        plan_sha256: "sha",
-        plan_contract: {
-          tasks: [
-            { id: "T1", title: "Write file", completion_criteria: ["done"] },
-            { id: "T2", title: "Implement marker", completion_criteria: ["diff"] },
-            { id: "T3", title: "Whitespace", completion_criteria: ["diff"] },
-          ],
-          dag: [],
-          parallel_sets: [],
-        },
-        todo: {
-          mirrored: true,
-          last_seen: [
-            { content: "T1 Write file", status: "completed", priority: "high" },
-            { content: "T2 Implement marker", status: "completed", priority: "high" },
-            { content: "T3 Whitespace", status: "in_progress", priority: "high" },
-          ],
-        },
-        evidence: [{ id: "ev-diff", type: "diff", task_ids: ["T1"], event_ids: ["evt"], files: ["probe-output.txt"] }],
+        brief_path: join(workspace, "briefs", `${taskID}.md`),
+        brief_sha256: "sha",
+        tasks: [
+          { id: "T1", title: "Write file", files: ["probe-output.txt"], checks: [], negative_checks: [], status: "completed", evidence: [{ id: "ev-diff", type: "diff", task_ids: ["T1"], event_ids: ["evt"], files: ["probe-output.txt"] }] },
+          { id: "T2", title: "Implement marker", files: ["src/marker.js"], checks: [], negative_checks: [], status: "completed", evidence: [] },
+          { id: "T3", title: "Whitespace", files: ["src/whitespace.js"], checks: [], negative_checks: [], status: "in_progress", evidence: [] },
+        ],
+        active_task: "T3",
         modified_files: ["probe-output.txt"],
         child_sessions: [],
         reviews: { round: 1, audit: [], external: [] },
@@ -4053,7 +3927,7 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
       )
 
       const state = readJson(join(taskDir, `${taskID}.json`))
-      const evidence = state.evidence.find((item) => item.id === "ev-diff-tool-after-call_repair_t2")
+      const evidence = state.tasks[1].evidence.find((item) => item.id === "ev-diff-tool-after-call_repair_t2")
       assert.deepEqual(evidence.task_ids, ["T2"])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -4090,21 +3964,14 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
         {
           content: planContent("Idle Slice"),
           title: "Idle Slice",
-          tasks: [{ title: "Need evidence", completion_criteria: ["diff evidence exists"] }],
+          tasks: [oneTask({ title: "Need evidence" })],
           dag: [],
           parallel_sets: [],
         },
         makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
-      await hooks.event({
-        event: {
-          type: "todo.updated",
-          properties: {
-            sessionID: "ses_plan_runner",
-            todos: [{ content: "T1: Need evidence", status: "completed" }],
-          },
-        },
-      })
+      await startStructuredTask({ hooks, workspace })
+      await completeStructuredTask({ hooks, workspace })
 
       await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_child" } } })
       assert.equal(prompts.length, 0)

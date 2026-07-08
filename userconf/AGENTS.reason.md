@@ -111,9 +111,10 @@ skill 本身不可修改，原 reason 保留在下方备查：
 > **原因**：writing-plans skill 原始提供两种执行方式（subagent-driven /
 > inline execution），但两者都依赖未纳入白名单的 sub-skill（`subagent-driven-development`、
 > `executing-plans` → `finishing-a-development-branch` + `using-git-worktrees`），
-> 且不提供 harness 门禁。覆盖为 plan-runner + inline 两种：plan-runner 作为
-> 推荐项提供完整的质量门禁（deterministic check、audit review、external review、
-> terminal gate）；inline 不引入额外 skill，直接按 todowrite 逐任务执行即可。
+> 且不提供 harness 门禁。覆盖为 Plan-Runner / Subagent-Driven / Inline 三种：
+> Plan-Runner 作为推荐项提供完整的质量门禁（deterministic check、audit review、
+> external review、terminal gate）；Subagent-Driven 保留主 agent 对任务间审查的控制；
+> Inline 不引入额外 skill，适合简单计划或无需门禁的场景。
 
 ---
 
@@ -127,10 +128,13 @@ skill 本身不可修改，原 reason 保留在下方备查：
 > 不是事后参考资料。要求在回答、追问、读文件、tool call 前判断并加载，是为了防止
 > agent 先按默认习惯推进，再用 skill 为既有决策背书。
 >
-> 当前 linked 集合以 `agents/skills.list` 为单一来源，不在 AGENTS.md 中再硬编码
-> 一份清单，避免初始化脚本、skill symlink 与启动上下文三处漂移。`writing-skills`
-> 仍需显式说明其依赖 `test-driven-development` 背景，否则 agent 容易把它当成
-> 普通文档模板，而不是按 RED-GREEN-REFACTOR 验证行为变化的流程。
+> 当前 Superpowers workflow linked 集合以 `agents/skills.list` 为同步来源，但
+> AGENTS.md 必须显式列出参与 Superpowers 流程编排的白名单 workflow skills，避免
+> agent 继续引用 `verification-before-completion`、`brainstorming` 等未暴露的上游技能。
+> 该约束只收窄 Superpowers workflow discipline，不禁止运行时可用的项目、调度、评审、
+> provider 或平台类 skills 按各自 description 触发。`writing-skills` 仍需显式说明其依赖 `test-driven-development`
+> 背景，否则 agent 容易把它当成普通文档模板，而不是按 RED-GREEN-REFACTOR
+> 验证行为变化的流程。
 
 ---
 

@@ -461,22 +461,18 @@ describe("init_opencode agents sync", () => {
     assert.doesNotMatch(skill, /claude-skills\/external-llm-review/)
   })
 
-  it("plan-runner-dispatch skill forces background plan-runner task routing", () => {
+  it("plan-runner-dispatch skill routes through the dedicated start_plan_runner tool", () => {
     const list = readFileSync(join(repoRoot, "agents", "skills.list"), "utf8")
     const skill = readFileSync(join(repoRoot, "userconf", "skills", "plan-runner-dispatch", "SKILL.md"), "utf8")
 
     assert.match(list, /^plan-runner-dispatch$/m)
     assert.match(skill, /^name: plan-runner-dispatch$/m)
     assert.match(skill, /^description: Use when .*写计划并执行.*开始执行.*按方案落地/m)
-    assert.match(skill, /subagent_type["`]?:\s*["`]plan-runner["`]/)
-    assert.match(skill, /background["`]?:\s*true/)
+    assert.match(skill, /start_plan_runner/)
+    assert.match(skill, /Do not use the native `task` tool/i)
+    assert.doesNotMatch(skill, /subagent_type["`]?:\s*["`]plan-runner["`]/)
     assert.match(skill, /Do not implement the request in the primary agent/i)
-    assert.match(skill, /git status --short/)
-    assert.match(skill, /clean worktree precondition/i)
-    assert.match(skill, /dirty worktree/i)
-    assert.match(skill, /do not dispatch/i)
-    assert.match(skill, /report dirty files/i)
-    assert.match(skill, /commit, stash, or clean/i)
+    assert.match(skill, /harness-owned worktree/i)
   })
 
   it("project plan-runner troubleshooting skill documents task-state diagnostics", () => {

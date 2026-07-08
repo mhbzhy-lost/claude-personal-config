@@ -13,7 +13,7 @@ applies_to:
   - userconf/agents/plan-runner.md
   - userconf/plugins/plan-runner-harness.js
   - scripts/opencode-subagent-event-probe.mjs
-last_verified: 2026-07-07
+last_verified: 2026-07-08
 source: opencode plan-runner agent
 ---
 
@@ -108,13 +108,13 @@ session 的 bash / file 工具做路径门禁。
 - OpenCode `todowrite` 不再是 plan-runner 执行账本来源；agent permission 直接 deny，harness
   仍在 phase gate 中兜底拒绝 plan-runner session 的 `todowrite` 调用。
 - phase gate 在 `planning_required` / `ready_to_execute` / execution / terminal gate 阶段限制工具；`skill`
-  作为只读上下文工具可用于普通执行阶段，`apply_patch` 作为执行类变更工具在执行阶段需要 active task，repair 阶段由 harness 推导 evidence 绑定目标。
+  作为只读上下文工具可用于普通执行阶段，`apply_patch` 作为执行类变更工具在普通执行阶段需要 active task；review 返回 `repair_required` 后的 `repairing` 阶段允许直接使用 `edit` / `write` / `apply_patch` / `bash`，由 harness 推导 evidence 绑定目标。
   所有任务完成后的 `git status/add/commit/diff/worktree/...` 等 git-only `bash` 可用于
-  `finish_plan` preflight 修复；普通编辑、patch 和 child dispatch 仍不得绕过 active task。
+  `finish_plan` preflight 修复；child dispatch 仍不得绕过 active task。
 - `tool.execute.after(start_task)`、`tool.execute.after(complete_task)`、`tool.execute.after(bash)`、
   `tool.execute.after(write|edit).input.filePath`、`tool.execute.after(apply_patch).input.patchText`、`message.updated.info.summary.diffs`、
   `message.part.updated` patch、`session.diff` 写入
-  evidence 索引；harness 自己生成的 `docs/plans/<task_id>.md` 不计入实现 diff evidence。
+  evidence 索引；harness 自己生成的 stateDir `plans/<task_id>.md` 不计入实现 diff evidence。
 - 普通 harness-managed executor child 的 `session.idle` 会把对应 `child_sessions[]` 从
   `running` 标记为 `completed` 并写入 `child_session_completed` event；audit child 继续由
   audit 专用 idle handler 消费 JSON 结果并推进后续 gate。
@@ -178,7 +178,8 @@ tool/event hook 行为。
   和 `part.files`。OpenCode `write` / `edit` tool part 的 `input.filePath` 是更直接的
   实现文件来源，必须记录为当前 active task 的 diff evidence。
 - `message.updated.info.summary.diffs` 可能反复输出同一个用户消息中的计划文档 diff。
-  `docs/plans/<task_id>.md` 是 harness 计划产物，必须过滤，不能作为实现 evidence。
+  stateDir `plans/<task_id>.md` 是 harness 计划产物，必须过滤，不能作为实现 evidence；
+  `write_plan.content` 不再写入目标 workspace 的 `docs/plans/`。
 - 历史临时 git workspace 旧 self-check re-entry 链路：`task(plan-runner)` -> `write_plan` ->
   `todowrite(T1 in_progress)` -> `write` -> `message.updated.summary.diffs` ->
   `bash` validation -> `todowrite(T1 completed)` -> `session.idle` -> self-check
@@ -205,7 +206,8 @@ tool/event hook 行为。
   视为通过，并在 `reviews.audit[0].invalid_json_reason` / `invalid_json_attempts` 记录失败原因，
   继续进入 external review。
 - audit pass 或 audit fail-open 后进入 external review：默认命令 runner 调用
-  `reviewer.py <base_commit> HEAD --worktree <worktree> --spec <plan_path>`，将输出归一为
+  `reviewer.py <base_commit> HEAD --worktree <worktree> --spec <plan_path>`（缺省 fallback 到
+  `brief_path`），将输出归一为
   `pass` / `issues` / `unavailable` 写入 `reviews.external`。external 第一次失败返回
   `repair_required`；第二次仍失败则 external fail-open，错误保留在 `gate_failures`，继续 final
   completeness check。
@@ -243,8 +245,9 @@ tool/event hook 行为。
 - `plan-runner-audit` 只触发一次。audit fail 会回流一次 repair；repair 后 deterministic
   通过时直接进入 external review，不再次派发 audit，避免 LLM 审计循环不收敛。
 - plan-runner 的最终报告、`finish_plan` 调用、等待 `validated` 等终态门禁动作不应建模为
-  plan task。若 agent 仍把这些动作写进 `tasks`，harness 在 deterministic / final completeness
-  的完成度审查中忽略这类 gate task；原始计划任务仍必须 completed 且有 evidence。
+  plan task。`write_plan.tasks` 现在是唯一机器执行契约，harness 不再维护 terminal-gate
+  task 过滤或 todowrite 兼容分支；agent 若把门禁动作写进 `tasks`，会被当作普通任务审查，
+  必须 completed 且有 evidence。
 - external reviewer 的 `--review-round` 只由 `reviews.external.length + 1` 推导，最多为 2；
   `reviews.round` 仅是 harness repair loop 计数，不复用为 external review 轮次。
 - `reviews.round` 只保留 repair 次数观测，不再作为全局 blocked 预算；预算按 gate source
