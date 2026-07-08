@@ -15,7 +15,7 @@
 
 ## 修复方向
 
-删除 runtime stale 扫描和状态转换，不引入重入恢复、自动 reset、自动清理 git 工作区等机制。旧 task-state 仅作诊断残留；`finish_plan` 仍由自身 timeout 写 `interrupted`，`stale` 不再作为 completion gate terminal result。
+删除 runtime stale 扫描和状态转换，不引入重入恢复、自动 reset、自动清理 git 工作区等机制。旧 task-state 仅作诊断残留；`finish_plan` 仍由自身 timeout 写 `interrupted`，`stale` 不再作为 completion gate terminal result。若诊断残留长期膨胀，只能通过 out-of-band 清理/归档工具按时间或数量裁剪旧文件，不能把全目录扫描重新放回 runtime event hook。
 
 ## 验证
 

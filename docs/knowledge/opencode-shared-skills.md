@@ -24,7 +24,9 @@ source: docs/bugs/bug-external-llm-review-stale-symlink.md
 - 本仓自维护 skill 源目录是 `userconf/skills/<name>`，不要再使用废弃的 `claude-skills/<name>`。
 - `agents/skills.list` 是共享 skill 白名单；`init_opencode.sh` 按该列表逐项软链到 `~/.agents/skills/`。
 - `userconf/AGENTS.md` 不再硬编码“当前 linked skills”清单；运行时可用 linked skill 以 `agents/skills.list` 和实际初始化出的 `~/.agents/skills/` 为准，避免规则文档与软链结果漂移。
+
 - `.agents/skills/<name>/SKILL.md` 用于本仓局部 project skill，例如 `plan-runner-troubleshooting`；它不加入 `agents/skills.list`，也不由 `init_opencode.sh` 同步到全局目录。
+
 - 白名单只在主仓初始化脚本中生效；子模块安装脚本不读取该列表。主仓未列入某个子模块 skill 时，不执行对应子模块初始化入口。
 - 源路径解析顺序：先 `userconf/skills/<name>`，再 `vendor/superpowers/skills/<name>`，最后 `vendor/opencode-dynamic-workflow/skills/<name>`。
 - `<name>` 只允许字母、数字、下划线和连字符；空值或包含路径分隔符的条目会被初始化脚本拒绝。

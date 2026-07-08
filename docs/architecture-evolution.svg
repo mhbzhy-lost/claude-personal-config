@@ -86,7 +86,7 @@
   <rect x="1240" y="436" width="300" height="40" fill="white" stroke="#EF4444" stroke-width="1.5" rx="6"/>
   <text x="1390" y="461" text-anchor="middle" font-size="15" font-weight="bold" fill="#1E293B">blocks/ (20+ 组件)</text>
 
-  <!-- ===== Col5 Nodes (11: 2 continuing + 5 NEW amber + 4 DELETED) ===== -->
+  <!-- ===== Final OpenCode Nodes (2 continuing + 5 new amber + 4 removed legacy) ===== -->
   <rect x="1630" y="84" width="300" height="40" fill="white" stroke="#CBD5E1" stroke-width="1" rx="6"/>
   <text x="1780" y="109" text-anchor="middle" font-size="15" fill="#475569">init_opencode.sh</text>
   <rect x="1630" y="128" width="300" height="40" fill="white" stroke="#F59E0B" stroke-width="1.5" rx="6"/>
