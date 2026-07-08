@@ -32,8 +32,9 @@ blocking 结果。
 ## fix plan
 
 1. plugin payload 透传 `output.args.workdir` 和 `output.args.cwd`。
-2. hook 在完成有效仓库检测后，后续 git diff、remote、HEAD 等调用统一使用 `_git_prefix`。
-3. hook 在运行 review 和 deny 输出中补充 `Review range`、`Review repo`、`Review file count`。
+2. hook 只使用结构化 `workdir` / `cwd` 定位目标仓库，不解析 Bash 命令字符串里的 `cd`；`git -C` 已由权限层禁止，不能作为 review 路由来源。
+3. hook 在完成有效仓库检测后，后续 git diff、remote、HEAD 等调用统一使用 `_git_prefix`。
+4. hook 在运行 review 和 deny 输出中补充 `Review range`、`Review repo`、`Review file count`。
 
 ## verification/regression guard
 
@@ -45,4 +46,4 @@ blocking 结果。
 
 定位有效仓库后，hook 中用于 review range、diff hash、HEAD、remote slug 和 reviewer
 上下文的 git 调用必须继续使用同一个 `_git_prefix`；新增裸 `git` 调用前必须先确认不会回到
-hook 进程 cwd。
+hook 进程 cwd。hook 不得通过正则或字符串匹配解析 `cd` 来改变 review repo。

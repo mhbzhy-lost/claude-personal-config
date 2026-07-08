@@ -486,6 +486,8 @@ describe("init_opencode agents sync", () => {
     assert.match(skill, /^description: Use when .*plan-runner.*task-state.*finish_plan/m)
     assert.match(skill, /~\/\.config\/opencode\/task-state\/tasks\/<task_id>\.json/)
     assert.match(skill, /~\/\.config\/opencode\/task-state\/events\/<task_id>\.jsonl/)
+    assert.match(skill, /OPENCODE_CONFIG_DIR/)
+    assert.match(skill, /XDG_CONFIG_HOME/)
     assert.match(skill, /dispatch_started.*plan_runner_bound.*plan_contract_written/s)
     assert.match(skill, /finish_plan_preflight_blocked/)
     assert.match(skill, /child_worktree_created/)

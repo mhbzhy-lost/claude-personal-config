@@ -11,8 +11,8 @@ Do not trust the agent final report until the harness state proves it. Diagnose 
 
 ## First Look
 
-1. Find the newest task state: `~/.config/opencode/task-state/tasks/<task_id>.json`.
-2. Read the event stream: `~/.config/opencode/task-state/events/<task_id>.jsonl`.
+1. Find the newest task state. Default path: `~/.config/opencode/task-state/tasks/<task_id>.json`; if `$OPENCODE_CONFIG_DIR` or `$XDG_CONFIG_HOME` is set, replace the config root accordingly.
+2. Read the event stream. Default path: `~/.config/opencode/task-state/events/<task_id>.jsonl`; apply the same config-root replacement when needed.
 3. Check `status`, `tasks[]`, `active_task`, `child_sessions[]`, `completion_gate`, `gate_failures[]`, `base_commit`, and `worktree`.
 4. Confirm the workspace Git state with `git status --short` and child registration with `git worktree list --porcelain`.
 5. If this came from smoke automation, remember: `opencode run --attach` may return after background plan-runner dispatch; keep `serve` alive until task-state reaches a terminal status.
