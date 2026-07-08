@@ -479,6 +479,25 @@ describe("init_opencode agents sync", () => {
     assert.match(skill, /commit, stash, or clean/i)
   })
 
+  it("project plan-runner troubleshooting skill documents task-state diagnostics", () => {
+    const skill = readFileSync(join(repoRoot, ".agents", "skills", "plan-runner-troubleshooting", "SKILL.md"), "utf8")
+
+    assert.match(skill, /^name: plan-runner-troubleshooting$/m)
+    assert.match(skill, /^description: Use when .*plan-runner.*task-state.*finish_plan/m)
+    assert.match(skill, /~\/\.config\/opencode\/task-state\/tasks\/<task_id>\.json/)
+    assert.match(skill, /~\/\.config\/opencode\/task-state\/events\/<task_id>\.jsonl/)
+    assert.match(skill, /dispatch_started.*plan_runner_bound.*plan_contract_written/s)
+    assert.match(skill, /finish_plan_preflight_blocked/)
+    assert.match(skill, /child_worktree_created/)
+    assert.match(skill, /child_session_completed/)
+    assert.match(skill, /audit_review_dispatched/)
+    assert.match(skill, /external_review_passed/)
+    assert.match(skill, /task_validated/)
+    assert.match(skill, /git worktree list --porcelain/)
+    assert.match(skill, /Do not trust.*agent.*final report/i)
+    assert.match(skill, /opencode run --attach.*background.*serve/i)
+  })
+
   it("plan-runner agent description describes responsibility, not trigger phrases", () => {
     const agent = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
     const description = agent.match(/^description:\s*(.+)$/m)?.[1] || ""

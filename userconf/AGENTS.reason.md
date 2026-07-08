@@ -127,10 +127,10 @@ skill 本身不可修改，原 reason 保留在下方备查：
 > 不是事后参考资料。要求在回答、追问、读文件、tool call 前判断并加载，是为了防止
 > agent 先按默认习惯推进，再用 skill 为既有决策背书。
 >
-> 当前 linked 集合刻意只包含通用开发纪律：debugging、TDD、完成前验证、接收 code
-> review、skill authoring。`writing-skills` 被加入后需要显式说明其依赖
-> `test-driven-development` 背景，否则 agent 容易把它当成普通文档模板，而不是按
-> RED-GREEN-REFACTOR 验证行为变化的流程。
+> 当前 linked 集合以 `agents/skills.list` 为单一来源，不在 AGENTS.md 中再硬编码
+> 一份清单，避免初始化脚本、skill symlink 与启动上下文三处漂移。`writing-skills`
+> 仍需显式说明其依赖 `test-driven-development` 背景，否则 agent 容易把它当成
+> 普通文档模板，而不是按 RED-GREEN-REFACTOR 验证行为变化的流程。
 
 ---
 

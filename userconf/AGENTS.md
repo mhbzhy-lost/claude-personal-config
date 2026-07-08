@@ -145,15 +145,6 @@ clearly applies, load it and follow it before answering, asking clarifying
 questions, reading files, or making tool calls. If no linked skill applies,
 proceed normally.
 
-Currently linked Superpowers skills in `~/.agents/skills`:
-
-- `systematic-debugging`
-- `test-driven-development`
-- `verification-before-completion`
-- `receiving-code-review`
-- `writing-skills`
-- `writing-plans`
-
 ## Red Flags
 
 These thoughts mean STOP and check the linked skills:

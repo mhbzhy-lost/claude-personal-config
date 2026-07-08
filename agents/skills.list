@@ -14,7 +14,7 @@ external-llm-review
 opencode-deepseek-worker
 claude-code-worker
 systematic-debugging
-verification-before-completion
+
 test-driven-development
 receiving-code-review
 writing-skills
