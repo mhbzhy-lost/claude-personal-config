@@ -4,7 +4,7 @@
 
 **Goal:** 新增 `start_plan_runner` 专用工具，让 harness 负责创建新的 plan-runner 专属 worktree、派发 plan-runner session，并禁止原生 `task` 工具直接派发 plan-runner。
 
-**Architecture:** `main workspace` 只作为调度入口；`start_plan_runner` 每次从当前 `HEAD` 创建 dedicated harness-owned linked worktree，位置固定为 origin workspace 内的 `.plan-runner-worktrees/<task_id>`。旧的非 `validated` task-state 只作为历史诊断/审计材料，不复用 `task_id`、不复用 harness state machine，也不支持 `task_id` / `existing_worktree` 形式的恢复参数。创建 worktree 前，harness 懒加载检查 origin workspace 的 `.gitignore`；若缺少 `.plan-runner-worktrees/` 条目则追加后再创建，保证该目录不被 Git 追踪。所有 plan-runner 写操作、测试、review 和 commit boundary 都绑定到该 run worktree。原生 `task` 仍可由普通 agent 使用，但 `subagent_type/agent = plan-runner` 必须被拒绝。
+**Architecture:** `main workspace` 只作为调度入口；`start_plan_runner` 每次从当前 `HEAD` 创建 dedicated harness-owned linked worktree，位置固定为 origin workspace 内的 `.plan-runner-worktrees/<task_id>`。旧的非 `validated` task-state 只作为历史诊断/审计材料，不复用 `task_id`、不复用 harness state machine，也不支持 `task_id` / `existing_worktree` 形式的恢复参数。创建 worktree 前，harness 把 `.plan-runner-worktrees/` 写入本地 repo 的 `.git/info/exclude`，避免污染 origin workspace 的 `.gitignore` 或工作区状态。所有 plan-runner 写操作、测试、review 和 commit boundary 都绑定到该 run worktree。原生 `task` 仍可由普通 agent 使用，但 `subagent_type/agent = plan-runner` 必须被拒绝。
 
 **Tech Stack:** OpenCode plugin custom tool、Node.js `node:test`、Git worktree、现有 `PlanRunnerHarnessPlugin` task-state/event/session 索引。
 
@@ -16,7 +16,7 @@
   - 新增 `start_plan_runner` custom tool。
   - `start_plan_runner` 只支持创建新 run；重新派发必须产生新的 `task_id` 和新的 harness state。
   - 新增 plan-runner run worktree 创建 helper，路径为 `origin_worktree/.plan-runner-worktrees/<task_id>`。
-  - 新增 `.gitignore` 懒加载 helper，确保 `.plan-runner-worktrees/` 不进入 origin `git status`。
+  - 新增 `.git/info/exclude` 懒加载 helper，确保 `.plan-runner-worktrees/` 不进入 origin `git status` 且不创建/修改工作区 `.gitignore`。
   - 原生 `task` 派发 plan-runner 时直接拒绝。
   - 非 `validated` 的旧 state 只保留为诊断材料；如需继续，应把旧 task/worktree 信息写进新 prompt 作为历史上下文。
   - state 中区分 `origin_worktree` 与 `worktree`。
@@ -95,8 +95,10 @@
       assert.match(state.branch, new RegExp(`^planrunner/${taskID.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`))
       assert.equal(existsSync(join(state.worktree, "README.md")), true)
       assert.equal(existsSync(join(state.worktree, "dirty.txt")), false)
-      assert.match(readFileSync(join(workspace, ".gitignore"), "utf8"), /^\.plan-runner-worktrees\/$/m)
+      assert.equal(existsSync(join(workspace, ".gitignore")), false)
+      assert.match(readFileSync(join(workspace, ".git", "info", "exclude"), "utf8"), /^\.plan-runner-worktrees\/$/m)
       assert.doesNotMatch(git(workspace, ["status", "--porcelain=v1"]), /\.plan-runner-worktrees\//)
+      assert.doesNotMatch(git(workspace, ["status", "--porcelain=v1"]), /\.gitignore/)
       assert.equal(readJson(join(stateDir, "sessions", "ses_parent.json")).role, "parent")
       assert.equal(readJson(join(stateDir, "sessions", "ses_plan_runner.json")).role, "plan-runner")
       assert.equal(prompts.find((item) => item.type === "create").payload.query.directory, state.worktree)
@@ -136,22 +138,25 @@ function planRunnerWorktreeRoot(originWorktree) {
 }
 
 function planRunnerWorktreePath(originWorktree, taskID) {
-  return join(planRunnerWorktreeRoot(originWorktree), `${taskID}`)
+  return join(planRunnerWorktreeRoot(originWorktree), safeId(taskID))
 }
 
 async function ensurePlanRunnerWorktreeIgnored(originWorktree) {
-  const gitignorePath = join(originWorktree, ".gitignore")
+  const excludePath = await gitCommand(originWorktree, ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"])
   const entry = ".plan-runner-worktrees/"
   let content = ""
   try {
-    content = await readFile(gitignorePath, "utf8")
+    content = await readFile(excludePath, "utf8")
   } catch (error) {
     if (error?.code !== "ENOENT") throw error
   }
   if (content.split("\n").includes(entry)) return
-  await appendFile(gitignorePath, `${content && !content.endsWith("\n") ? "\n" : ""}${entry}\n`)
+  await ensureDir(dirname(excludePath))
+  await appendFile(excludePath, `${content && !content.endsWith("\n") ? "\n" : ""}${entry}\n`)
 }
 ```
+
+该 helper 只写本地 repo 的 `info/exclude`，不能写工作区 `.gitignore`。重复追加同一 entry 是幂等检查失败时的可容忍本地配置问题，不应影响工作区 diff；若后续支持多个 OpenCode 进程同时为同一 origin 创建 run worktree，再把该 helper 升级为 atomic rewrite 或文件锁。
 
 新增专用启动 task id helper，避免依赖原生 `task` 的 `callID`：
 
@@ -205,7 +210,7 @@ function createInitialState({ taskID, parentSessionID, dispatchCallID, worktree,
 放在 `createChildWorktree()` 前：
 
 ```js
-async function createPlanRunnerWorktree(stateDir, taskID, originWorktree, originGitInfo) {
+async function createPlanRunnerWorktree(taskID, originWorktree, originGitInfo) {
   if (!originGitInfo?.is_git_repo) throw new Error("start_plan_runner requires a git repository")
   const baseCommit = originGitInfo.head || await currentGitHead(originWorktree)
   if (!baseCommit) throw new Error("start_plan_runner requires a readable git HEAD")
@@ -214,7 +219,11 @@ async function createPlanRunnerWorktree(stateDir, taskID, originWorktree, origin
   const branch = `planrunner/${safeId(taskID)}`
   await ensureDir(dirname(runWorktree))
   if (!(await pathExists(runWorktree))) {
-    await execFileAsync("git", ["-C", originWorktree, "worktree", "add", "-b", branch, runWorktree, baseCommit], { timeout: 30000 })
+    try {
+      await execFileAsync("git", ["-C", originWorktree, "worktree", "add", "-b", branch, runWorktree, baseCommit], { timeout: 30000 })
+    } catch (error) {
+      throw new Error(`git worktree add failed: ${formatDiagnosticError(error)}`)
+    }
   }
   const runGitInfo = await inspectGitWorktree(runWorktree)
   if (!runGitInfo.is_git_repo) throw new Error("start_plan_runner failed to create a git worktree")
@@ -264,7 +273,7 @@ async function startPlanRunnerTool(args, context, stateDir, { client, directory 
   const taskID = planRunnerToolTaskID(parentSessionID)
   const originWorktree = directory || context.worktree || context.directory || process.cwd()
   const originGit = await inspectGitWorktree(originWorktree)
-  const run = await createPlanRunnerWorktree(stateDir, taskID, originWorktree, originGit)
+  const run = await createPlanRunnerWorktree(taskID, originWorktree, originGit)
   const state = createInitialState({
     taskID,
     parentSessionID,
@@ -332,6 +341,8 @@ async function startPlanRunnerTool(args, context, stateDir, { client, directory 
   }
 }
 ```
+
+这里用同步 `client.session.prompt` 是启动语义：`start_plan_runner` 必须确认 plan-runner prompt 已成功投递后才返回。后续 parent merge-back 通知和 repair prompt 才使用 async prompt 路径，避免 terminal gate 阶段阻塞主流程。
 
 - [ ] **Step 6: 暴露 custom tool**
 
