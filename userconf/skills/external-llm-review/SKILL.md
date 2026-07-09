@@ -1,24 +1,24 @@
 ---
 name: external-llm-review
-description: 异源交叉验证代码评审。收到 code review / push review / 外部评审 / external review 请求时使用。Agent 按自身模型家族选 provider——Claude 家族用 bailian/idealab-openai (Qwen/DeepSeek)，Qwen 家族用 idealab-anthropic (Claude)，其他模型随意。输出 Strengths / Critical / Important / Minor / Assessment，按"综合判断 4 步"消化。
+description: 外部 LLM 代码评审。收到 code review / push review / 外部评审 / external review 请求时使用。所有模型家族首选 idealab-anthropic (Claude Opus)，不可用时按家族选异源 fallback。输出 Strengths / Critical / Important / Minor / Assessment，按"综合判断 4 步"消化。
 ---
 
 # External LLM Cross-Model Code Review
 
 ## 用途
 
-异源模型交叉验证。同族模型对自己生成的代码倾向于 normalize 通过，接入独立训练源的 reviewer 抓同族盲点（库 API deprecation / cross-cutting 并发风险 / 版本兼容 / 安全等）。
+外部 LLM 代码评审。接入独立 reviewer 抓盲点（库 API deprecation / cross-cutting 并发风险 / 版本兼容 / 安全等）。首选 idealab-anthropic (Claude Opus) 作为 reviewer，不可用时按 agent 模型家族选异源 fallback。
 
 ## Provider 选择规则
 
-Agent 在调用 reviewer.py 前，先看系统提示里的模型标识，按以下规则选 provider：
+所有模型家族统一首选 `idealab-anthropic`（Claude Opus）。当 idealab-anthropic 不可用（配额耗尽、网关故障等）时，按 agent 自身模型家族选异源 fallback：
 
-| Agent 自身模型家族 | 选用 provider | 理由 |
+| Agent 自身模型家族 | 首选 provider | Fallback（idealab-anthropic 不可用时） |
 | --- | --- | --- |
-| Claude（claude-opus / claude-sonnet / claude-haiku） | `bailian` 或 `idealab-openai` 或 `deepseek` | 异源：走 Qwen/DeepSeek 抓同族盲点 |
-| Qwen（qwen3.x / Qwen3.x-Max-DogFooding） | `idealab-anthropic` | 异源：走 Claude 抓同族盲点 |
-| DeepSeek（deepseek-chat / deepseek-reasoner） | `idealab-anthropic` | 异源：走 Claude 抓同族盲点 |
-| 其他模型 | 随意，哪个能用用哪个 | 链路都已验证可用 |
+| Claude（claude-opus / claude-sonnet / claude-haiku） | `idealab-anthropic` | `bailian` 或 `idealab-openai` 或 `deepseek` |
+| Qwen（qwen3.x / Qwen3.x-Max-DogFooding） | `idealab-anthropic` | `bailian` 或 `deepseek` |
+| DeepSeek（deepseek-chat / deepseek-reasoner） | `idealab-anthropic` | `bailian` 或 `idealab-openai` |
+| 其他模型 | `idealab-anthropic` | 随意，哪个能用用哪个 |
 
 判断方法：系统提示中形如 `model named claude-opus-4-6` 或 `model named Qwen3.7-Max-DogFooding`。取 model id 前缀匹配 `claude` / `qwen`（不区分大小写）。
 
