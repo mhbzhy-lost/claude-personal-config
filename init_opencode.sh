@@ -871,6 +871,25 @@ if existing_bm != desired_bm:
 else:
     print("[mcp] basic-memory 已是最新")
 
+# ── Exa ──
+# 官方 hosted remote MCP，提供 web_search_exa / web_fetch_exa 等搜索工具。
+# 不在仓库写入 API key；如需 key 或额外工具，优先在 Exa 侧授权或手动调整 URL。
+desired_exa = {
+    "type": "remote",
+    "url": "https://mcp.exa.ai/mcp",
+    "enabled": True,
+}
+existing_exa = mcp.get("exa")
+if existing_exa != desired_exa:
+    if existing_exa is not None:
+        print("[mcp] exa 已有配置，更新为最新")
+    else:
+        print("[mcp] exa 新增")
+    mcp["exa"] = desired_exa
+    changed = True
+else:
+    print("[mcp] exa 已是最新")
+
 # ── LSP ──
 # 内置 LSP 仅支持 boolean (true/false) 或 object (disable/custom)。
 # 空对象 {} 违反 schema 会导致 ConfigInvalidError，改用 lsp: true

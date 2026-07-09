@@ -298,6 +298,37 @@ describe("init_opencode agents sync", () => {
     }
   })
 
+  it("adds Exa remote MCP during opencode.json sync", () => {
+    const configDir = mkdtempSync(join(tmpdir(), "opencode-json-exa-"))
+
+    try {
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "declare -F sync_opencode_json >/dev/null",
+            "sync_opencode_json",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      const config = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"))
+
+      assert.deepEqual(config.mcp.exa, {
+        type: "remote",
+        url: "https://mcp.exa.ai/mcp",
+        enabled: true,
+      })
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
   it("repairs shared skill symlinks that still point to deprecated claude-skills", () => {
     const skillsDir = mkdtempSync(join(tmpdir(), "agents-skills-"))
 
