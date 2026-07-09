@@ -142,7 +142,7 @@ function planRunnerWorktreePath(originWorktree, taskID) {
 }
 
 async function ensurePlanRunnerWorktreeIgnored(originWorktree) {
-  const excludePath = await gitCommand(originWorktree, ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"])
+  const excludePath = (await gitCommand(originWorktree, ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"])).trim()
   const entry = ".plan-runner-worktrees/"
   let content = ""
   try {
@@ -150,7 +150,7 @@ async function ensurePlanRunnerWorktreeIgnored(originWorktree) {
   } catch (error) {
     if (error?.code !== "ENOENT") throw error
   }
-  if (content.split("\n").includes(entry)) return
+  if (content.split(/\r?\n/).includes(entry)) return
   await ensureDir(dirname(excludePath))
   await appendFile(excludePath, `${content && !content.endsWith("\n") ? "\n" : ""}${entry}\n`)
 }
@@ -271,7 +271,7 @@ async function startPlanRunnerTool(args, context, stateDir, { client, directory 
 
   const parentSessionID = context.sessionID
   const taskID = planRunnerToolTaskID(parentSessionID)
-  const originWorktree = directory || context.worktree || context.directory || process.cwd()
+  const originWorktree = resolve(directory || context.worktree || context.directory || process.cwd())
   const originGit = await inspectGitWorktree(originWorktree)
   const run = await createPlanRunnerWorktree(taskID, originWorktree, originGit)
   const state = createInitialState({
