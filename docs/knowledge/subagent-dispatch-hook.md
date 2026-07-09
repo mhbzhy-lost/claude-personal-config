@@ -13,7 +13,7 @@ applies_to:
   - userconf/agents/plan-runner.md
   - userconf/plugins/plan-runner-harness.js
   - scripts/opencode-subagent-event-probe.mjs
-last_verified: 2026-07-08
+last_verified: 2026-07-09
 source: opencode plan-runner agent
 ---
 
@@ -76,14 +76,22 @@ location。因此 harness 在 `tool.execute.before(task)` 中为 plan-runner chi
 worktree，改写 child prompt，记录 `{ session_id, worktree, branch, base_commit }`，并对 child
 session 的 bash / file 工具做路径门禁。
 
-`userconf/plugins/plan-runner-harness.js` 是 plan-runner 的 harness 入口。首个落地
+`start_plan_runner` 是 plan-runner root session 的唯一启动入口。它每次都创建新的
+harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-state 只作为历史诊断/
+审计材料。重新派发时不要传 `task_id` / `existing_worktree`，也不要改写旧 state；如果需要延续
+上下文，把旧 task id、旧 worktree、旧发现和用户决策写入新的 `prompt`。
+
+`userconf/plugins/plan-runner-harness.js` 是 plan-runner 的 harness 入口。当前落地
 切片包含：
-- `tool.execute.before(task)` 生成 `planrun-<parent>-<call>` task state，并注入
-  Harness Task ID marker。
-- `tool.execute.before(task)` 在 Git repo 中执行 dispatch preflight：禁止从
-  `git worktree add` 创建的 linked worktree 启动；禁止在 dirty 主工作区启动。
-  阻断时写 `status = blocked` 和 `dispatch_blocked` event，不创建 plan-runner child session。
-- `tool.execute.after(task)` 通过 `output.metadata.sessionId` 绑定 plan-runner child session。
+- 原生 `task` 派发 `subagent_type/agent = plan-runner` 会被拒绝，并提示改用
+  `start_plan_runner`；该路径不再创建 plan-runner task-state。
+- `start_plan_runner` 生成 `planrun-<parent>-start-<uuid>` task state，创建
+  `origin_worktree/.plan-runner-worktrees/<task_id>` run worktree，写入 dispatch brief，
+  记录 parent / plan-runner session index，并把 Harness Task ID、assigned worktree、branch、
+  base commit 注入 plan-runner prompt。
+- `tool.execute.before(task)` / `tool.execute.after(task)` 仍用于 plan-runner root session
+  派发普通 child subagent：harness 创建 child worktree、改写 prompt，并通过
+  `output.metadata.sessionId` 绑定 child session。
 - `write_plan` custom tool 的公开协议是 `tasks: Task[]`。它负责写 reviewer-facing execution
   brief、保存 sha、把 `state.tasks` 初始化为 `pending`，并推进到 `ready_to_execute`。
   `tasks` 是唯一机器执行契约；不再从 OpenCode `todowrite` 派生任务账本。
@@ -124,9 +132,34 @@ session 的 bash / file 工具做路径门禁。
   base..HEAD 有 diff，也检查所有 harness-managed child worktree 已合并并清理。root dirty、无
   commit range 或残留 child worktree 会返回 `preflight_blocked`，但不把 state 切到
   `repairing`，plan-runner 应在同一 session 用 git-only `bash` 修正后再次调用 `finish_plan`。
+- harness 不自动把 run worktree 合回 origin workspace，也不自动删除 run worktree。`finish_plan`
+  进入 `validated` 后，harness 会用 `client.session.promptAsync` 向 parent session 投递
+  merge-back 通知，包含 task id、origin worktree、run worktree、branch、base commit、head commit 和
+  `git merge --ff-only <branch>` / `git worktree remove <run_worktree>` 步骤；通知失败只记录
+  `parent_merge_back_notify_failed`，不回退 `validated`。主 agent 若要合回，必须先在 origin
+  workspace 检查 `git status --short`；clean 时再执行通知里的 fast-forward merge 和 cleanup。
+  dirty 时停止并询问用户。
+- 2026-07-09 真实两阶段 `opencode serve` smoke 验证：root plan-runner 可并发派发两个
+  executor child；harness 为两个 child 分别创建 worktree / branch；两个
+  `child_worktree_created` 都早于第一个 `child_session_completed`；root 合并 child 输出并清理
+  child worktree / branch；parent/main session 收到 merge-back 通知后能 fast-forward 合回
+  dedicated run worktree、删除 root run worktree，并保持 origin repo clean。smoke 判定读取
+  `gate_failures` 时必须把缺失字段视为空数组。
+- 2026-07-09 进一步用 `writing-plans` 产出的明确 DAG contract smoke 验证同一契约：
+  parent 调用 `start_plan_runner` 后 harness 绑定 dedicated run worktree；DAG 并发时两个
+  executor child 均有独立 worktree/session；child 提交 `test(smoke): 增加 alpha 文档` 与
+  `test(smoke): 增加 beta 文档` 后，root 将 child branch merge 回 run worktree 并删除 child
+  worktree；`validated` 后 parent 将 run branch 合回 main workspace、删除 run worktree 和
+  branch，origin `git status --short` 为空。证据目录：
+  `/var/folders/27/6bnn8n7d4px6s33fvdpns89c0000gn/T/opencode/plan-runner-dag-contract-smoke-K62R7J`。
 - `finish_plan` 首次完成尝试时由 harness 直接写 `self_check_completed`，随后做 deterministic check，不再回投 self-check prompt 给原 agent。
   deterministic check 通过后不能只停在 `audit_review`，必须由 harness 直接创建 audit
   child session，并用 `agent: plan-runner-audit` 后台投递 `audit_review_required` prompt。
+- 单测模拟 audit child 回流时，不能只等待 `state.status == "audit_review"` 就发送
+  `ses_audit` 事件。实现会先写 `audit_review` 状态，再创建 audit session/index 并写
+  `audit_review_dispatched` event；测试 helper 必须等到该 event 后再回灌
+  `message.updated` / `message.part.updated` / `session.idle`，否则事件会因 session index
+  尚未存在而被丢弃，`finish_plan` 会一直等到超时。
 - task/session state 写入使用 `.tmp.<pid>.<uuid>` 后 rename；读到损坏 JSON 时移到
   `task-state/corrupt/<state-kind>/`，并把该 state 当作 inactive fail-open。
 - harness runtime I/O 使用 `node:fs/promises`；OpenCode server hook 不应在高频
@@ -257,6 +290,10 @@ tool/event hook 行为。
   `finish_plan` 等待超时时只写 `interrupted`。再次调用 `finish_plan` 只能回放既有结果，
   不能把 gate 改回 running 或重跑 audit/external review；`repairing` 不是终态，仍允许再次调用
   `finish_plan` 复核。
+- `userconf/plugins/test/plan-runner-harness.test.mjs` 默认只保留快速核心覆盖。
+  audit/external review/fail-open/完整 terminal-gate 等待链属于慢集成路径，必须用
+  `slowIt` 归入 `OPENCODE_PLAN_RUNNER_SLOW_TESTS=1` opt-in 分组；新增类似用例时不要让默认
+  suite 串行等待 audit child、external reviewer command 或多轮 fail-open。
 - 损坏 task state JSON 的恢复路径由单测覆盖：`session.idle` 不抛异常，坏文件会进入
   `corrupt/tasks/<task_id>.json`。
 
@@ -332,5 +369,6 @@ python3 -m unittest \
 ```bash
 bash -n shared/hooks/subagent-dispatch-hint.sh init_claude.sh init_codex.sh init_qwen.sh init_opencode.sh
 node --test userconf/plugins/test/init-opencode-agents.test.mjs userconf/plugins/test/plan-runner-harness.test.mjs scripts/test/opencode-subagent-event-probe.test.mjs
+OPENCODE_PLAN_RUNNER_SLOW_TESTS=1 node --test userconf/plugins/test/plan-runner-harness.test.mjs
 git diff --check
 ```

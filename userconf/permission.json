@@ -2,7 +2,15 @@
   "description": "OpenCode YOLO permission policy with layered defenses. rm guard plugin + deny rule double-layered; bash restricted to explicit command whitelist; file tools scoped to workspace.",
   "notes": [
     "OpenCode permissions are glob/command gates, not a filesystem sandbox.",
-    "Full YOLO: no per-tool rules needed. Real safety from rm-guard plugin + git-commit-gate plugin + human review."
+    "Full YOLO for normal tools. Real safety from rm-guard plugin + git-commit-gate plugin + human review.",
+    "Plan-runner lifecycle tools are hidden globally and selectively re-enabled on the owning agents, because OpenCode filters model-visible tools through permission rules."
   ],
-  "template": "allow"
+  "template": {
+    "*": "allow",
+    "start_plan_runner": "deny",
+    "write_plan": "deny",
+    "start_task": "deny",
+    "complete_task": "deny",
+    "finish_plan": "deny"
+  }
 }

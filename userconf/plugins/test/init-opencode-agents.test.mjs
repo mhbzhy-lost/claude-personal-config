@@ -475,6 +475,26 @@ describe("init_opencode agents sync", () => {
     assert.match(skill, /harness-owned worktree/i)
   })
 
+  it("permission template exposes only the plan-runner entrypoint to primary agents", () => {
+    const agents = JSON.parse(readFileSync(join(repoRoot, "userconf", "agents.json"), "utf8"))
+    const permissionTemplate = JSON.parse(readFileSync(join(repoRoot, "userconf", "permission.json"), "utf8")).template
+    const lifecycleTools = ["write_plan", "start_task", "complete_task", "finish_plan"]
+
+    assert.equal(permissionTemplate["*"], "allow")
+    assert.equal(permissionTemplate.start_plan_runner, "deny")
+    for (const tool of lifecycleTools) {
+      assert.equal(permissionTemplate[tool], "deny", `${tool} should be globally hidden outside explicit agent overrides`)
+    }
+
+    for (const agentName of ["gpt", "qwen", "claude"]) {
+      assert.equal(agents[agentName]?.permission?.start_plan_runner, "allow")
+      for (const tool of lifecycleTools) assert.notEqual(agents[agentName]?.permission?.[tool], "allow")
+    }
+
+    assert.notEqual(agents.executor?.permission?.start_plan_runner, "allow")
+    for (const tool of lifecycleTools) assert.notEqual(agents.executor?.permission?.[tool], "allow")
+  })
+
   it("project plan-runner troubleshooting skill documents task-state diagnostics", () => {
     const skill = readFileSync(join(repoRoot, ".agents", "skills", "plan-runner-troubleshooting", "SKILL.md"), "utf8")
 

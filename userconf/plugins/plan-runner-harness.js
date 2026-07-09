@@ -84,6 +84,32 @@ function statePaths(stateDir, taskID) {
   }
 }
 
+function planRunnerWorktreeRoot(originWorktree) {
+  return join(originWorktree, ".plan-runner-worktrees")
+}
+
+function planRunnerWorktreePath(originWorktree, taskID) {
+  return join(planRunnerWorktreeRoot(originWorktree), `${taskID}`)
+}
+
+async function ensurePlanRunnerWorktreeIgnored(originWorktree) {
+  const excludePath = await gitCommand(originWorktree, ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"])
+  const entry = ".plan-runner-worktrees/"
+  let content = ""
+  try {
+    content = await readFile(excludePath, "utf8")
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error
+  }
+  if (content.split("\n").includes(entry)) return
+  await ensureDir(dirname(excludePath))
+  await appendFile(excludePath, `${content && !content.endsWith("\n") ? "\n" : ""}${entry}\n`)
+}
+
+function planRunnerToolTaskID(sessionID) {
+  return taskIdFrom(sessionID, `start-${randomUUID()}`)
+}
+
 function sessionPath(stateDir, sessionID) {
   return join(stateDir, "sessions", `${safeId(sessionID)}.json`)
 }
@@ -172,6 +198,53 @@ function ensureHarnessMarker(prompt, taskID) {
   return `${marker}\n\n${text}`.trim()
 }
 
+function ensurePlanRunnerStartPrompt(prompt, state) {
+  const dirty = state.origin_git?.status_porcelain
+    ? ["", "Origin workspace dirty changes were excluded from this run:", state.origin_git.status_porcelain].join("\n")
+    : ""
+  return [
+    ensureHarnessMarker(prompt, state.task_id),
+    "",
+    `Assigned plan-runner worktree: ${state.worktree}`,
+    `Plan-runner branch: ${state.branch}`,
+    `Plan-runner base commit: ${state.base_commit}`,
+    `Origin workspace: ${state.origin_worktree}`,
+    "Use the assigned plan-runner worktree for all file operations and bash workdir values.",
+    "Do not modify the origin workspace.",
+    dirty,
+  ].filter(Boolean).join("\n")
+}
+
+function mergeBackPromptText(state) {
+  return [
+    "Plan-runner validated. The harness did not merge the dedicated run worktree back into the origin workspace.",
+    "",
+    `Harness Task ID: ${state.task_id}`,
+    `Origin workspace: ${state.origin_worktree}`,
+    `Run worktree: ${state.worktree}`,
+    `Plan-runner branch: ${state.branch}`,
+    `Base commit: ${state.base_commit || state.git_base || "unknown"}`,
+    `Head commit: ${state.parent_notification?.head_commit || state.git?.head || "unknown"}`,
+    "",
+    "Merge back instructions for the parent/main agent:",
+    "- Inspect the origin workspace and confirm it is clean enough for merge-back.",
+    `- From the origin workspace, run: git merge --ff-only ${state.branch}`,
+    `- After a successful merge, run: git worktree remove "${state.worktree}"`,
+    "- Delete the plan-runner branch after cleanup if that matches the local git workflow.",
+    "",
+    "Do not ask the plan-runner to modify the origin workspace. The parent/main agent owns merge-back and cleanup.",
+  ].join("\n")
+}
+
+function shouldNotifyParentMergeBack(state) {
+  if (state?.status !== "validated") return false
+  if (!state.harness_owned_worktree) return false
+  if (!state.parent_session_id || !state.origin_worktree || !state.worktree || !state.branch) return false
+  if (state.origin_worktree === state.worktree) return false
+  const notification = state.parent_notification || {}
+  return !(notification.type === "merge_back" && (notification.status === "sent" || notification.status === "sending"))
+}
+
 function ensureChildWorktreePrompt(prompt, child) {
   const text = String(prompt || "")
   if (text.includes(`Assigned child worktree: ${child.worktree}`)) return text
@@ -188,7 +261,7 @@ function ensureChildWorktreePrompt(prompt, child) {
   ].join("\n").trim()
 }
 
-function createInitialState({ taskID, parentSessionID, dispatchCallID, worktree }) {
+function createInitialState({ taskID, parentSessionID, dispatchCallID, worktree, originWorktree = worktree }) {
   return {
     version: STATE_VERSION,
     task_id: taskID,
@@ -196,7 +269,11 @@ function createInitialState({ taskID, parentSessionID, dispatchCallID, worktree 
     parent_session_id: parentSessionID,
     dispatch_call_id: dispatchCallID,
     plan_runner_session_id: null,
+    origin_worktree: originWorktree,
     worktree,
+    branch: null,
+    harness_owned_worktree: false,
+    base_commit: null,
     git_base: null,
     updated_at: Date.now(),
     lease_expires_at: Date.now() + 10 * 60 * 1000,
@@ -309,12 +386,33 @@ async function childWorktreeCleanupFailures(state) {
   return reasons
 }
 
+async function createPlanRunnerWorktree(taskID, originWorktree, originGitInfo) {
+  if (!originGitInfo?.is_git_repo) throw new Error("start_plan_runner requires a git repository")
+  const baseCommit = originGitInfo.head || await currentGitHead(originWorktree)
+  if (!baseCommit) throw new Error("start_plan_runner requires a readable git HEAD")
+
+  await ensurePlanRunnerWorktreeIgnored(originWorktree)
+  const runWorktree = planRunnerWorktreePath(originWorktree, taskID)
+  const branch = `planrunner/${safeId(taskID)}`
+  await ensureDir(dirname(runWorktree))
+  if (!(await pathExists(runWorktree))) {
+    await execFileAsync("git", ["-C", originWorktree, "worktree", "add", "-b", branch, runWorktree, baseCommit], { timeout: 30000 })
+  }
+
+  const runGitInfo = await inspectGitWorktree(runWorktree)
+  if (!runGitInfo.is_git_repo) throw new Error("start_plan_runner failed to create a git worktree")
+  if (runGitInfo.status_porcelain) throw new Error(`start_plan_runner created dirty worktree: ${runGitInfo.status_porcelain}`)
+  const originStatus = await gitCommand(originWorktree, ["status", "--porcelain=v1"])
+  if (originStatus.includes(".plan-runner-worktrees/")) throw new Error("start_plan_runner worktree path is not ignored by origin workspace")
+  return { worktree: runWorktree, branch, base_commit: baseCommit, git: runGitInfo }
+}
+
 async function createChildWorktree(stateDir, state, callID) {
   if (!state.git?.is_git_repo) throw new Error("plan-runner child worktree requires a git repository")
   const baseCommit = state.base_commit || state.git_base || state.git?.head || "HEAD"
   const childRoot = join(stateDir, "child-worktrees", state.task_id)
   const worktree = join(childRoot, safeId(callID))
-  const branch = `planrunner/${safeId(state.task_id)}/${safeId(callID)}`
+  const branch = `planrunner-child/${safeId(state.task_id)}/${safeId(callID)}`
   await ensureDir(childRoot)
   if (!(await pathExists(worktree))) {
     await execFileAsync("git", ["-C", state.worktree, "worktree", "add", "-b", branch, worktree, baseCommit], { timeout: 30000 })
@@ -601,7 +699,6 @@ async function gitCommitBoundaryFailures(state) {
 
   const reasons = []
   reasons.push(...await childWorktreeCleanupFailures(state))
-  if (gitInfo.is_linked_worktree) reasons.push("plan_runner_disallowed_linked_worktree: plan-runner cannot finish from a linked git worktree")
   if (gitInfo.status_porcelain) reasons.push(`plan_runner_requires_clean_repo_before_review: ${gitInfo.status_porcelain}`)
   if (gitInfo.head === baseCommit) reasons.push(`plan_runner_requires_commit_range: HEAD equals base commit ${baseCommit}`)
   if (gitInfo.head !== baseCommit) {
@@ -1089,6 +1186,92 @@ function preflightBlockResultText(state, reasons) {
   ].join("\n")
 }
 
+async function notifyParentMergeBack({ stateDir, client, directory, state }) {
+  const currentState = await readTaskState(stateDir, state.task_id) || state
+  if (!shouldNotifyParentMergeBack(currentState)) return currentState
+
+  const sendingState = cloneState(currentState)
+  const headCommit = await currentGitHead(sendingState.worktree)
+  sendingState.parent_notification = {
+    type: "merge_back",
+    status: "sending",
+    session_id: sendingState.parent_session_id,
+    origin_worktree: sendingState.origin_worktree,
+    worktree: sendingState.worktree,
+    branch: sendingState.branch,
+    base_commit: sendingState.base_commit || sendingState.git_base || null,
+    head_commit: headCommit,
+    started_at: Date.now(),
+  }
+  sendingState.updated_at = Date.now()
+  await writeTaskState(stateDir, sendingState)
+
+  try {
+    const promptParent = client?.session?.promptAsync
+      ? (payload) => client.session.promptAsync(payload)
+      : client?.session?.prompt
+        ? (payload) => client.session.prompt(payload)
+        : null
+    if (!promptParent) throw new Error("client.session.promptAsync/client.session.prompt is unavailable")
+    const query = { directory: sendingState.origin_worktree || directory || sendingState.worktree }
+    const prompted = await promptParent({
+      path: { id: sendingState.parent_session_id },
+      query,
+      body: {
+        parts: [{ type: "text", text: mergeBackPromptText(sendingState) }],
+      },
+    })
+    throwIfSdkError(prompted, "parent merge-back prompt failed")
+
+    const notifiedState = cloneState(await readTaskState(stateDir, state.task_id) || sendingState)
+    notifiedState.parent_notification = {
+      type: "merge_back",
+      status: "sent",
+      session_id: sendingState.parent_session_id,
+      origin_worktree: sendingState.origin_worktree,
+      worktree: sendingState.worktree,
+      branch: sendingState.branch,
+      base_commit: sendingState.base_commit || sendingState.git_base || null,
+      head_commit: headCommit,
+      sent_at: Date.now(),
+    }
+    notifiedState.updated_at = Date.now()
+    await writeTaskState(stateDir, notifiedState)
+    await appendEvent(stateDir, state.task_id, {
+      type: "parent_merge_back_notified",
+      session_id: sendingState.parent_session_id,
+      origin_worktree: sendingState.origin_worktree,
+      worktree: sendingState.worktree,
+      branch: sendingState.branch,
+      base_commit: sendingState.base_commit || sendingState.git_base || null,
+      head_commit: headCommit,
+    })
+    return notifiedState
+  } catch (error) {
+    const failedState = cloneState(await readTaskState(stateDir, state.task_id) || sendingState)
+    failedState.parent_notification = {
+      type: "merge_back",
+      status: "failed",
+      session_id: sendingState.parent_session_id,
+      origin_worktree: sendingState.origin_worktree,
+      worktree: sendingState.worktree,
+      branch: sendingState.branch,
+      base_commit: sendingState.base_commit || sendingState.git_base || null,
+      head_commit: headCommit,
+      error: formatDiagnosticError(error),
+      failed_at: Date.now(),
+    }
+    failedState.updated_at = Date.now()
+    await writeTaskState(stateDir, failedState)
+    await appendEvent(stateDir, state.task_id, {
+      type: "parent_merge_back_notify_failed",
+      session_id: sendingState.parent_session_id,
+      error: formatDiagnosticError(error),
+    })
+    return failedState
+  }
+}
+
 async function finishPlanTool(args, context, stateDir, { client, directory, externalReview, pollMs, timeoutMs }) {
   if (context.agent !== "plan-runner") throw new Error("finish_plan is only available to the plan-runner agent")
   const sessionID = context.sessionID
@@ -1096,12 +1279,13 @@ async function finishPlanTool(args, context, stateDir, { client, directory, exte
   if (!state) throw new Error("finish_plan task state is not readable")
   if (state.plan_runner_session_id !== sessionID) throw new Error("finish_plan must run in the bound plan-runner session")
   if (completionGateActive(state) && TERMINAL_COMPLETION_GATE_STATUSES.has(state.status)) {
+    const notifiedState = await notifyParentMergeBack({ stateDir, client, directory, state })
     return {
-      output: completionGateResultText(state),
+      output: completionGateResultText(notifiedState),
       metadata: {
-        task_id: state.task_id,
-        status: state.status,
-        completion_gate: state.completion_gate || null,
+        task_id: notifiedState.task_id,
+        status: notifiedState.status,
+        completion_gate: notifiedState.completion_gate || null,
       },
     }
   }
@@ -1141,13 +1325,14 @@ async function finishPlanTool(args, context, stateDir, { client, directory, exte
   await continuePlanRunnerReview({ stateDir, client, directory, sessionID, state: nextState, externalReview })
   const finishedState = await waitForCompletionGateState(stateDir, nextState.task_id, { pollMs, timeoutMs })
   if (!finishedState) throw new Error("finish_plan task state disappeared while waiting for completion gate")
+  const notifiedState = await notifyParentMergeBack({ stateDir, client, directory, state: finishedState })
 
   return {
-    output: completionGateResultText(finishedState),
+    output: completionGateResultText(notifiedState),
     metadata: {
-      task_id: finishedState.task_id,
-      status: finishedState.status,
-      completion_gate: finishedState.completion_gate || null,
+      task_id: notifiedState.task_id,
+      status: notifiedState.status,
+      completion_gate: notifiedState.completion_gate || null,
     },
   }
 }
@@ -1191,6 +1376,7 @@ async function finalizeIfComplete({ stateDir, client, directory, state }) {
       nextState.updated_at = Date.now()
       await writeTaskState(stateDir, nextState)
       await appendEvent(stateDir, state.task_id, { type: "task_validated", fail_open: true })
+      await notifyParentMergeBack({ stateDir, client, directory, state: nextState })
       return
     }
     await promptRepair({ stateDir, state, source: "completeness_check", reasons })
@@ -1203,6 +1389,7 @@ async function finalizeIfComplete({ stateDir, client, directory, state }) {
   nextState.updated_at = Date.now()
   await writeTaskState(stateDir, nextState)
   await appendEvent(stateDir, state.task_id, { type: "task_validated" })
+  await notifyParentMergeBack({ stateDir, client, directory, state: nextState })
 }
 
 async function runExternalReview({ stateDir, client, directory, state, externalReview }) {
@@ -1668,6 +1855,92 @@ async function completeTaskTool(args, context, stateDir) {
   return { output: `task completed: ${args.id}`, metadata: { task_id: state.task_id, completed_task: args.id } }
 }
 
+async function startPlanRunnerTool(args, context, stateDir, { client, directory }) {
+  if (!client?.session?.create || !client?.session?.prompt) {
+    throw new Error("start_plan_runner requires client.session.create and client.session.prompt")
+  }
+  const prompt = String(args?.prompt || "").trim()
+  if (!prompt) throw new Error("start_plan_runner requires prompt")
+
+  const parentSessionID = context.sessionID
+  const taskID = planRunnerToolTaskID(parentSessionID)
+  const originWorktree = directory || context.worktree || context.directory || process.cwd()
+  const originGit = await inspectGitWorktree(originWorktree)
+  const run = await createPlanRunnerWorktree(taskID, originWorktree, originGit)
+  const state = createInitialState({
+    taskID,
+    parentSessionID,
+    dispatchCallID: "start_plan_runner",
+    originWorktree,
+    worktree: run.worktree,
+  })
+  state.origin_git = originGit
+  state.git = run.git
+  state.base_commit = run.base_commit
+  state.git_base = run.base_commit
+  state.branch = run.branch
+  state.harness_owned_worktree = true
+
+  const briefContent = prompt
+  const paths = statePaths(stateDir, taskID)
+  await ensureDir(dirname(paths.brief))
+  await writeFile(paths.brief, briefContent)
+  state.brief_path = paths.brief
+  state.brief_sha256 = sha256(briefContent)
+  await writeTaskState(stateDir, state)
+  await writeSessionIndex(stateDir, parentSessionID, taskID, "parent")
+  await appendEvent(stateDir, taskID, {
+    type: "dispatch_started",
+    session_id: parentSessionID,
+    tool: "start_plan_runner",
+    worktree: run.worktree,
+    branch: run.branch,
+    base_commit: run.base_commit,
+  })
+
+  const query = { directory: run.worktree }
+  const created = await client.session.create({
+    query,
+    body: {
+      parentID: parentSessionID,
+      title: `plan-runner: ${taskID}`,
+    },
+  })
+  throwIfSdkError(created, "plan-runner session create failed")
+  const planRunnerSessionID = sessionIDFromCreateResult(created)
+  if (!planRunnerSessionID) throw new Error("plan-runner session id missing")
+
+  const nextState = await readTaskState(stateDir, taskID)
+  nextState.plan_runner_session_id = planRunnerSessionID
+  nextState.status = "planning_required"
+  nextState.updated_at = Date.now()
+  nextState.lease_expires_at = Date.now() + 10 * 60 * 1000
+  await writeTaskState(stateDir, nextState)
+  await writeSessionIndex(stateDir, planRunnerSessionID, taskID, "plan-runner")
+
+  const prompted = await client.session.prompt({
+    path: { id: planRunnerSessionID },
+    query,
+    body: {
+      agent: "plan-runner",
+      parts: [{ type: "text", text: ensurePlanRunnerStartPrompt(prompt, nextState) }],
+    },
+  })
+  throwIfSdkError(prompted, "plan-runner prompt dispatch failed")
+  await appendEvent(stateDir, taskID, { type: "plan_runner_bound", session_id: planRunnerSessionID, tool: "start_plan_runner" })
+
+  return {
+    output: `plan-runner started: ${taskID}`,
+    metadata: {
+      task_id: taskID,
+      session_id: planRunnerSessionID,
+      worktree: run.worktree,
+      branch: run.branch,
+      base_commit: run.base_commit,
+    },
+  }
+}
+
 async function writePlanTool(args, context, stateDir) {
   if (context.agent !== "plan-runner") throw new Error("write_plan is only available to the plan-runner agent")
 
@@ -1717,16 +1990,23 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
   const externalReview = options.externalReview || ((state) => runExternalReviewCommand(state, options))
   const completionGatePollMs = Number(options.completionGatePollMs || process.env.OPENCODE_PLAN_RUNNER_COMPLETION_GATE_POLL_MS || 1000)
   const completionGateTimeoutMs = Number(options.completionGateTimeoutMs || process.env.OPENCODE_PLAN_RUNNER_COMPLETION_GATE_TIMEOUT_MS || 1800000)
-  let eventQueue = Promise.resolve()
+  let stateQueue = Promise.resolve()
 
-  function enqueueEvent(handler) {
-    const run = eventQueue.then(handler)
-    eventQueue = run.catch(() => {})
+  function enqueueState(handler) {
+    const run = stateQueue.then(handler)
+    stateQueue = run.catch(() => {})
     return run
   }
 
   return {
     tool: {
+      start_plan_runner: tool({
+        description: "Start a plan-runner session in a dedicated harness-owned git worktree.",
+        args: {
+          prompt: tool.schema.string().min(1),
+        },
+        execute: (args, context) => startPlanRunnerTool(args, context, stateDir, { client, directory: worktree }),
+      }),
       write_plan: tool({
         description: "Write the structured plan-runner task contract and advance harness state.",
         args: {
@@ -1766,8 +2046,12 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       ensureChildWorktreeTaskToolDescription(input, output)
     },
 
-    "tool.execute.before": async (input, output) => {
+    "tool.execute.before": async (input, output) => enqueueState(async () => {
       const sessionIndex = await readSessionIndex(stateDir, input.sessionID)
+      if (input.tool === "task" && isPlanRunnerDispatch(output?.args)) {
+        if (sessionIndex?.role === "plan-runner") throw new Error("plan-runner cannot dispatch another plan-runner with native task")
+        throw new Error("Use start_plan_runner instead of native task for plan-runner dispatch")
+      }
       if (sessionIndex?.role === "child") {
         await enforceChildSessionGate(stateDir, input, output, sessionIndex)
         return
@@ -1807,9 +2091,9 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       await writeSessionIndex(stateDir, input.sessionID, taskID, "parent")
       await appendEvent(stateDir, taskID, { type: "dispatch_started", session_id: input.sessionID, call_id: input.callID })
       output.args.prompt = ensureHarnessMarker(output.args.prompt, taskID)
-    },
+    }),
 
-    "tool.execute.after": async (input, output) => {
+    "tool.execute.after": async (input, output) => enqueueState(async () => {
       const sessionIndex = await readSessionIndex(stateDir, input.sessionID)
       if (input.tool === "task" && sessionIndex?.role === "plan-runner") {
         await bindChildDispatch(stateDir, input, output, sessionIndex)
@@ -1836,9 +2120,9 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       await writeTaskState(stateDir, state)
       await writeSessionIndex(stateDir, childSessionID, taskID, "plan-runner")
       await appendEvent(stateDir, taskID, { type: "plan_runner_bound", session_id: childSessionID, call_id: input.callID })
-    },
+    }),
 
-    event: async ({ event }) => enqueueEvent(async () => {
+    event: async ({ event }) => enqueueState(async () => {
       await handleSessionDiff(stateDir, event)
       await handleMessageDiff(stateDir, event)
       await handleAuditReviewMessage(stateDir, event)
