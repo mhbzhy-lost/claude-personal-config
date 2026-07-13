@@ -38,9 +38,11 @@ schema 没有 `agents.paths` 配置，不能在 `opencode.json` 中增加自定�
 目录字段。
 
 `userconf/agents.json` 是全局 inline agent 配置来源，由 `init_opencode.sh` 合并到
-`opencode.json.agent`。`executor` agent 定位为确定性执行器：`temperature = 0` 控制低随机性，
-`effort/reasoningEffort = low` 避免执行器过度推理；需要深度方案推理时应交给主 agent 或
-plan-runner，而不是提高 executor 的 thinking budget。
+`opencode.json.agent`。默认 `gpt` 使用 GPT 5.6 Sol 的标准模式与服务端默认 effort；
+`gpt-pro` 使用 GPT 5.6 Pro 和 `xhigh` effort，承担质量优先的复杂任务。`executor` agent
+使用 GPT 5.6 Terra，定位为确定性执行器：`temperature = 0` 控制低随机性，
+`effort/reasoningEffort = none` 避免执行器过度推理；需要深度方案推理时应交给主 agent、
+`gpt-pro` 或 plan-runner，而不是提高 executor 的 thinking budget。
 
 **Claude/Qwen/Codex 端**：`shared/hooks/subagent-dispatch-hint.sh` 把 policy
 正文包装成 `hookSpecificOutput.additionalContext`，供 SubagentStart hook 使用。
