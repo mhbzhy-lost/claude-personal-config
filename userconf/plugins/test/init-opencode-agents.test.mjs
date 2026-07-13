@@ -343,6 +343,92 @@ describe("init_opencode agents sync", () => {
     }
   })
 
+  it("migrates legacy lowercase GPT agents while preserving local model settings", () => {
+    const configDir = mkdtempSync(join(tmpdir(), "opencode-json-agent-case-rename-"))
+
+    try {
+      writeFileSync(
+        join(configDir, "opencode.json"),
+        JSON.stringify({
+          agent: {
+            gpt: { model: "openai/local-gpt", mode: "primary", local: true },
+            "gpt-pro": { model: "openai/local-gpt-pro", mode: "primary" },
+          },
+        }),
+      )
+
+      const output = execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "sync_opencode_json",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      const desiredAgents = JSON.parse(readFileSync(join(repoRoot, "userconf", "agents.json"), "utf8"))
+      const config = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"))
+      assert.equal(config.agent.gpt, undefined)
+      assert.equal(config.agent["gpt-pro"], undefined)
+      assert.equal(config.agent.GPT.model, "openai/local-gpt")
+      assert.equal(config.agent.GPT.local, true)
+      assert.deepEqual(config.agent.GPT.permission, desiredAgents.GPT.permission)
+      assert.equal(config.agent["GPT-Pro"].model, "openai/local-gpt-pro")
+      assert.equal(config.agent["GPT-Pro"].variant, "xhigh")
+      assert.match(output, /\[agent\] gpt -> GPT 已迁移/)
+      assert.match(output, /\[agent\] gpt-pro -> GPT-Pro 已迁移/)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it("removes legacy lowercase GPT agents without overwriting current-name local models", () => {
+    const configDir = mkdtempSync(join(tmpdir(), "opencode-json-agent-case-conflict-"))
+
+    try {
+      writeFileSync(
+        join(configDir, "opencode.json"),
+        JSON.stringify({
+          agent: {
+            gpt: { model: "openai/legacy-gpt", mode: "primary" },
+            GPT: { model: "openai/current-gpt", mode: "primary" },
+            "gpt-pro": { model: "openai/legacy-gpt-pro", mode: "primary" },
+            "GPT-Pro": { model: "openai/current-gpt-pro", mode: "primary" },
+          },
+        }),
+      )
+
+      const output = execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "sync_opencode_json",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      const config = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"))
+      assert.equal(config.agent.gpt, undefined)
+      assert.equal(config.agent["gpt-pro"], undefined)
+      assert.equal(config.agent.GPT.model, "openai/current-gpt")
+      assert.equal(config.agent["GPT-Pro"].model, "openai/current-gpt-pro")
+      assert.match(output, /\[agent\] gpt -> GPT 已移除旧配置，新名称配置保留/)
+      assert.match(output, /\[agent\] gpt-pro -> GPT-Pro 已移除旧配置，新名称配置保留/)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
   it("adds Exa remote MCP during opencode.json sync", () => {
     const configDir = mkdtempSync(join(tmpdir(), "opencode-json-exa-"))
 

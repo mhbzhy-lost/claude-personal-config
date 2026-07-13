@@ -952,6 +952,20 @@ if os.path.exists(agents_json_path):
         desired_agents = {}
 
     agents = config.setdefault("agent", {})
+    # SSOT 曾将两个 primary agent 改为大小写名称；迁移旧安装遗留配置，
+    # 同时保留新名称已有的本地 model 等非托管字段。
+    for legacy_name, agent_name in {"gpt": "GPT", "gpt-pro": "GPT-Pro"}.items():
+        legacy = agents.get(legacy_name)
+        if legacy is None:
+            continue
+        if agent_name in agents:
+            del agents[legacy_name]
+            print(f"[agent] {legacy_name} -> {agent_name} 已移除旧配置，新名称配置保留")
+        else:
+            agents[agent_name] = legacy
+            del agents[legacy_name]
+            print(f"[agent] {legacy_name} -> {agent_name} 已迁移")
+        changed = True
     for agent_name, agent_config in desired_agents.items():
         existing = agents.get(agent_name)
         is_disable = agent_config.get("disable") is True
