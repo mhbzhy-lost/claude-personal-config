@@ -876,7 +876,8 @@ function extractTextFromMessageInfo(info = {}) {
 
 function promptResultHasSdkResponseShape(result = {}) {
   return Boolean(result?.data && typeof result.data === "object" && (
-    Object.hasOwn(result.data, "info") || Object.hasOwn(result.data, "parts")
+    Object.prototype.hasOwnProperty.call(result.data, "info")
+      || Object.prototype.hasOwnProperty.call(result.data, "parts")
   ))
 }
 
@@ -1297,7 +1298,9 @@ async function finishPlanTool(args, context, stateDir, { client, directory, exte
   if (!state) throw new Error("finish_plan task state is not readable")
   if (state.plan_runner_session_id !== sessionID) throw new Error("finish_plan must run in the bound plan-runner session")
   if (TERMINAL_COMPLETION_GATE_STATUSES.has(state.status)) {
-    const notifiedState = await notifyParentMergeBack({ stateDir, client, directory, state })
+    const notifiedState = state.status === "validated"
+      ? await notifyParentMergeBack({ stateDir, client, directory, state })
+      : state
     return {
       output: completionGateResultText(notifiedState),
       metadata: {
