@@ -39,7 +39,9 @@ schema 没有 `agents.paths` 配置，不能在 `opencode.json` 中增加自定�
 
 `userconf/agents.json` 是全局 inline agent 配置来源，由 `init_opencode.sh` 合并到
 `opencode.json.agent`。同步器保留 primary agent 的 live model 选择，但会刷新 SSOT 显式声明的
-`prompt`、`permission` 和 `variant`，避免工具权限或推理档位漂移。默认 `GPT` 使用 GPT 5.6
+`prompt`、`permission` 和 `variant`，避免工具权限或推理档位漂移。旧安装中的
+`gpt` / `gpt-pro` 会显式迁移为 `GPT` / `GPT-Pro`：只有旧键时保留其
+本地字段后迁移，新旧键并存时保留新键并删除旧键，且不影响其他自定义 agent。默认 `GPT` 使用 GPT 5.6
 Sol 的标准模式与服务端默认 effort；`GPT-Pro` 使用 GPT 5.6 Sol Pro，并通过顶层
 `variant: xhigh` 选择 OpenCode 模型档位，承担质量优先的复杂任务；显式选择
 `gpt-5.6-sol-pro`，避免无后缀 `gpt-5.6-pro` 在 ChatGPT Codex 账户下映射到不受支持的
