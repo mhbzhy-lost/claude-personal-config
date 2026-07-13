@@ -38,11 +38,15 @@ schema 没有 `agents.paths` 配置，不能在 `opencode.json` 中增加自定�
 目录字段。
 
 `userconf/agents.json` 是全局 inline agent 配置来源，由 `init_opencode.sh` 合并到
-`opencode.json.agent`。默认 `gpt` 使用 GPT 5.6 Sol 的标准模式与服务端默认 effort；
-`gpt-pro` 使用 GPT 5.6 Pro 和 `xhigh` effort，承担质量优先的复杂任务。`executor` agent
+`opencode.json.agent`。同步器保留 primary agent 的 live model 选择，但会刷新 SSOT 显式声明的
+`prompt`、`permission` 和 `variant`，避免工具权限或推理档位漂移。默认 `GPT` 使用 GPT 5.6
+Sol 的标准模式与服务端默认 effort；`GPT-Pro` 使用 GPT 5.6 Sol Pro，并通过顶层
+`variant: xhigh` 选择 OpenCode 模型档位，承担质量优先的复杂任务；显式选择
+`gpt-5.6-sol-pro`，避免无后缀 `gpt-5.6-pro` 在 ChatGPT Codex 账户下映射到不受支持的
+`gpt-5.6`。`executor` agent
 使用 GPT 5.6 Terra，定位为确定性执行器：`temperature = 0` 控制低随机性，
 `effort/reasoningEffort = none` 避免执行器过度推理；需要深度方案推理时应交给主 agent、
-`gpt-pro` 或 plan-runner，而不是提高 executor 的 thinking budget。
+`GPT-Pro` 或 plan-runner，而不是提高 executor 的 thinking budget。
 
 **Claude/Qwen/Codex 端**：`shared/hooks/subagent-dispatch-hint.sh` 把 policy
 正文包装成 `hookSpecificOutput.additionalContext`，供 SubagentStart hook 使用。
@@ -83,6 +87,10 @@ harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-st
 审计材料。重新派发时不要传 `task_id` / `existing_worktree`，也不要改写旧 state；如果需要延续
 上下文，把旧 task id、旧 worktree、旧发现和用户决策写入新的 `prompt`。
 
+主 agent 调用该入口前必须通过 `plan-runner-dispatch` 自检：当前执行请求已有
+`writing-plans` 生成的完整计划文档，并且用户已选择 Plan-Runner 执行方式。零散讨论或
+已达成方向不满足该门禁；缺少计划时不得调用 `start_plan_runner`。
+
 `userconf/plugins/plan-runner-harness.js` 是 plan-runner 的 harness 入口。当前落地
 切片包含：
 - 原生 `task` 派发 `subagent_type/agent = plan-runner` 会被拒绝，并提示改用
@@ -91,6 +99,12 @@ harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-st
   `origin_worktree/.plan-runner-worktrees/<task_id>` run worktree，写入 dispatch brief，
   记录 parent / plan-runner session index，并把 Harness Task ID、assigned worktree、branch、
   base commit 注入 plan-runner prompt。
+- `start_plan_runner` 同步等待 plan-runner 的 `session.prompt()` 完成，并将 assistant final text 直接作为
+  tool output 返回父 agent。若 final text 返回时 run 尚未进入 `validated` / `blocked` / `interrupted`，
+  harness 将该 run 标记为现有 `blocked` 终态，保留 task/worktree/evidence，并记录
+  `plan_runner_stopped_before_finish_plan` blocker/event；该路径不启动 completion gate 或任何 review，
+  也不向 parent 额外 `promptAsync` 通知。phase gate 拒绝 `blocked` 等终态的后续工具调用；继续执行必须
+  新建 run，而非恢复或改写旧 state。
 - `tool.execute.before(task)` / `tool.execute.after(task)` 仍用于 plan-runner root session
   派发普通 child subagent：harness 创建 child worktree、改写 prompt，并通过
   `output.metadata.sessionId` 绑定 child session。
@@ -290,7 +304,9 @@ tool/event hook 行为。
 - `validated` / `blocked` / `interrupted` 是 `finish_plan` terminal gate 的缓存终态。
   `stale` 不再是 completion gate result，也不再是 `finish_plan` terminal status；
   `finish_plan` 等待超时时只写 `interrupted`。再次调用 `finish_plan` 只能回放既有结果，
-  不能把 gate 改回 running 或重跑 audit/external review；`repairing` 不是终态，仍允许再次调用
+  不能把 gate 改回 running 或重跑 audit/external review；terminal phase 下只有 `finish_plan`
+  可用于此幂等读取，其他工具仍拒绝。该读取不恢复、续跑或改写旧 run；`blocked` /
+  `interrupted` 且没有 completion gate 时也不得启动 gate 或 review。`repairing` 不是终态，仍允许再次调用
   `finish_plan` 复核。
 - `userconf/plugins/test/plan-runner-harness.test.mjs` 默认只保留快速核心覆盖。
   audit/external review/fail-open/完整 terminal-gate 等待链属于慢集成路径，必须用

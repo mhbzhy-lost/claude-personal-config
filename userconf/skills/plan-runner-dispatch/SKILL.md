@@ -11,10 +11,25 @@ implementation after this skill is loaded.
 The harness owns plan-runner isolation. It must create and bind a dedicated
 harness-owned worktree for the run.
 
+## Preflight Self-Check
+
+This preflight takes priority over the later Required Action and context rules.
+An agreed approach, conversation notes, or user urgency must not substitute for
+a complete plan document produced with `writing-plans`.
+
+Before calling `start_plan_runner`, verify that `writing-plans` has been used to
+produce a complete plan document for the current execution request. Conversation
+notes, an agreed direction, or a partial checklist are not a complete plan
+document.
+
+If no complete plan document exists, do not call `start_plan_runner`.
+Load `writing-plans`, create the plan document, and complete its execution-mode
+handoff first. Continue with this skill only after the user selects Plan-Runner.
+
 ## Required Action
 
-Do not implement the request in the primary agent. Immediately call the
-dedicated `start_plan_runner` tool:
+After the preflight passes, do not implement the request in the primary agent.
+Immediately call the dedicated `start_plan_runner` tool:
 
 ```json
 {
@@ -37,12 +52,13 @@ mismatch. Do not fall back to the native `task` tool.
 ## If Context Is Missing
 
 Ask one concise clarification only when the execution goal or agreed approach is
-missing. Otherwise call `start_plan_runner` without re-planning in the primary
-agent.
+missing after the preflight passes. Otherwise call `start_plan_runner` without
+re-planning in the primary agent.
 
 ## Do Not
 
-- Do not draft the execution plan yourself.
+- Do not improvise an execution plan inside this routing shim; use
+  `writing-plans` when the preflight fails.
 - Do not call `write_plan` from the primary agent.
 - Do not use the native `task` tool for plan-runner dispatch.
 - Do not replace `plan-runner` with `general`, `explore`, or another custom

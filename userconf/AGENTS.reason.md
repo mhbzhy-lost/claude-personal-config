@@ -82,6 +82,9 @@ skill 本身不可修改，原 reason 保留在下方备查：
 > 文件内容都会累积进 context window，串行长任务的中间产物会把主对话挤到
 > compaction，丢失用户意图和方案讨论。subagent 是上下文隔离的边界。
 >
+> 编码任务推荐使用 `executor`，因为它是确定性的代码执行代理；这只是默认倾向，
+> 不替代任务自身的代理选择，也不构成派发门禁。
+>
 > Worktree 隔离对 coding 类 Dynamic Workflow 是强制的。脚本在启动 opencode server
 > 前自动 `git worktree add` 到独立目录并 `process.chdir` 过去，保证多个 coding agent
 > 不会互相覆盖。脚本不自动合并/删除 worktree（冲突需要 LLM 判断），而是在报告里
@@ -113,8 +116,9 @@ skill 本身不可修改，原 reason 保留在下方备查：
 > `executing-plans` → `finishing-a-development-branch` + `using-git-worktrees`），
 > 且不提供 harness 门禁。覆盖为 Plan-Runner / Subagent-Driven / Inline 三种：
 > Plan-Runner 作为推荐项提供完整的质量门禁（deterministic check、audit review、
-> external review、terminal gate）；Subagent-Driven 保留主 agent 对任务间审查的控制；
-> Inline 不引入额外 skill，适合简单计划或无需门禁的场景。
+> external review、terminal gate）；Subagent-Driven 不依赖 `subagent-driven-development`，
+> 由主 agent 直接派发后台 subagent，保留对任务间审查的控制；Inline 不引入额外
+> skill，适合简单计划或无需门禁的场景。
 
 ---
 

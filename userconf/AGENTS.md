@@ -66,6 +66,7 @@ Ref: #2847
 - 并发 < 5 → 用 subagent
 - 并发 ≥ 5 → 用 Dynamic Workflow
 - 串行多步操作也用 subagent，节省主对话上下文，避免 tool call 堆积
+- 编码任务推荐使用 `executor`，但不作为派发门禁
 
 派发规则：
 - 任何 subagent 必须后台模式（background: true）
@@ -105,8 +106,9 @@ Ref: #2847
 
 1. **Plan-Runner（推荐）** — 加载 `plan-runner-dispatch` skill，由 plan-runner
    subagent 接管执行，自带 harness 门禁、audit review 和 terminal gate
-2. **Subagent-Driven** — 主 agent 按计划逐任务派发 subagent 执行，任务间可审查，
-   适合 plan-runner 不稳定或需要主 agent 保持控制的场景
+2. **Subagent-Driven** — 主 agent 自行编排计划执行，任务间可审查，适合
+   plan-runner 不稳定或需要主 agent 保持控制的场景。此模式
+   不加载、也不依赖 `subagent-driven-development`；主 agent 使用 task 工具以后台模式逐任务派发 subagent
 3. **Inline Execution** — 按 skill 原始流程在当前会话逐任务执行，适合简单计划
    或无需门禁的场景；忽略其引用的未纳入白名单的 sub-skill
 

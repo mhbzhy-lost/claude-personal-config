@@ -967,10 +967,25 @@ if os.path.exists(agents_json_path):
             agents[agent_name] = agent_config
             changed = True
             print("[agent] executor 配置已更新")
-        elif not is_disable and existing.get("prompt") != agent_config.get("prompt"):
-            agents[agent_name]["prompt"] = agent_config.get("prompt")
-            changed = True
-            print(f"[agent] {agent_name} prompt 路径已更新")
+        elif not is_disable:
+            updated_fields = []
+            for field in ("prompt", "permission", "variant"):
+                if field in agent_config and existing.get(field) != agent_config[field]:
+                    existing[field] = agent_config[field]
+                    updated_fields.append(field)
+            if "variant" in agent_config and isinstance(existing.get("options"), dict):
+                stale_options = {"effort", "reasoningEffort"} & existing["options"].keys()
+                if stale_options:
+                    for field in stale_options:
+                        del existing["options"][field]
+                    if not existing["options"]:
+                        del existing["options"]
+                    updated_fields.append("options")
+            if updated_fields:
+                changed = True
+                print(f"[agent] {agent_name} {chr(47).join(updated_fields)} 已更新")
+            else:
+                print(f"[agent] {agent_name} 已是最新")
         else:
             print(f"[agent] {agent_name} 已是最新")
 else:

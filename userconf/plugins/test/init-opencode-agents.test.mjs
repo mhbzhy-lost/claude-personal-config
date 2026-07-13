@@ -238,14 +238,16 @@ describe("init_opencode agents sync", () => {
     }
   })
 
-  it("configures executor as deterministic low-effort worker", () => {
+  it("configures executor as deterministic no-effort worker", () => {
     const agents = JSON.parse(readFileSync(join(repoRoot, "userconf", "agents.json"), "utf8"))
 
     assert.equal(agents.executor.mode, "subagent")
     assert.equal(agents.executor.temperature, 0)
-    assert.equal(agents.executor.options.effort, "low")
-    assert.equal(agents.executor.options.reasoningEffort, "low")
+    assert.equal(agents.executor.variant, "none")
+    assert.equal(agents.executor.options, undefined)
     assert.match(agents.executor.description, /Deterministic code executor/i)
+    assert.equal(agents["GPT-Pro"].variant, "xhigh")
+    assert.equal(agents["GPT-Pro"].options, undefined)
   })
 
   it("updates an existing executor config during opencode.json sync", () => {
@@ -293,6 +295,49 @@ describe("init_opencode agents sync", () => {
       const config = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"))
 
       assert.deepEqual(config.agent.executor, desiredAgents.executor)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it("syncs managed primary agent permissions while preserving its local model", () => {
+    const configDir = mkdtempSync(join(tmpdir(), "opencode-json-primary-agent-"))
+
+    try {
+      writeFileSync(
+        join(configDir, "opencode.json"),
+        JSON.stringify({
+          agent: {
+            GPT: { model: "openai/local-choice", mode: "primary" },
+            "GPT-Pro": {
+              model: "openai/gpt-5.6-sol-pro",
+              mode: "primary",
+              options: { effort: "xhigh", reasoningEffort: "xhigh", keep: true },
+            },
+          },
+        }),
+      )
+
+      execFileSync(
+        "bash",
+        [
+          "-c",
+          [
+            `OPENCODE_CONFIG_DIR=${JSON.stringify(configDir)}`,
+            "OPENCODE_INIT_AS_LIBRARY=1",
+            `source ${JSON.stringify(initScript)}`,
+            "sync_opencode_json",
+          ].join("; "),
+        ],
+        { encoding: "utf8" },
+      )
+
+      const desiredAgents = JSON.parse(readFileSync(join(repoRoot, "userconf", "agents.json"), "utf8"))
+      const config = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"))
+      assert.equal(config.agent.GPT.model, "openai/local-choice")
+      assert.deepEqual(config.agent.GPT.permission, desiredAgents.GPT.permission)
+      assert.equal(config.agent["GPT-Pro"].variant, "xhigh")
+      assert.deepEqual(config.agent["GPT-Pro"].options, { keep: true })
     } finally {
       rmSync(configDir, { recursive: true, force: true })
     }
@@ -500,10 +545,31 @@ describe("init_opencode agents sync", () => {
     assert.match(skill, /^name: plan-runner-dispatch$/m)
     assert.match(skill, /^description: Use when .*写计划并执行.*开始执行.*按方案落地/m)
     assert.match(skill, /start_plan_runner/)
+    assert.match(skill, /Before calling `start_plan_runner`.*writing-plans.*complete plan document/is)
+    assert.match(skill, /If no complete plan document exists.*do not call `start_plan_runner`.*load `writing-plans`/is)
+    assert.match(skill, /preflight.*takes priority over.*Required Action/is)
+    assert.match(skill, /agreed approach.*must not.*substitute.*complete plan document/is)
     assert.match(skill, /Do not use the native `task` tool/i)
     assert.doesNotMatch(skill, /subagent_type["`]?:\s*["`]plan-runner["`]/)
     assert.match(skill, /Do not implement the request in the primary agent/i)
     assert.match(skill, /harness-owned worktree/i)
+  })
+
+  it("global writing-plans override makes Subagent-Driven self-contained", () => {
+    const agents = readFileSync(join(repoRoot, "userconf", "AGENTS.md"), "utf8")
+    const reason = readFileSync(join(repoRoot, "userconf", "AGENTS.reason.md"), "utf8")
+
+    assert.match(agents, /Subagent-Driven.*不加载、也不依赖 `subagent-driven-development`/s)
+    assert.match(agents, /主 agent.*后台模式.*逐任务派发/s)
+    assert.match(reason, /Subagent-Driven.*不依赖 `subagent-driven-development`/s)
+  })
+
+  it("recommends executor for coding tasks without making it a dispatch gate", () => {
+    const agents = readFileSync(join(repoRoot, "userconf", "AGENTS.md"), "utf8")
+    const reason = readFileSync(join(repoRoot, "userconf", "AGENTS.reason.md"), "utf8")
+
+    assert.match(agents, /编码任务.*推荐使用 `executor`/)
+    assert.match(reason, /编码任务.*推荐使用 `executor`/)
   })
 
   it("permission template exposes only the plan-runner entrypoint to primary agents", () => {
@@ -517,10 +583,12 @@ describe("init_opencode agents sync", () => {
       assert.equal(permissionTemplate[tool], "deny", `${tool} should be globally hidden outside explicit agent overrides`)
     }
 
-    for (const agentName of ["gpt", "qwen", "claude"]) {
+    for (const agentName of ["GPT", "GPT-Pro", "qwen", "claude"]) {
       assert.equal(agents[agentName]?.permission?.start_plan_runner, "allow")
       for (const tool of lifecycleTools) assert.notEqual(agents[agentName]?.permission?.[tool], "allow")
     }
+    assert.equal(agents.gpt, undefined)
+    assert.equal(agents["gpt-pro"], undefined)
 
     assert.notEqual(agents.executor?.permission?.start_plan_runner, "allow")
     for (const tool of lifecycleTools) assert.notEqual(agents.executor?.permission?.[tool], "allow")

@@ -7,7 +7,7 @@ applies_to:
   - agents/skills.list
   - .agents/skills/
   - userconf/skills/
-last_verified: 2026-07-08
+last_verified: 2026-07-13
 source: docs/bugs/bug-external-llm-review-stale-symlink.md
 ---
 
@@ -31,8 +31,16 @@ source: docs/bugs/bug-external-llm-review-stale-symlink.md
 - 源路径解析顺序：先 `userconf/skills/<name>`，再 `vendor/superpowers/skills/<name>`，最后 `vendor/opencode-dynamic-workflow/skills/<name>`。
 - `<name>` 只允许字母、数字、下划线和连字符；空值或包含路径分隔符的条目会被初始化脚本拒绝。
 - `workflow-usage` 统一暴露在 `~/.agents/skills/workflow-usage`；旧的 `~/.config/opencode/skills/workflow-usage` 本仓软链会被初始化脚本清理，避免 OpenCode 专属目录和共享目录重复。
-- `plan-runner-dispatch` 是给 OpenCode 主 agent 的召回 shim：触发词命中后只负责要求主 agent 调用专用 `start_plan_runner` tool，不替代 `plan-runner` 本身，也不再引导原生 `task` 派发 plan-runner。`start_plan_runner` 应由 harness 负责创建并绑定 dedicated harness-owned worktree；若 tool 不可用，skill 要求停止并报告配置不一致。
+- `plan-runner-dispatch` 是给 OpenCode 主 agent 的召回 shim：调用 `start_plan_runner`
+  前必须确认当前任务已有 `writing-plans` 生成的完整计划文档；零散讨论、已达成方向或
+  用户催促不能替代该前置条件。缺少计划时先回到 `writing-plans`，完成计划及执行方式
+  选择；用户选择 Plan-Runner 后才调用专用 tool。它不替代 `plan-runner` 本身，也不再
+  引导原生 `task` 派发 plan-runner。`start_plan_runner` 应由 harness 负责创建并绑定
+  dedicated harness-owned worktree；若 tool 不可用，skill 要求停止并报告配置不一致。
 - `plan-runner-troubleshooting` 是本仓 project skill，用于其他会话排查 plan-runner 的 task-state、events、child worktree、`finish_plan` preflight、audit/external review 停点。
+- `writing-plans` 的本仓 override 提供独立的 Subagent-Driven 模式：主 agent 直接通过
+  `task` 以后台模式逐任务派发 subagent，不加载、也不依赖未加入白名单的
+  `subagent-driven-development`。不要因为原始 skill 中的 `REQUIRED SUB-SKILL` 提示拒绝执行。
 
 ## 原因
 
@@ -60,6 +68,7 @@ test -f "$HOME/.agents/skills/external-llm-review/SKILL.md"
 ## 相关资料
 
 - `docs/bugs/bug-external-llm-review-stale-symlink.md`
+- `docs/bugs/bug-subagent-driven-missing-skill-dependency.md`
 - `init_opencode.sh`
 - `agents/skills.list`
 - `userconf/skills/external-llm-review/SKILL.md`

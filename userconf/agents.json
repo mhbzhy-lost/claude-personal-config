@@ -5,7 +5,7 @@
   "plan": {
     "disable": true
   },
-  "gpt": {
+  "GPT": {
     "description": "GPT 5.6 Sol coding agent with outcome-first prompting",
     "mode": "primary",
     "model": "openai/gpt-5.6-sol",
@@ -15,16 +15,13 @@
       "start_plan_runner": "allow"
     }
   },
-  "gpt-pro": {
+  "GPT-Pro": {
     "description": "GPT 5.6 Pro coding agent with maximum reasoning effort",
     "mode": "primary",
-    "model": "openai/gpt-5.6-pro",
+    "model": "openai/gpt-5.6-sol-pro",
+    "variant": "xhigh",
     "prompt": "{file:./prompts/gpt-coding.txt}",
     "color": "#0d8f70",
-    "options": {
-      "effort": "xhigh",
-      "reasoningEffort": "xhigh"
-    },
     "permission": {
       "start_plan_runner": "allow"
     }
@@ -53,11 +50,8 @@
     "description": "Deterministic code executor. Temperature 0, low divergence, precise tool calls, minimal-diff edits. Not for exploration or brainstorming.",
     "mode": "subagent",
     "model": "openai/gpt-5.6-terra",
+    "variant": "none",
     "temperature": 0,
-    "options": {
-      "effort": "none",
-      "reasoningEffort": "none"
-    },
     "permission": {
       "skill": {
         "*": "allow",
