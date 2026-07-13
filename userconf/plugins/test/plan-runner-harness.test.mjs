@@ -460,6 +460,85 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
+  it("returns an unfinished plan-runner final response and preserves executing evidence without entering completion gate", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const finalText = "Change Request: need a decision before continuing."
+      const prompts = []
+      let taskID
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          session: {
+            create: async () => ({ data: { id: "ses_plan_runner" } }),
+            prompt: async (payload) => {
+              prompts.push(payload)
+              taskID = payload.body.parts[0].text.match(/Harness Task ID: (\S+)/)[1]
+              const runWorkspace = readJson(join(stateDir, "tasks", `${taskID}.json`)).worktree
+              await hooks.tool.write_plan.execute(
+                {
+                  content: planContent("Change Request Slice"),
+                  title: "Change Request Slice",
+                  tasks: [oneTask()],
+                  dag: [],
+                  parallel_sets: [],
+                },
+                makeContext({ sessionID: "ses_plan_runner", workspace: runWorkspace }),
+              )
+              await startStructuredTask({ hooks, workspace: runWorkspace })
+              await hooks.event({ event: { type: "message.updated", properties: { sessionID: "ses_plan_runner", info: { id: "msg_change_request_diff", summary: { diffs: [{ file: "probe-output.txt" }] } } } } })
+              return { data: { info: {}, parts: [{ type: "text", text: finalText }] } }
+            },
+          },
+        },
+      })
+
+      const result = await hooks.tool.start_plan_runner.execute(
+        { prompt: "Implement the requested change." },
+        makeContext({ sessionID: "ses_parent", workspace }),
+      )
+      const state = readJson(join(stateDir, "tasks", `${result.metadata.task_id}.json`))
+      const events = readFileSync(join(stateDir, "events", `${state.task_id}.jsonl`), "utf8")
+
+      assert.equal(result.output, finalText)
+      assert.equal(state.status, "blocked")
+      assert.equal(state.active_task, "T1")
+      assert.equal(state.tasks[0].status, "in_progress")
+      assert.equal(state.tasks[0].evidence.length, 1)
+      assert.deepEqual(state.tasks[0].evidence[0].files, ["probe-output.txt"])
+      assert.equal(state.worktree.startsWith(join(workspace, ".plan-runner-worktrees")), true)
+      assert.equal(state.completion_gate, undefined)
+      assert.equal(state.blocker.code, "plan_runner_stopped_before_finish_plan")
+      assert.equal(state.blocker.final_text, finalText)
+      assert.match(events, /"type":"plan_runner_stopped_before_finish_plan"/)
+      assert.doesNotMatch(events, /"type":"(self_check_completed|audit_review_dispatched|external_review_started|task_validated)"/)
+      assert.equal(prompts.length, 1)
+      await hooks["tool.execute.before"](
+        { tool: "finish_plan", sessionID: "ses_plan_runner", callID: "call_terminal_read" },
+        { args: {} },
+      )
+      const beforeFinish = readFileSync(join(stateDir, "tasks", `${taskID}.json`), "utf8")
+      const eventsBeforeFinish = readFileSync(join(stateDir, "events", `${taskID}.jsonl`), "utf8")
+      const finishResult = await hooks.tool.finish_plan.execute({}, makeContext({ sessionID: "ses_plan_runner", workspace: state.worktree }))
+      assert.match(finishResult.output, /^Result: blocked/m)
+      assert.equal(readFileSync(join(stateDir, "tasks", `${taskID}.json`), "utf8"), beforeFinish)
+      assert.equal(readFileSync(join(stateDir, "events", `${taskID}.jsonl`), "utf8"), eventsBeforeFinish)
+      await assert.rejects(
+        () => hooks["tool.execute.before"](
+          { tool: "bash", sessionID: "ses_plan_runner", callID: "call_after_stop" },
+          { args: { command: "git status --short" } },
+        ),
+        /terminal gate: bash is not allowed during blocked/i,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("start_plan_runner creates a fresh task state instead of resuming non-validated runs", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {

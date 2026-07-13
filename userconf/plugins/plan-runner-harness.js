@@ -517,7 +517,9 @@ async function enforcePhaseGate(stateDir, input, output = {}) {
     return
   }
 
-  if (state.status === "audit_review" || state.status === "external_review") {
+  if (TERMINAL_COMPLETION_GATE_STATUSES.has(state.status) && input.tool === "finish_plan") return
+
+  if (state.status === "audit_review" || state.status === "external_review" || TERMINAL_COMPLETION_GATE_STATUSES.has(state.status)) {
     throw new Error(`plan-runner terminal gate: ${input.tool} is not allowed during ${state.status}`)
   }
 
@@ -870,6 +872,16 @@ function extractTextFromMessageInfo(info = {}) {
   const texts = parts.map((part) => part?.text || part?.content).filter(Boolean)
   if (texts.length) return texts.join("\n")
   return info.text || info.content || info.summary?.text || ""
+}
+
+function extractPromptResultText(result = {}) {
+  const data = result?.data ?? result
+  const parts = data?.parts
+  if (Array.isArray(parts)) {
+    const text = parts.map(extractTextFromMessagePart).filter(Boolean).join("\n")
+    if (text) return text
+  }
+  return extractTextFromMessageInfo(data?.info || data)
 }
 
 function extractTextFromMessagePart(part = {}) {
@@ -1278,7 +1290,7 @@ async function finishPlanTool(args, context, stateDir, { client, directory, exte
   const state = await readTaskStateForSession(stateDir, sessionID)
   if (!state) throw new Error("finish_plan task state is not readable")
   if (state.plan_runner_session_id !== sessionID) throw new Error("finish_plan must run in the bound plan-runner session")
-  if (completionGateActive(state) && TERMINAL_COMPLETION_GATE_STATUSES.has(state.status)) {
+  if (TERMINAL_COMPLETION_GATE_STATUSES.has(state.status)) {
     const notifiedState = await notifyParentMergeBack({ stateDir, client, directory, state })
     return {
       output: completionGateResultText(notifiedState),
@@ -1929,8 +1941,24 @@ async function startPlanRunnerTool(args, context, stateDir, { client, directory 
   throwIfSdkError(prompted, "plan-runner prompt dispatch failed")
   await appendEvent(stateDir, taskID, { type: "plan_runner_bound", session_id: planRunnerSessionID, tool: "start_plan_runner" })
 
+  const finalText = extractPromptResultText(prompted)
+  const finishedState = await readTaskState(stateDir, taskID)
+  if (finalText && finishedState && !TERMINAL_COMPLETION_GATE_STATUSES.has(finishedState.status)) {
+    finishedState.status = "blocked"
+    finishedState.blocker = {
+      code: "plan_runner_stopped_before_finish_plan",
+      final_text: finalText,
+    }
+    finishedState.updated_at = Date.now()
+    await writeTaskState(stateDir, finishedState)
+    await appendEvent(stateDir, taskID, {
+      type: "plan_runner_stopped_before_finish_plan",
+      final_text: finalText,
+    })
+  }
+
   return {
-    output: `plan-runner started: ${taskID}`,
+    output: finalText,
     metadata: {
       task_id: taskID,
       session_id: planRunnerSessionID,
