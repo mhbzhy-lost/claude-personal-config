@@ -110,6 +110,11 @@ Plan-Runner 在 15:58:46 进入 idle。到 16:02:36 用户主动询问前，父 
   通知；继续执行必须创建新的 run。
 - 2026-07-13：targeted harness 测试与包含该文件的 full glob 不得并行执行，避免重复运行昂贵的
   git/worktree suite 并造成测试卡顿；本修复验证仅串行运行 targeted harness、harness 文件、agents 文件。
+- 2026-07-13：同步 `session.prompt()` 返回后的终态事务也进入插件的 state queue；事务在队列内重新读取
+  最新 state 后才标记 `blocked` 并追加事件，避免与已排队的 evidence event 发生 read-modify-write 覆盖。
+- 2026-07-13：真实 SDK 返回 `{ data: { info, parts: [] } }` 且没有 text 时，harness 标记现有
+  `blocked` 终态，写入 `plan_runner_empty_response` blocker/event，并向父会话返回非空诊断；既有
+  `{ data: {} }` 测试桩仍保持原有行为。
 - 2026-07-13：重启 OpenCode 后完成真实 Change Request smoke。task
   `planrun-ses_0a6b9aaa2ffego3TZkaXaKElXA-start-90dbbf78-cc9a-4ee5-b570-ad1961931636`
   的 final text 直接回流父会话；state 为 `blocked`，`T1` 保持 `in_progress`，diff/command

@@ -104,7 +104,10 @@ harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-st
   harness 将该 run 标记为现有 `blocked` 终态，保留 task/worktree/evidence，并记录
   `plan_runner_stopped_before_finish_plan` blocker/event；该路径不启动 completion gate 或任何 review，
   也不向 parent 额外 `promptAsync` 通知。phase gate 拒绝 `blocked` 等终态的后续工具调用；继续执行必须
-  新建 run，而非恢复或改写旧 state。
+  新建 run，而非恢复或改写旧 state。prompt 后的终态写入只进入与 event handler 共用的 state queue，
+  在队列内重新读取 state，避免覆盖先入队的 evidence；真实 SDK 响应结构存在但没有 text 时同样标记
+  `blocked`，使用 `plan_runner_empty_response` blocker/event 并返回非空诊断。缺少该响应结构的
+  `{ data: {} }` 测试桩不视为空响应。
 - `tool.execute.before(task)` / `tool.execute.after(task)` 仍用于 plan-runner root session
   派发普通 child subagent：harness 创建 child worktree、改写 prompt，并通过
   `output.metadata.sessionId` 绑定 child session。

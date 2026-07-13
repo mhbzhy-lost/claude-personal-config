@@ -539,6 +539,95 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
+  it("serializes prompt finalization after queued evidence and preserves the latest evidence", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      let taskID
+      let promptCalled = false
+      let releasePrompt
+      const promptStarted = new Promise((resolve) => { releasePrompt = resolve })
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          session: {
+            create: async () => ({ data: { id: "ses_plan_runner" } }),
+            prompt: async (payload) => {
+              promptCalled = true
+              taskID = payload.body.parts[0].text.match(/Harness Task ID: (\S+)/)[1]
+              await promptStarted
+              return { data: { info: {}, parts: [{ type: "text", text: "Change Request: pause." }] } }
+            },
+          },
+        },
+      })
+
+      const started = hooks.tool.start_plan_runner.execute(
+        { prompt: "Implement the requested change." },
+        makeContext({ sessionID: "ses_parent", workspace }),
+      )
+      await waitUntil(() => promptCalled)
+      const statePath = join(stateDir, "tasks", `${taskID}.json`)
+      const state = readJson(statePath)
+      state.status = "executing"
+      state.tasks = [{ ...oneTask({ files: ["queued-evidence.txt"] }), status: "in_progress", evidence: [] }]
+      state.active_task = "T1"
+      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+
+      const queuedEvidence = hooks.event({
+        event: {
+          type: "message.updated",
+          properties: { sessionID: "ses_plan_runner", info: { id: "msg_queued_evidence", summary: { diffs: [{ file: "queued-evidence.txt" }] } } },
+        },
+      })
+      releasePrompt()
+      await Promise.all([queuedEvidence, started])
+
+      const finished = readJson(statePath)
+      assert.equal(finished.status, "blocked")
+      assert.equal(finished.blocker.code, "plan_runner_stopped_before_finish_plan")
+      assert.deepEqual(finished.tasks[0].evidence[0].files, ["queued-evidence.txt"])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("blocks an SDK-shaped empty final response with diagnostic output and event", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          session: {
+            create: async () => ({ data: { id: "ses_plan_runner" } }),
+            prompt: async () => ({ data: { info: {}, parts: [] } }),
+          },
+        },
+      })
+
+      const result = await hooks.tool.start_plan_runner.execute(
+        { prompt: "Implement the requested change." },
+        makeContext({ sessionID: "ses_parent", workspace }),
+      )
+      const state = readJson(join(stateDir, "tasks", `${result.metadata.task_id}.json`))
+      const events = readFileSync(join(stateDir, "events", `${state.task_id}.jsonl`), "utf8")
+
+      assert.equal(state.status, "blocked")
+      assert.equal(state.blocker.code, "plan_runner_empty_response")
+      assert.match(result.output, /empty response/i)
+      assert.match(events, /"type":"plan_runner_empty_response"/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("start_plan_runner creates a fresh task state instead of resuming non-validated runs", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {

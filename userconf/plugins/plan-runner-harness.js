@@ -874,6 +874,12 @@ function extractTextFromMessageInfo(info = {}) {
   return info.text || info.content || info.summary?.text || ""
 }
 
+function promptResultHasSdkResponseShape(result = {}) {
+  return Boolean(result?.data && typeof result.data === "object" && (
+    Object.hasOwn(result.data, "info") || Object.hasOwn(result.data, "parts")
+  ))
+}
+
 function extractPromptResultText(result = {}) {
   const data = result?.data ?? result
   const parts = data?.parts
@@ -1867,7 +1873,7 @@ async function completeTaskTool(args, context, stateDir) {
   return { output: `task completed: ${args.id}`, metadata: { task_id: state.task_id, completed_task: args.id } }
 }
 
-async function startPlanRunnerTool(args, context, stateDir, { client, directory }) {
+async function startPlanRunnerTool(args, context, stateDir, { client, directory, serializeState = (handler) => handler() }) {
   if (!client?.session?.create || !client?.session?.prompt) {
     throw new Error("start_plan_runner requires client.session.create and client.session.prompt")
   }
@@ -1942,23 +1948,27 @@ async function startPlanRunnerTool(args, context, stateDir, { client, directory 
   await appendEvent(stateDir, taskID, { type: "plan_runner_bound", session_id: planRunnerSessionID, tool: "start_plan_runner" })
 
   const finalText = extractPromptResultText(prompted)
-  const finishedState = await readTaskState(stateDir, taskID)
-  if (finalText && finishedState && !TERMINAL_COMPLETION_GATE_STATUSES.has(finishedState.status)) {
+  const emptySdkResponse = !finalText && promptResultHasSdkResponseShape(prompted)
+  const output = finalText || (emptySdkResponse
+    ? "Plan-runner returned an empty response before finish_plan; the run was blocked."
+    : "")
+  await serializeState(async () => {
+    const finishedState = await readTaskState(stateDir, taskID)
+    if (!finishedState || TERMINAL_COMPLETION_GATE_STATUSES.has(finishedState.status)) return
+    const code = emptySdkResponse ? "plan_runner_empty_response" : "plan_runner_stopped_before_finish_plan"
+    if (!finalText && !emptySdkResponse) return
     finishedState.status = "blocked"
-    finishedState.blocker = {
-      code: "plan_runner_stopped_before_finish_plan",
-      final_text: finalText,
-    }
+    finishedState.blocker = { code, ...(finalText ? { final_text: finalText } : { message: output }) }
     finishedState.updated_at = Date.now()
     await writeTaskState(stateDir, finishedState)
     await appendEvent(stateDir, taskID, {
-      type: "plan_runner_stopped_before_finish_plan",
-      final_text: finalText,
+      type: code,
+      ...(finalText ? { final_text: finalText } : { message: output }),
     })
-  }
+  })
 
   return {
-    output: finalText,
+    output,
     metadata: {
       task_id: taskID,
       session_id: planRunnerSessionID,
@@ -2033,7 +2043,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
         args: {
           prompt: tool.schema.string().min(1),
         },
-        execute: (args, context) => startPlanRunnerTool(args, context, stateDir, { client, directory: worktree }),
+        execute: (args, context) => startPlanRunnerTool(args, context, stateDir, { client, directory: worktree, serializeState: enqueueState }),
       }),
       write_plan: tool({
         description: "Write the structured plan-runner task contract and advance harness state.",
