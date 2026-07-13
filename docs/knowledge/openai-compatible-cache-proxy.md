@@ -203,6 +203,8 @@ git -C vendor/opencode-cache-proxy diff --check
 
 - `~/.config/opencode/plugins` 是真实目录，不是整目录软链；
 - `~/.config/opencode/plugins/bailian-cache-proxy.js` 指向子仓 plugin；
+- `~/.config/opencode/opencode.json.plugin` 不包含 cache-proxy 的 `plugins/` 目录；
+  从旧 `plugin-list` 模式迁移时由配置器精确清理该托管条目；
 - 主仓 `opencode/plugins/bailian-cache-proxy.js` 不存在；
 - `~/.config/opencode/opencode.json` 里有 `openai-bailiab-api`、
   `openai-bailian-token-plan`、`openai-idealab` 与 `anthropic-idealab`，且默认都没有
