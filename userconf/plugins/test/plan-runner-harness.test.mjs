@@ -391,10 +391,10 @@ describe("PlanRunnerHarnessPlugin", () => {
       const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks, workspace, stateDir })
       const state = readJson(statePath)
       state.status = "validated"
+      state.plan_runner_terminal_idle_at = Date.now()
+      state.parent_notification = { type: "merge_back", status: "sent" }
       writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
 
-      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
-      assert.deepEqual(disposals, [])
       await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
       await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
 
@@ -424,6 +424,8 @@ describe("PlanRunnerHarnessPlugin", () => {
       const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks: originHooks, workspace, stateDir })
       const state = readJson(statePath)
       state.status = "validated"
+      state.plan_runner_terminal_idle_at = Date.now()
+      state.parent_notification = { type: "merge_back", status: "sent" }
       writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
       const childHooks = await createPlanRunnerHarnessFromInput(
         { directory: state.worktree, client: planRunnerClient({ disposals }) },
@@ -496,6 +498,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       const state = readJson(statePath)
       state.status = "validated"
       state.parent_notification = { type: "merge_back", status: "sent" }
+      state.plan_runner_terminal_idle_at = Date.now()
       writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
 
       await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
@@ -536,6 +539,8 @@ describe("PlanRunnerHarnessPlugin", () => {
       const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks, workspace, stateDir })
       const state = readJson(statePath)
       state.status = "validated"
+      state.plan_runner_terminal_idle_at = Date.now()
+      state.parent_notification = { type: "merge_back", status: "sent" }
       writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
 
       await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
@@ -567,6 +572,8 @@ describe("PlanRunnerHarnessPlugin", () => {
       const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks, workspace, stateDir })
       const state = readJson(statePath)
       state.status = "validated"
+      state.plan_runner_terminal_idle_at = Date.now()
+      state.parent_notification = { type: "merge_back", status: "sent" }
       writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
 
       await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
@@ -594,10 +601,10 @@ describe("PlanRunnerHarnessPlugin", () => {
       const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks, workspace, stateDir })
       const state = readJson(statePath)
       state.status = "interrupted"
+      state.plan_runner_terminal_error_at = Date.now()
+      state.parent_notification = { type: "terminal_result", status: "sent" }
       writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
 
-      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
-      assert.deepEqual(disposals, [])
       await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
 
       assert.deepEqual(disposals, [{ query: { directory: state.worktree } }])
@@ -629,6 +636,8 @@ describe("PlanRunnerHarnessPlugin", () => {
       const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks, workspace, stateDir })
       const state = readJson(statePath)
       state.status = "validated"
+      state.plan_runner_terminal_idle_at = Date.now()
+      state.parent_notification = { type: "merge_back", status: "sent" }
       writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
 
       const idle = hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
@@ -1547,6 +1556,160 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.equal(readJson(join(stateDir, "sessions", "ses_parent.json")).task_id, second.metadata.task_id)
       assert.match(newEvents, /"type":"dispatch_started"/)
       assert.doesNotMatch(newEvents, /plan_runner_resumed/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps multiple async runs for one parent in the registry and disposes each after its terminal notification", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const disposals = []
+      let creates = 0
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          ...planRunnerClient({ disposals }),
+          session: {
+            create: async () => ({ data: { id: `ses_plan_runner_${++creates}` } }),
+            promptAsync: async () => ({ data: {} }),
+          },
+        },
+      })
+      const context = makeContext({ sessionID: "ses_parent", workspace })
+      const first = await hooks.tool.start_plan_runner.execute({ prompt: "First run." }, context)
+      const second = await hooks.tool.start_plan_runner.execute({ prompt: "Second run." }, context)
+      const registry = readJson(join(stateDir, "parents", "ses_parent.json"))
+      const firstPath = join(stateDir, "tasks", `${first.metadata.task_id}.json`)
+      const secondPath = join(stateDir, "tasks", `${second.metadata.task_id}.json`)
+      const firstState = readJson(firstPath)
+      const secondState = readJson(secondPath)
+
+      firstState.status = "validated"
+      firstState.plan_runner_terminal_idle_at = Date.now()
+      firstState.parent_notification = { type: "merge_back", status: "sent" }
+      secondState.status = "interrupted"
+      secondState.plan_runner_terminal_error_at = Date.now()
+      secondState.parent_notification = { type: "terminal_result", status: "failed" }
+      writeFileSync(firstPath, `${JSON.stringify(firstState, null, 2)}\n`)
+      writeFileSync(secondPath, `${JSON.stringify(secondState, null, 2)}\n`)
+
+      assert.deepEqual(registry.task_ids.sort(), [first.metadata.task_id, second.metadata.task_id].sort())
+      assert.equal(readJson(join(stateDir, "sessions", "ses_parent.json")).task_id, second.metadata.task_id)
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
+
+      assert.deepEqual(disposals.sort((a, b) => a.query.directory.localeCompare(b.query.directory)), [
+        { query: { directory: firstState.worktree } },
+        { query: { directory: secondState.worktree } },
+      ].sort((a, b) => a.query.directory.localeCompare(b.query.directory)))
+      assert.equal(readJson(firstPath).runtime_disposal.status, "disposed")
+      assert.equal(readJson(secondPath).runtime_disposal.status, "disposed")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("does not dispose terminal runs before the root barrier and completed parent notification", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const disposals = []
+      const hooks = await createPlanRunnerHarness({ workspace, stateDir, client: planRunnerClient({ disposals }) })
+      const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks, workspace, stateDir })
+      const state = readJson(statePath)
+      state.status = "validated"
+      state.parent_notification = { type: "merge_back", status: "sending" }
+      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
+      assert.deepEqual(disposals, [])
+      assert.equal(readJson(statePath).runtime_disposal, undefined)
+
+      const notified = readJson(statePath)
+      notified.plan_runner_terminal_idle_at = Date.now()
+      notified.parent_notification.status = "sent"
+      writeFileSync(statePath, `${JSON.stringify(notified, null, 2)}\n`)
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
+
+      assert.deepEqual(disposals, [{ query: { directory: state.worktree } }])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("does not dispose a terminal run when its child session idles in the origin plugin", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const disposals = []
+      const hooks = await createPlanRunnerHarness({ workspace, stateDir, client: planRunnerClient({ disposals }) })
+      const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks, workspace, stateDir })
+      const state = readJson(statePath)
+      state.status = "validated"
+      state.plan_runner_terminal_idle_at = Date.now()
+      state.parent_notification = { type: "merge_back", status: "sent" }
+      state.child_sessions = [{ session_id: "ses_child", status: "completed" }]
+      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+      writeFileSync(join(stateDir, "sessions", "ses_child.json"), `${JSON.stringify({ task_id: state.task_id, role: "child" })}\n`)
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_child" } } })
+
+      assert.deepEqual(disposals, [])
+      assert.equal(readJson(statePath).runtime_disposal, undefined)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("continues disposing sibling runs when one runtime disposal fails", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const disposals = []
+      let creates = 0
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          ...planRunnerClient({ disposals }),
+          session: {
+            create: async () => ({ data: { id: `ses_plan_runner_${++creates}` } }),
+            promptAsync: async () => ({ data: {} }),
+          },
+        },
+      })
+      hooks.__testClient.instance.dispose = async (payload) => {
+        disposals.push(payload)
+        return disposals.length === 1 ? { error: { data: { message: "first disposal failed" } } } : { data: {} }
+      }
+      const context = makeContext({ sessionID: "ses_parent", workspace })
+      const first = await hooks.tool.start_plan_runner.execute({ prompt: "First run." }, context)
+      const second = await hooks.tool.start_plan_runner.execute({ prompt: "Second run." }, context)
+      for (const taskID of [first.metadata.task_id, second.metadata.task_id]) {
+        const path = join(stateDir, "tasks", `${taskID}.json`)
+        const state = readJson(path)
+        state.status = "validated"
+        state.plan_runner_terminal_idle_at = Date.now()
+        state.parent_notification = { type: "merge_back", status: "sent" }
+        writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`)
+      }
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_parent" } } })
+
+      assert.equal(disposals.length, 2)
+      assert.equal(readJson(join(stateDir, "tasks", `${first.metadata.task_id}.json`)).runtime_disposal.status, "failed")
+      assert.equal(readJson(join(stateDir, "tasks", `${second.metadata.task_id}.json`)).runtime_disposal.status, "disposed")
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

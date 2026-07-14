@@ -115,6 +115,10 @@ function sessionPath(stateDir, sessionID) {
   return join(stateDir, "sessions", `${safeId(sessionID)}.json`)
 }
 
+function parentPath(stateDir, sessionID) {
+  return join(stateDir, "parents", `${safeId(sessionID)}.json`)
+}
+
 async function writeJsonAtomic(path, value) {
   await ensureDir(dirname(path))
   const tmp = `${path}.tmp.${process.pid}.${randomUUID()}`
@@ -163,6 +167,31 @@ async function writeSessionIndex(stateDir, sessionID, taskID, role) {
 
 async function readSessionIndex(stateDir, sessionID) {
   return readJson(sessionPath(stateDir, sessionID))
+}
+
+async function readParentTaskIDs(stateDir, sessionID) {
+  const [parent, index] = await Promise.all([
+    readJson(parentPath(stateDir, sessionID)),
+    readSessionIndex(stateDir, sessionID),
+  ])
+  return [...new Set([
+    ...(Array.isArray(parent?.task_ids) ? parent.task_ids : []),
+    ...(index?.role === "parent" && index.task_id ? [index.task_id] : []),
+  ])]
+}
+
+async function appendParentTaskID(stateDir, sessionID, taskID) {
+  const path = parentPath(stateDir, sessionID)
+  const parent = await readJson(path)
+  const taskIDs = [...new Set([
+    ...(Array.isArray(parent?.task_ids) ? parent.task_ids : []),
+    taskID,
+  ])]
+  await writeJsonAtomic(path, {
+    session_id: sessionID,
+    task_ids: taskIDs,
+    updated_at: Date.now(),
+  })
 }
 
 async function readTaskState(stateDir, taskID) {
@@ -870,6 +899,8 @@ function throwIfSdkError(result, context) {
 
 function shouldDisposeRunRuntime(state, directory) {
   const disposal = state?.runtime_disposal || {}
+  const rootTerminal = state?.plan_runner_terminal_idle_at || state?.plan_runner_terminal_error_at
+  const notificationDone = ["sent", "failed"].includes(state?.parent_notification?.status)
   return Boolean(
     TERMINAL_COMPLETION_GATE_STATUSES.has(state?.status)
       && state.harness_owned_worktree
@@ -877,6 +908,8 @@ function shouldDisposeRunRuntime(state, directory) {
       && state.origin_worktree
       && state.worktree !== state.origin_worktree
       && directory === state.origin_worktree
+      && rootTerminal
+      && notificationDone
       && disposal.status !== "disposing"
       && disposal.status !== "disposed"
       && (disposal.status !== "failed" || Number(disposal.attempts || 0) < MAX_RUNTIME_DISPOSAL_ATTEMPTS),
@@ -1729,11 +1762,17 @@ async function handleParentSessionIdle({ stateDir, client, directory, event }) {
   if (event.type !== "session.idle") return
   const sessionID = event.properties?.sessionID
   if (!sessionID) return
-  const index = await readSessionIndex(stateDir, sessionID)
-  if (!index || index.role !== "parent") return
-  let state = await readTaskState(stateDir, index.task_id)
-  if (state && !state.task_id) state = { ...state, task_id: index.task_id }
-  await disposeRunRuntime({ stateDir, client, directory, state })
+  const taskIDs = await readParentTaskIDs(stateDir, sessionID)
+  if (!taskIDs.length) return
+  for (const taskID of taskIDs) {
+    let state = await readTaskState(stateDir, taskID)
+    if (state && !state.task_id) state = { ...state, task_id: taskID }
+    try {
+      await disposeRunRuntime({ stateDir, client, directory, state })
+    } catch {
+      // One disposal must not prevent sibling plan-runner instances from being released.
+    }
+  }
 }
 
 async function readPlanRunnerFinalMessage(client, state) {
@@ -2234,7 +2273,7 @@ async function getPlanRunnerStatusTool(args, context, stateDir) {
   }
 }
 
-async function startPlanRunnerTool(args, context, stateDir, { client, directory }) {
+async function startPlanRunnerTool(args, context, stateDir, { client, directory, enqueueState }) {
   if (!client?.session?.create || !client?.session?.promptAsync) {
     throw new Error("start_plan_runner requires client.session.create and client.session.promptAsync")
   }
@@ -2268,6 +2307,7 @@ async function startPlanRunnerTool(args, context, stateDir, { client, directory 
   state.brief_sha256 = sha256(briefContent)
   await writeTaskState(stateDir, state)
   await writeSessionIndex(stateDir, parentSessionID, taskID, "parent")
+  await enqueueState(() => appendParentTaskID(stateDir, parentSessionID, taskID))
   await appendEvent(stateDir, taskID, {
     type: "dispatch_started",
     session_id: parentSessionID,
@@ -2390,7 +2430,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
         args: {
           prompt: tool.schema.string().min(1),
         },
-        execute: (args, context) => startPlanRunnerTool(args, context, stateDir, { client, directory: worktree }),
+        execute: (args, context) => startPlanRunnerTool(args, context, stateDir, { client, directory: worktree, enqueueState }),
       }),
       get_plan_runner_status: tool({
         description: "Read a parent-owned plan-runner task status summary.",
