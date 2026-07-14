@@ -987,7 +987,11 @@ if os.path.exists(agents_json_path):
                 if field in agent_config and existing.get(field) != agent_config[field]:
                     existing[field] = agent_config[field]
                     updated_fields.append(field)
-            if "variant" in agent_config and isinstance(existing.get("options"), dict):
+            if "options" in agent_config:
+                if existing.get("options") != agent_config["options"]:
+                    existing["options"] = agent_config["options"]
+                    updated_fields.append("options")
+            elif "variant" in agent_config and isinstance(existing.get("options"), dict):
                 stale_options = {"effort", "reasoningEffort"} & existing["options"].keys()
                 if stale_options:
                     for field in stale_options:

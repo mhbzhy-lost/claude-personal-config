@@ -18,3 +18,16 @@
 
 - `openai/gpt-5.6-pro`：稳定复现服务端 400。
 - `openai/gpt-5.6-sol-pro --variant xhigh`：成功返回 `OK`。
+
+## 后续演进（2026-07）
+
+GPT-5.6 起 OpenAI 取消了独立的 `-pro` 模型 slug（`gpt-5.6-sol-pro` 等），改为在同一模型上
+通过 `reasoning.mode: "pro"` 参数启用 Pro 模式。OpenCode v1.17.19+ 的 variants 从
+models.dev 的 `reasoning_options` 自动推导，`-pro` 后缀模型从模型列表中消失。
+
+`GPT-Pro` agent 已相应调整：
+- 模型改为 `openai/gpt-5.6-sol`
+- `variant: "max"` 选择最高 reasoning effort
+- `options.reasoningMode: "pro"` 启用 pro 执行模式（`@ai-sdk/openai@3.0.53+` 原生支持）
+- `reasoningMode` 和 `reasoningEffort` 是两个独立维度，分别控制执行模式和推理深度
+- init 脚本已扩展同步字段，新增 `options` 同步支持
