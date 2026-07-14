@@ -13,6 +13,7 @@ const EXECUTION_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash",
 const REPAIR_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash"])
 const COMPLETION_GATE_RESULT_STATUSES = new Set(["validated", "repairing", "blocked", "interrupted"])
 const TERMINAL_COMPLETION_GATE_STATUSES = new Set(["validated", "blocked", "interrupted"])
+const ACTIVE_CHILD_STATUSES = new Set(["dispatching", "starting", "running"])
 const MAX_AUDIT_INVALID_JSON_ATTEMPTS = 2
 const MAX_GATE_FAILURES = 2
 const MAX_WATCHDOG_NUDGES = 1
@@ -275,22 +276,6 @@ function shouldNotifyParentMergeBack(state) {
   return !(notification.type === "merge_back" && (notification.status === "sent" || notification.status === "sending"))
 }
 
-function ensureChildWorktreePrompt(prompt, child) {
-  const text = String(prompt || "")
-  if (text.includes(`Assigned child worktree: ${child.worktree}`)) return text
-  return [
-    `Assigned child worktree: ${child.worktree}`,
-    `Child branch: ${child.branch}`,
-    `Child base commit: ${child.base_commit}`,
-    `Root plan task: ${child.task_id}`,
-    "Use the assigned child worktree for all file operations and bash workdir values.",
-    "Do not modify the main workspace or any other child worktree.",
-    "Return a concise outcome with files touched, commands run, validation output, blockers, and risks.",
-    "",
-    text,
-  ].join("\n").trim()
-}
-
 function createInitialState({ taskID, parentSessionID, dispatchCallID, worktree, originWorktree = worktree }) {
   return {
     version: STATE_VERSION,
@@ -450,22 +435,8 @@ async function createChildWorktree(stateDir, state, callID) {
   return { worktree, branch, base_commit: baseCommit }
 }
 
-function childSessionByCall(state, callID) {
-  return (state.child_sessions || []).find((child) => child.call_id === callID) || null
-}
-
 function childSessionBySessionID(state, sessionID) {
   return (state.child_sessions || []).find((child) => child.session_id === sessionID) || null
-}
-
-function ensureChildWorktreeTaskToolDescription(input, output) {
-  const toolName = input?.tool || input?.name || output?.name
-  if (toolName !== "task") return
-  const description = output?.description
-  if (typeof description !== "string") return
-  const worktreeDescription = "When the plan-runner agent uses this tool to dispatch a child subagent, the harness automatically creates a dedicated git worktree for that child and injects the assigned worktree and branch into the child prompt."
-  if (description.includes(worktreeDescription)) return
-  output.description = `${description}\n\n${worktreeDescription}`
 }
 
 async function inspectGitWorktree(worktree) {
@@ -564,82 +535,6 @@ async function enforcePhaseGate(stateDir, input, output = {}) {
       if (completionBoundaryExecutionAllowed(state, input, output)) return
       throw new Error("plan-runner phase gate: start_task is required before execution tools")
     }
-  }
-}
-
-async function prepareChildDispatch(stateDir, input, output, sessionIndex) {
-  const state = await readTaskState(stateDir, sessionIndex.task_id)
-  if (!state) throw new Error("plan-runner child dispatch state is not readable")
-  if (state.plan_runner_session_id !== input.sessionID) throw new Error("plan-runner child dispatch must run in the bound plan-runner session")
-  if (!Array.isArray(state.tasks)) throw new Error("plan-runner child dispatch requires structured tasks")
-  const task = activeTask(state)
-  if (!task) throw new Error("plan-runner child dispatch requires an active task")
-
-  const worktree = await createChildWorktree(stateDir, state, input.callID)
-  const child = {
-    call_id: input.callID,
-    session_id: null,
-    role: "executor",
-    status: "dispatching",
-    task_id: task.id,
-    ...worktree,
-  }
-
-  state.child_sessions = (state.child_sessions || []).filter((item) => item.call_id !== input.callID)
-  state.child_sessions.push(child)
-  state.updated_at = Date.now()
-  await writeTaskState(stateDir, state)
-  await appendEvent(stateDir, state.task_id, {
-    type: "child_worktree_created",
-    call_id: input.callID,
-    task_id: task.id,
-    worktree: child.worktree,
-    branch: child.branch,
-    base_commit: child.base_commit,
-  })
-
-  output.args = output.args || {}
-  output.args.background = true
-  output.args.subagent_type = "executor"
-  output.args.prompt = ensureChildWorktreePrompt(output.args.prompt, child)
-}
-
-async function bindChildDispatch(stateDir, client, input, output, sessionIndex, pendingChildTerminals) {
-  const state = await readTaskState(stateDir, sessionIndex.task_id)
-  if (!state) return
-  const childSessionID = output.metadata?.sessionId
-  const parentSessionID = output.metadata?.parentSessionId
-  if (!childSessionID || parentSessionID !== input.sessionID) return
-  const child = childSessionByCall(state, input.callID)
-  if (!child) return
-
-  const pending = pendingChildTerminals.get(childSessionID)
-  if (pending) pendingChildTerminals.delete(childSessionID)
-  state.child_sessions = (state.child_sessions || []).map((item) => {
-    if (item.call_id !== input.callID) return item
-    if (pending?.type === "session.error") {
-      return { ...item, session_id: childSessionID, status: "failed", error: pending.error, failed_at: pending.at }
-    }
-    return { ...item, session_id: childSessionID, status: pending ? "completed" : "running" }
-  })
-  state.updated_at = Date.now()
-  await writeTaskState(stateDir, state)
-  await writeSessionIndex(stateDir, childSessionID, state.task_id, "child")
-  await appendEvent(stateDir, state.task_id, {
-    type: "child_session_bound",
-    call_id: input.callID,
-    session_id: childSessionID,
-    worktree: child.worktree,
-    branch: child.branch,
-  })
-  if (pending) {
-    await appendEvent(stateDir, state.task_id, {
-      type: pending.type === "session.error" ? "child_session_failed" : "child_session_completed",
-      session_id: childSessionID,
-      ...(pending.error ? { error: pending.error } : {}),
-      recovered_before_binding: true,
-    })
-    await wakePlanRunnerAfterChildren({ stateDir, client, taskID: state.task_id })
   }
 }
 
@@ -780,7 +675,7 @@ function isCompletionAttempt(state) {
 }
 
 function hasRunningChildSession(state) {
-  return (state.child_sessions || []).some((child) => child.status === "running")
+  return (state.child_sessions || []).some((child) => ACTIVE_CHILD_STATUSES.has(child.status))
 }
 
 function hasTerminalGateResult(state) {
@@ -1830,7 +1725,7 @@ async function handleChildSessionIdle({ stateDir, client, event }) {
   const child = childSessionBySessionID(state, sessionID)
   if (!child) return
 
-  if (child.status === "running") {
+  if (child.status === "running" || child.status === "starting") {
     state.child_sessions = (state.child_sessions || []).map((item) => (
       item.session_id === sessionID ? { ...item, status: "completed" } : item
     ))
@@ -1956,7 +1851,7 @@ async function handleChildSessionError({ stateDir, client, event }) {
   if (!state) return
   const child = childSessionBySessionID(state, sessionID)
   if (!child) return
-  if (child.status === "running") {
+  if (child.status === "running" || child.status === "starting") {
     const error = formatDiagnosticError(event.properties?.error)
     state.child_sessions = (state.child_sessions || []).map((item) => (
       item.session_id === sessionID ? { ...item, status: "failed", error, failed_at: Date.now() } : item
@@ -1997,7 +1892,7 @@ async function handlePlanRunnerTerminalIdle({ stateDir, client, event }) {
     collectionError = error
   }
 
-  const runningChildren = (state.child_sessions || []).filter((child) => child.status === "running")
+  const runningChildren = (state.child_sessions || []).filter((child) => ACTIVE_CHILD_STATUSES.has(child.status))
   if (runningChildren.length) {
     const messageID = message ? assistantMessageID(message) : null
     const text = message
@@ -2763,6 +2658,121 @@ async function dispatchChildTool(args, context, stateDir, { client }) {
   }
 }
 
+function shouldDisposeChildRuntime(child) {
+  const disposal = child?.runtime_disposal || {}
+  return Boolean(
+    child?.session_id
+      && child?.worktree
+      && ["completed", "failed"].includes(child.status)
+      && disposal.status !== "disposing"
+      && disposal.status !== "disposed"
+      && (disposal.status !== "failed" || Number(disposal.attempts || 0) < MAX_RUNTIME_DISPOSAL_ATTEMPTS),
+  )
+}
+
+async function disposeChildRuntime({ stateDir, client, taskID, sessionID }) {
+  let state = await readTaskState(stateDir, taskID)
+  if (!state) return
+  let child = childSessionBySessionID(state, sessionID)
+  if (!shouldDisposeChildRuntime(child)) return
+
+  const previous = child.runtime_disposal || {}
+  const disposing = {
+    status: "disposing",
+    directory: child.worktree,
+    attempts: Number(previous.attempts || 0) + 1,
+    ...(previous.error ? { last_error: previous.error } : {}),
+    ...(previous.failed_at ? { last_failed_at: previous.failed_at } : {}),
+    started_at: Date.now(),
+  }
+  state.child_sessions = (state.child_sessions || []).map((item) => (
+    item.session_id === sessionID ? { ...item, runtime_disposal: disposing } : item
+  ))
+  state.updated_at = Date.now()
+  await writeTaskState(stateDir, state)
+
+  try {
+    if (typeof client?.instance?.dispose !== "function") throw new Error("client.instance.dispose is unavailable")
+    const result = await client.instance.dispose({ query: { directory: child.worktree } })
+    throwIfSdkError(result, "child runtime disposal failed")
+
+    state = await readTaskState(stateDir, taskID)
+    if (!state) return
+    child = childSessionBySessionID(state, sessionID)
+    if (!child) return
+    state.child_sessions = (state.child_sessions || []).map((item) => (
+      item.session_id === sessionID
+        ? {
+            ...item,
+            runtime_disposal: {
+              status: "disposed",
+              directory: disposing.directory,
+              attempts: disposing.attempts,
+              ...(disposing.last_error ? { last_error: disposing.last_error } : {}),
+              ...(disposing.last_failed_at ? { last_failed_at: disposing.last_failed_at } : {}),
+              disposed_at: Date.now(),
+            },
+          }
+        : item
+    ))
+    state.updated_at = Date.now()
+    await writeTaskState(stateDir, state)
+    await appendEvent(stateDir, taskID, { type: "child_runtime_disposed", session_id: sessionID, directory: disposing.directory })
+  } catch (error) {
+    state = await readTaskState(stateDir, taskID)
+    if (!state) return
+    child = childSessionBySessionID(state, sessionID)
+    if (!child) return
+    const failedAt = Date.now()
+    state.child_sessions = (state.child_sessions || []).map((item) => (
+      item.session_id === sessionID
+        ? {
+            ...item,
+            runtime_disposal: {
+              status: "failed",
+              directory: disposing.directory,
+              attempts: disposing.attempts,
+              error: formatDiagnosticError(error),
+              ...(disposing.last_error ? { last_error: disposing.last_error } : {}),
+              ...(disposing.last_failed_at ? { last_failed_at: disposing.last_failed_at } : {}),
+              failed_at: failedAt,
+            },
+          }
+        : item
+    ))
+    state.updated_at = failedAt
+    await writeTaskState(stateDir, state)
+    await appendEvent(stateDir, taskID, {
+      type: "child_runtime_disposal_failed",
+      session_id: sessionID,
+      directory: disposing.directory,
+      error: formatDiagnosticError(error),
+    })
+  }
+}
+
+async function disposeEligibleChildRuntimes({ stateDir, client, directory, sessionIndex }) {
+  const state = await readTaskState(stateDir, sessionIndex.task_id)
+  if (!state || normalize(directory) !== normalize(state.worktree)) return
+  const sessionIDs = (state.child_sessions || []).filter(shouldDisposeChildRuntime).map((child) => child.session_id)
+  for (const sessionID of sessionIDs) {
+    await disposeChildRuntime({ stateDir, client, taskID: state.task_id, sessionID })
+  }
+}
+
+async function enforceChildWorktreeRemovalGate(stateDir, input, output, sessionIndex) {
+  const command = String(output?.args?.command || input.args?.command || "")
+  if (!/\bgit\s+worktree\s+remove\b/.test(command)) return
+  const state = await readTaskState(stateDir, sessionIndex.task_id)
+  if (!state) return
+  for (const child of state.child_sessions || []) {
+    if (!child.worktree || !command.includes(child.worktree)) continue
+    if (child.runtime_disposal?.status !== "disposed") {
+      throw new Error(`plan_runner_requires_child_runtime_disposal: ${child.worktree}`)
+    }
+  }
+}
+
 async function writePlanTool(args, context, stateDir) {
   if (context.agent !== "plan-runner") throw new Error("write_plan is only available to the plan-runner agent")
 
@@ -2813,8 +2823,6 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
   const completionGatePollMs = Number(options.completionGatePollMs || process.env.OPENCODE_PLAN_RUNNER_COMPLETION_GATE_POLL_MS || 1000)
   const completionGateTimeoutMs = Number(options.completionGateTimeoutMs || process.env.OPENCODE_PLAN_RUNNER_COMPLETION_GATE_TIMEOUT_MS || 1800000)
   let stateQueue = Promise.resolve()
-  const pendingChildTerminals = new Map()
-  const pendingChildDispatchCalls = new Set()
 
   function enqueueState(handler) {
     const run = stateQueue.then(handler)
@@ -2881,12 +2889,11 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       }),
     },
 
-    "tool.definition": async (input, output) => {
-      ensureChildWorktreeTaskToolDescription(input, output)
-    },
-
     "tool.execute.before": async (input, output) => enqueueState(async () => {
       const sessionIndex = await readSessionIndex(stateDir, input.sessionID)
+      if (sessionIndex?.role === "plan-runner") {
+        await disposeEligibleChildRuntimes({ stateDir, client, directory: worktree, sessionIndex })
+      }
       if (input.tool === "task" && isPlanRunnerDispatch(output?.args)) {
         if (sessionIndex?.role === "plan-runner") throw new Error("plan-runner cannot dispatch another plan-runner with native task")
         throw new Error("Use start_plan_runner instead of native task for plan-runner dispatch")
@@ -2896,12 +2903,12 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
         return
       }
       if (input.tool === "task" && sessionIndex?.role === "plan-runner") {
-        await enforcePhaseGate(stateDir, input, output)
-        await prepareChildDispatch(stateDir, input, output, sessionIndex)
-        pendingChildDispatchCalls.add(input.callID)
-        return
+        throw new Error("Use dispatch_child instead of native task for child dispatch")
       }
       if (input.tool !== "task" || !isPlanRunnerDispatch(output.args)) {
+        if (input.tool === "bash" && sessionIndex?.role === "plan-runner") {
+          await enforceChildWorktreeRemovalGate(stateDir, input, output, sessionIndex)
+        }
         await enforcePhaseGate(stateDir, input, output)
         return
       }
@@ -2935,12 +2942,6 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
 
     "tool.execute.after": async (input, output) => enqueueState(async () => {
       const sessionIndex = await readSessionIndex(stateDir, input.sessionID)
-      if (input.tool === "task" && sessionIndex?.role === "plan-runner") {
-        await bindChildDispatch(stateDir, client, input, output, sessionIndex, pendingChildTerminals)
-        pendingChildDispatchCalls.delete(input.callID)
-        if (pendingChildDispatchCalls.size === 0) pendingChildTerminals.clear()
-        return
-      }
       if (input.tool !== "task" || !isPlanRunnerDispatch(input.args)) {
         await recordToolEvidence(stateDir, input, output)
         return
@@ -2965,20 +2966,6 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
     }),
 
     event: async ({ event }) => {
-      if ((event.type === "session.idle" || event.type === "session.error") && event.properties?.sessionID) {
-        const sessionID = event.properties.sessionID
-        const index = await readSessionIndex(stateDir, sessionID)
-        if (!index && pendingChildDispatchCalls.size > 0) {
-          const existing = pendingChildTerminals.get(sessionID)
-          if (pendingChildTerminals.size >= 64) pendingChildTerminals.delete(pendingChildTerminals.keys().next().value)
-          if (existing?.type === "session.error" && event.type === "session.idle") return
-          pendingChildTerminals.set(sessionID, {
-            type: event.type,
-            error: event.type === "session.error" ? formatDiagnosticError(event.properties?.error) : null,
-            at: Date.now(),
-          })
-        }
-      }
       return enqueueState(async () => {
         await handleSessionDiff(stateDir, event)
         await handleMessageDiff(stateDir, event)

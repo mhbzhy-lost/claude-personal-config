@@ -717,14 +717,11 @@ describe("PlanRunnerHarnessPlugin", () => {
     assert.deepEqual(functionExports.sort(), ["PlanRunnerHarnessPlugin", "default"].sort())
   })
 
-  it("documents automatic child worktree creation in the subagent dispatch tool description", async () => {
+  it("documents automatic child worktree creation in dispatch_child", async () => {
     const hooks = await PlanRunnerHarnessPlugin({ directory: process.cwd() }, { stateDir: join(tmpdir(), "plan-runner-harness-test-unused") })
-    const definition = { description: "Launch a new agent to handle complex, multistep tasks autonomously." }
 
-    await hooks["tool.definition"]({ tool: "task" }, definition)
-
-    assert.match(definition.description, /automatically creates a dedicated git worktree/i)
-    assert.match(definition.description, /assigned worktree/i)
+    assert.match(hooks.tool.dispatch_child.description, /dedicated git worktree/i)
+    assert.match(hooks.tool.dispatch_child.description, /active structured plan task/i)
   })
 
   it("uses unique temp names for atomic state writes", () => {
@@ -1402,7 +1399,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks, workspace, stateDir })
       const state = readJson(statePath)
       state.status = "executing"
-      state.child_sessions = [{ session_id: "ses_child", role: "executor", status: "running", worktree: "/tmp/child" }]
+      state.child_sessions = [{ session_id: "ses_child", role: "executor", status: "starting", worktree: "/tmp/child" }]
       writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
 
       await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
@@ -1412,6 +1409,50 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.equal(waiting.root_wait.status, "sleeping")
       assert.equal(waiting.root_wait.final_text, null)
       assert.equal(waiting.plan_runner_terminal_error_at, undefined)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("settles a starting child idle and reawakens the waiting root", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const prompts = []
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          session: {
+            create: async () => ({ data: { id: "ses_plan_runner" } }),
+            promptAsync: async (payload) => { prompts.push(payload); return { data: {} } },
+            messages: async () => ({ data: [{ info: { id: "msg_wait", role: "assistant" }, parts: [{ type: "text", text: "Child starting." }] }] }),
+          },
+        },
+      })
+      const result = await hooks.tool.start_plan_runner.execute(
+        { prompt: "Implement isolated work." },
+        makeContext({ sessionID: "ses_parent", workspace }),
+      )
+      const statePath = join(stateDir, "tasks", `${result.metadata.task_id}.json`)
+      const state = readJson(statePath)
+      state.status = "executing"
+      state.child_sessions = [{ session_id: "ses_child_starting", role: "executor", status: "starting", worktree: "/tmp/child" }]
+      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+      writeFileSync(join(stateDir, "sessions", "ses_child_starting.json"), JSON.stringify({ task_id: result.metadata.task_id, role: "child" }))
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: result.metadata.sessionId } } })
+      assert.equal(readJson(statePath).status, "waiting_for_children")
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_child_starting" } } })
+
+      const awake = readJson(statePath)
+      assert.equal(awake.child_sessions[0].status, "completed")
+      assert.equal(awake.status, "executing")
+      assert.equal(awake.root_wait.status, "awake")
+      assert.equal(prompts.length, 2)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1841,7 +1882,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("consumes a child terminal event that arrives before task after binds the child session", async () => {
+  it.skip("obsolete native task: consumes a child terminal event before binding", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -1891,7 +1932,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("consumes a child error that arrives before task after binds the child session", async () => {
+  it.skip("obsolete native task: consumes a child error before binding", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -1938,7 +1979,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("keeps an early child error when a later idle arrives before binding", async () => {
+  it.skip("obsolete native task: keeps an early child error before binding", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -1976,7 +2017,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("does not cache an unrelated early terminal without a pending child dispatch", async () => {
+  it.skip("obsolete native task: does not cache an unrelated early terminal", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -2620,7 +2661,30 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("creates a harness-managed worktree and rewrites child task dispatch", async () => {
+  it("rejects native Plan-Runner task dispatch and points to dispatch_child", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      initGitWorkspace(workspace)
+      const hooks = await createPlanRunnerHarness({ workspace, stateDir })
+      await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir, prompt: "Execution Brief." })
+      await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+      await hooks.tool.start_task.execute({ id: "T1" }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+
+      await assert.rejects(
+        () => hooks["tool.execute.before"](
+          { tool: "task", sessionID: "ses_plan_runner", callID: "call_native_child" },
+          { args: { background: true, prompt: "Use the native task path." } },
+        ),
+        /Use dispatch_child instead of native task for child dispatch/i,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.skip("obsolete native task: creates a harness-managed worktree", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -2665,7 +2729,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("preserves child session bindings when plan-runner dispatches children concurrently", async () => {
+  it.skip("obsolete native task: preserves concurrent child bindings", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -2706,7 +2770,7 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("marks harness-managed executor child sessions completed when the child idles", async () => {
+  it.skip("obsolete native task: marks executor child completed", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
@@ -2740,16 +2804,27 @@ describe("PlanRunnerHarnessPlugin", () => {
     try {
       const workspace = join(root, "workspace")
       const stateDir = join(root, "state")
-      const hooks = await createPlanRunnerHarness({ workspace, stateDir })
+      let createCalls = 0
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          session: {
+            create: async () => {
+              createCalls += 1
+              return { data: { id: createCalls === 1 ? "ses_plan_runner" : "ses_child" } }
+            },
+            promptAsync: async () => ({ data: {} }),
+          },
+        },
+      })
       const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir, prompt: "Execution Brief:\nImplement the brief." })
       await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
       await hooks.tool.start_task.execute({ id: "T1" }, makeContext({ sessionID: "ses_plan_runner", workspace }))
 
-      const childOutput = { args: { background: true, prompt: "Implement child slice." } }
-      await hooks["tool.execute.before"]({ tool: "task", sessionID: "ses_plan_runner", callID: "call_child" }, childOutput)
-      await hooks["tool.execute.after"](
-        { tool: "task", sessionID: "ses_plan_runner", callID: "call_child", args: childOutput.args },
-        { metadata: { parentSessionId: "ses_plan_runner", sessionId: "ses_child" } },
+      await hooks.tool.dispatch_child.execute(
+        { description: "Implement child slice", prompt: "Implement child slice." },
+        makeContext({ sessionID: "ses_plan_runner", workspace }),
       )
       const child = readJson(statePath).child_sessions.find((item) => item.session_id === "ses_child")
 
@@ -5938,6 +6013,182 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  describe("child runtime disposal", () => {
+    it("disposes each settled child once at the next root tool boundary", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        const disposals = []
+        const hooks = await createPlanRunnerHarness({ workspace, stateDir, client: planRunnerClient({ disposals, disposeResult: { data: {} } }) })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+        const state = readJson(statePath)
+        state.child_sessions = [
+          { session_id: "ses_child_a", role: "executor", status: "completed", worktree: join(root, "child-a") },
+          { session_id: "ses_child_b", role: "executor", status: "failed", worktree: join(root, "child-b") },
+        ]
+        writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+
+        await hooks["tool.execute.before"](
+          { tool: "bash", sessionID: "ses_plan_runner", callID: "call_status_1" },
+          { args: { command: "git status --short" } },
+        )
+        await hooks["tool.execute.before"](
+          { tool: "bash", sessionID: "ses_plan_runner", callID: "call_status_2" },
+          { args: { command: "git status --short" } },
+        )
+
+        const disposed = readJson(statePath)
+        assert.equal(disposals.length, 2)
+        assert.deepEqual(disposed.child_sessions.map((child) => child.runtime_disposal.status), ["disposed", "disposed"])
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("does not dispose a child runtime from a child-directory plugin", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const childWorktree = join(root, "child")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        mkdirSync(childWorktree, { recursive: true })
+        const disposals = []
+        const rootHooks = await createPlanRunnerHarness({ workspace, stateDir })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks: rootHooks, workspace, stateDir })
+        await rootHooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks: rootHooks, workspace })
+        const state = readJson(statePath)
+        state.child_sessions = [{ session_id: "ses_child", role: "executor", status: "completed", worktree: childWorktree }]
+        writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+        const childHooks = await createPlanRunnerHarnessFromInput(
+          { directory: childWorktree, client: planRunnerClient({ disposals, disposeResult: { data: {} } }) },
+          { stateDir },
+        )
+
+        await childHooks["tool.execute.before"](
+          { tool: "bash", sessionID: "ses_plan_runner", callID: "call_status" },
+          { args: { command: "git status --short" } },
+        )
+
+        assert.deepEqual(disposals, [])
+        assert.equal(readJson(statePath).child_sessions[0].runtime_disposal, undefined)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("caps failed child disposal and still disposes siblings", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        const disposals = []
+        let calls = 0
+        const client = planRunnerClient({ disposals })
+        client.instance.dispose = async (payload) => {
+          disposals.push(payload)
+          calls += 1
+          return payload.query.directory.endsWith("child-a") ? { error: { data: { message: "dispose failed" } } } : { data: {} }
+        }
+        const hooks = await createPlanRunnerHarness({ workspace, stateDir, client })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+        const state = readJson(statePath)
+        state.child_sessions = [
+          { session_id: "ses_child_a", role: "executor", status: "completed", worktree: join(root, "child-a") },
+          { session_id: "ses_child_b", role: "executor", status: "completed", worktree: join(root, "child-b") },
+        ]
+        writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+
+        for (let index = 0; index < 3; index += 1) {
+          await hooks["tool.execute.before"](
+            { tool: "bash", sessionID: "ses_plan_runner", callID: `call_status_${index}` },
+            { args: { command: "git status --short" } },
+          )
+        }
+
+        const after = readJson(statePath)
+        assert.equal(calls, 3)
+        assert.equal(after.child_sessions[0].runtime_disposal.status, "failed")
+        assert.equal(after.child_sessions[0].runtime_disposal.attempts, 2)
+        assert.equal(after.child_sessions[1].runtime_disposal.status, "disposed")
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("preserves concurrent child state updates while disposal awaits", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        let releaseDispose
+        const disposeResult = new Promise((resolve) => { releaseDispose = resolve })
+        const client = planRunnerClient()
+        client.instance.dispose = async () => disposeResult
+        const hooks = await createPlanRunnerHarness({ workspace, stateDir, client })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+        const state = readJson(statePath)
+        state.child_sessions = [{ session_id: "ses_child", role: "executor", status: "completed", worktree: join(root, "child") }]
+        writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+
+        const before = hooks["tool.execute.before"](
+          { tool: "bash", sessionID: "ses_plan_runner", callID: "call_status" },
+          { args: { command: "git status --short" } },
+        )
+        await waitUntil(() => readJson(statePath).child_sessions[0].runtime_disposal?.status === "disposing")
+        const concurrent = readJson(statePath)
+        concurrent.child_sessions[0].result_summary = "preserved"
+        writeFileSync(statePath, `${JSON.stringify(concurrent, null, 2)}\n`)
+        releaseDispose({ data: {} })
+        await before
+
+        const after = readJson(statePath)
+        assert.equal(after.child_sessions[0].result_summary, "preserved")
+        assert.equal(after.child_sessions[0].runtime_disposal.status, "disposed")
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("blocks child worktree removal until runtime disposal succeeds", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const childWorktree = join(root, "child")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        const hooks = await createPlanRunnerHarness({ workspace, stateDir, client: planRunnerClient({ disposeAvailable: false }) })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+        const state = readJson(statePath)
+        state.child_sessions = [{ session_id: "ses_child", role: "executor", status: "completed", worktree: childWorktree }]
+        writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+
+        await assert.rejects(
+          () => hooks["tool.execute.before"](
+            { tool: "bash", sessionID: "ses_plan_runner", callID: "call_remove" },
+            { args: { command: `git worktree remove --force "${childWorktree}" && git branch -D child` } },
+          ),
+          /plan_runner_requires_child_runtime_disposal/,
+        )
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
   })
 
   describe("dispatch_child", () => {
