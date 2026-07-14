@@ -14,7 +14,14 @@
 ## 步骤
 
 1. 重启 OpenCode，并优先在临时 clean git repo 或当前项目的 clean origin workspace 启动 smoke。`start_plan_runner` 会创建 dedicated run worktree；origin workspace 的 dirty 内容不会进入 run worktree，但后续 merge-back 前必须由主 agent 再检查 origin 是否 clean。
-2. 在主会话通过 `start_plan_runner` 派发一个小型 `plan-runner` 文档任务，禁止用原生 `task(subagent_type="plan-runner")`。任务要求：
+2. 重启后运行真实 `prompt-async` probe：
+
+   ```bash
+    node scripts/opencode-subagent-event-probe.mjs --mode prompt-async --port 41339
+   ```
+
+   保留实际命令参数与输出，确认 probe 使用真实 SDK 请求而非模拟结果。
+3. 在主会话通过 `start_plan_runner` 派发一个小型 `plan-runner` 文档任务，禁止用原生 `task(subagent_type="plan-runner")`。任务要求：
     - 先调用 `write_plan({ tasks })`，tasks 写清 id、标题、文件范围、验证命令、停止条件；
     - 不再调用 `todowrite`，不再让 harness 从 todo 派生结构化状态；
     - 每个执行切片先调用 `start_task({ id })`，实现与验证完成后调用 `complete_task({ id })`；
@@ -25,21 +32,23 @@
     - 只改动约定的文档文件；
     - 至少运行文档相关检查和 `git diff --check`；
     - 创建本地 commit，但不推送。
-3. 确认调用立即返回 `dispatch_status=accepted`，但不把它视为完成。parent 在此期间可执行不冲突工具调用；不得继续实施该计划，也不得主动或循环轮询。
-4. 等待 parent 异步收到 `validated`、`blocked` 或 `interrupted` 通知。仅当预期通知缺失时调用一次 `get_plan_runner_status` 诊断，并记录观察到的状态。
-5. 在 `validated` 通知后、origin workspace 手工执行 merge-back 前，先运行 `git status --short`；clean 时执行通知中的 `git merge --ff-only <branch>`，再执行 `git worktree remove <run_worktree>`。dirty 时停止并询问用户。
-6. 覆盖同一 parent 的两个 run：分别收到独立 accepted 和 terminal 通知，状态查询只能由该 parent owner 执行。
-7. 覆盖 child 场景：root 有 running child 时为 `waiting_for_children`；全部 settled 后确认 harness 有限次唤醒同一个 root。
-8. 确认三种终态均可通知 parent，且只有 root terminal barrier 满足并且 notification 为 `sent` 或 `failed` 后，parent idle 才能 dispose runtime。
+4. 确认调用立即返回 `dispatch_status=accepted`，但不把它视为完成。parent 在此期间可执行不冲突工具调用；不得继续实施该计划，也不得主动或循环轮询。
+5. 等待 parent 异步收到 `validated`、`blocked` 或 `interrupted` 通知。仅当预期通知缺失时调用一次 `get_plan_runner_status` 诊断，并记录观察到的状态。
+6. 在 `validated` 通知后、origin workspace 手工执行 merge-back 前，先运行 `git status --short`；clean 时执行通知中的 `git merge --ff-only <branch>`，再执行 `git worktree remove <run_worktree>`。dirty 时停止并询问用户。
+7. 覆盖同一 parent 的两个 run：分别收到独立 accepted 和 terminal 通知，状态查询只能由该 parent owner 执行。
+8. 覆盖 child 场景：root 有 running child 时为 `waiting_for_children`；全部 settled 后确认 harness 有限次唤醒同一个 root。
+9. 确认三种终态均可通知 parent，且每条 terminal 通知均在对应 root terminal barrier 写入后才发送。通知失败时，owner 仅可调用一次 `get_plan_runner_status` 诊断；不得由 root 尾部即时 dispose，当前回合结束后的 parent idle 提供安全 disposal 触发，不承诺 timer。
 
 ## 通过标准
 
-- `docs/plans/<task_id>.md` 已生成，正文是紧凑的自然语言执行 brief，覆盖目标、方案、精确文件、小步可验证切片、验证命令、风险或停止条件，不要求固定模板章节或 checkbox 任务跟踪。
+- task-state 的 plan path 指向 stateDir `plans/<task_id>.md`，正文是紧凑的自然语言执行 brief，覆盖目标、方案、精确文件、小步可验证切片、验证命令、风险或停止条件，不要求固定模板章节或 checkbox 任务跟踪。
+- `prompt-async` probe 使用真实 SDK 请求时，`status_code` 必须为 `204`、terminal 必须存在、`accepted_before_terminal == true`，且 CLI exit 为 `0`。
+- `prompt-async` probe 的参数拼写错误、缺少 `204` 或缺少 terminal 时必须以非 `0` 退出。
 - `start_plan_runner` 返回 `dispatch_status=accepted` 时不等待 root final，不将其报告为完成；terminal 结果仅以 parent 异步通知为准。
 - parent 在 accepted 后可完成不冲突工具调用或结束当前回合，且没有主动/循环状态轮询。
 - 同一 parent 的两个 run 保持独立 registry 记录、通知与 owner-only 状态查询。
 - child running 时 task-state 为 `waiting_for_children`；全部 settled 后仅有限次唤醒原 root。
-- `validated`、`blocked`、`interrupted` 都能异步通知；root terminal barrier 和 notification `sent` / `failed` 前，parent idle 不得 dispose。
+- `validated`、`blocked`、`interrupted` 都能异步通知；每条通知前都已写入对应 root terminal barrier。通知失败时 owner 仅做一次状态诊断，root 不在尾部即时 dispose，当前回合结束后的 parent idle 才提供安全 disposal 触发，不承诺 timer。
 - task-state 中 `version == 2`，`tasks[]` 来自 `write_plan({ tasks })`，状态通过 `start_task` / `complete_task` 推进；不应出现 `todo` 或 `plan_contract` 作为新账本。
 - 若任务使用 child session，至少一个 child session 记录独立 worktree、branch、base commit；child prompt 或 task output 可见 `Child worktree` / `Child branch` 元数据。
 - 若任务使用并发 executor DAG，应看到至少两个 `child_worktree_created`、两个 `child_session_bound`、两个 `child_session_completed`，且第二个 `child_worktree_created` 早于第一个 `child_session_completed`，证明不是串行执行。
@@ -51,7 +60,7 @@
 - 最终报告列出修改文件、验证命令与结果。
 - `git diff --check` 通过。
 - review loop 可观察到 `finish_plan` 后进入审计阶段；若检查 task state，应看到 `self_check_completed`、`deterministic_check_passed`、`audit_review_dispatched`、`external_review_passed`、`task_validated`、`parent_merge_back_notified` 事件，且不应出现 `self_check_prompt_sent`。
-- parent 的 terminal 通知必须晚于对应 terminal state；如果收到完成表述但 task state 仍在 `audit_review` / `external_review`，说明 lifecycle gate 泄漏。
+- parent 的 terminal 通知必须晚于对应 root terminal barrier 和 terminal state；如果收到完成表述但 task state 仍在 `audit_review` / `external_review`，或不存在 barrier，说明 lifecycle gate 泄漏。
 - OpenCode DB 中 audit child session 应有 message / part；legacy `session.prompt` 路径不写 `session_input`。若只有 session 行，说明 audit child prompt 未成功落库。
 - 轻量 probe 应能验证 audit child 事件回流：`scripts/opencode-subagent-event-probe.mjs --mode audit-child --audit-agent plan-runner-audit` 的 summary 中 `backflow.message_updated` 和 `backflow.idle` 都应为 `true`。
 - OpenCode DB 中同一 subagent session 不应在 repair prompt 后出现 `agent-switched` 到 `build`；后续 prompt 应保持 `plan-runner`。
@@ -62,9 +71,10 @@
 - 若原生 `task(subagent_type="plan-runner")` 被拒绝，改用 `start_plan_runner`；原生 task 不再创建 plan-runner root state。
 - 若 parent/main session 没有收到 merge-back 通知，但 task-state 已是 `validated`，检查 `parent_notification` 字段以及 `parent_merge_back_notified` / `parent_merge_back_notify_failed` event；通知失败不应回退 `validated`。
 - 若 accepted 后未收到预期 terminal 通知，不要循环轮询；对 owner parent 调用一次 `get_plan_runner_status`，记录返回状态及通知字段后再人工诊断。
+- 若 `prompt-async` probe 的真实 SDK `status_code` 不是 `204`、缺少 terminal 或 `accepted_before_terminal != true`，按失败处理；参数拼写错误也必须为非 `0` 退出，不能用模拟输出替代。
 - 若同 parent 双 run 的状态或通知串线，检查 parent registry 是否按 run id 独立保存，以及 owner-only 查询是否拒绝非 parent session。
 - 若 child 全部 settled 后 root 未继续，检查 `waiting_for_children`、child settled event 和有限唤醒计数；不要新建 root 或由 parent 代替实施。
-- 若 terminal 后 runtime 未回收，检查 root terminal barrier 是否完成，以及 parent notification 是否为 `sent` 或 `failed`；在此前 parent idle 不得 dispose。
+- 若通知失败后 runtime 未回收，owner 仅调用一次 `get_plan_runner_status` 诊断；不要让 root 尾部即时 dispose。等待当前回合结束后的 parent idle 安全触发，不承诺 timer。
 - 若 smoke 汇总脚本报告失败但 state 中没有 `gate_failures` 字段，按空数组处理后重算；缺失字段不等于 gate failure。
 - 用 Node wrapper 跑 `opencode run --attach` 时，`spawn` 必须设置 `stdio: ["ignore", "pipe", "pipe"]` 或主动关闭 stdin；否则 CLI 会等待 stdin EOF，server 侧看不到 session/task-state，误判为 plan-runner 未启动。
 - 若 `finish_plan` 返回 `plan_runner_requires_clean_repo_before_review` 或 `plan_runner_requires_commit_range`，说明 plan-runner 未把本次改动完整落入本地 commit，需提交后重跑验证并再次调用 `finish_plan`。

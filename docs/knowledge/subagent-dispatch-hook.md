@@ -65,11 +65,10 @@ OpenCode v1.17.19+ 的 variants 从 models.dev 的 `reasoning_options` 自动推
 推进任务状态，执行、收集 harness 观测到的 evidence，并在方案需要变化时返回
 Change Request。
 
-多步计划入口不直接加载 `writing-plans` skill。`plan-runner` 的 description 负责启发式
-触发；计划文档只吸收 writing-plans 的核心写法（低上下文可执行、exact files、small slices、
-RED/GREEN、exact commands、risks），不使用固定六段模板、checkbox tracking 或执行模式
-选择。`write_plan.tasks` 契约、并发 worktree 约束和验证方式都维护在
-`userconf/agents/plan-runner.md`。
+多步方案先由主 agent 使用 `writing-plans` 产出完整计划，并由用户选择 Plan-Runner
+执行方式。`plan-runner` root 自己不重复加载 `writing-plans`，也不重新做执行模式选择；
+它只消费已确认计划和 `write_plan.tasks` 机器契约。`write_plan.tasks` 契约、并发 worktree
+约束和验证方式都维护在 `userconf/agents/plan-runner.md`。
 
 `plan-runner` 作为 root 执行容器可以使用 `task` 工具编排 DAG child subagents。child
 agent 类型、工作区隔离和路径门禁由 harness-managed child dispatch 接管；root agent
@@ -108,9 +107,18 @@ harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-st
   实现已被替代。`start_plan_runner` 通过 `promptAsync` 投递 root prompt；HTTP 204 后立即返回
   `dispatch_status=accepted`，只表示启动请求被接受，不是完成或终态。root 的 message、part、idle 和
   error 事件异步归集到 task-state。
+- `session.create` / `promptAsync` 返回 SDK `{ error }` 表示明确拒绝，派发 state 收敛为
+  `interrupted`；调用直接 throw 时投递结果未知，只记录 `dispatch_delivery.status=unknown`，保留非终态和
+  现场，不写 terminal barrier，也不允许 parent idle 提前 dispose 可能已启动的 root。
 - root 派发 child 后，存在 running child 时 root 进入 `waiting_for_children`；全部 child settled 后，
-  harness 有限次唤醒同一个 root 继续执行。root 的 `validated`、`blocked`、`interrupted` 终态通过 parent
-  `promptAsync` 异步通知。通知发送失败会记录诊断，不会把终态回退为运行中。
+  harness 有限次唤醒同一个 root 继续执行。`root_wait` 是 task-state 中持久化的 root 等待与恢复记录；
+  plugin instance 的 child pending map 只用于补偿 `tool.execute.after(task)` 绑定前到达的 child terminal
+  事件，不能跨 instance 持久化或替代 `root_wait`。root 的 `validated`、`blocked`、`interrupted` 终态必须
+  先写入 root terminal barrier，随后才通过 parent `promptAsync` 异步通知。通知发送失败会记录诊断，不会把
+  终态回退为运行中。
+- root idle 归集先检查 running child；即使 final message 读取失败也进入 `waiting_for_children`。没有 running
+  child 时，messages API 缺失或失败收敛为可诊断的 `interrupted`。wake 后延迟 idle 只有在观察到已完成的
+  新 assistant message 时才能终结 run，不能把流式 partial message 误判为 final。
 - 状态查询仅限 owner parent session。parent registry 支持同一 parent 的多个 run；主 agent 不主动或循环
   轮询。仅在预期通知缺失、用户明确询问状态或人工诊断时，可调用一次 `get_plan_runner_status`，并只能报告
   实际观察到的状态，不能把 `accepted` 解释为完成。
@@ -164,19 +172,15 @@ harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-st
   `parent_merge_back_notify_failed`，不回退 `validated`。主 agent 若要合回，必须先在 origin
   workspace 检查 `git status --short`；clean 时再执行通知里的 fast-forward merge 和 cleanup。
    dirty 时停止并询问用户。
-- dedicated run 到达 `validated`、`blocked` 或 `interrupted` 后，只有 origin directory 的
-   PlanRunnerHarnessPlugin instance 会调用 `client.instance.dispose({ query: { directory: run_worktree } })`
-   回收该 run directory 缓存的 MCP/LSP/plugin runtime。root terminal barrier 还要求对应 parent 通知已
-   `sent` 或 `failed`，其后 parent 才能在 idle 时 dispose；不得在 plan-runner idle 或
-   `start_plan_runner` 返回前释放，因为 child session 的尾部 event 会通过 `Plugin.trigger` 重新读取已失效的
+- dedicated run 到达 `validated`、`blocked` 或 `interrupted` 后，root 不得在尾部即时
+   dispose run directory runtime。对应 parent 通知失败时，owner 仅可调用一次
+   `get_plan_runner_status` 做诊断；当前回合结束后的 parent idle 才提供安全的 disposal
+   触发，不承诺 timer。这样避免 child session 尾部 event 通过 `Plugin.trigger` 重新读取已失效的
    directory cache 并重建 plugin。该回收与 parent merge-back、git worktree/branch 清理、session 保留完全分离：
-  不合并、不删除、不终止进程，也不影响 origin 或其他 directory。失败状态最多在后续终态触发中重试两次，
-  `disposing` / `disposed` 或达到上限后停止；task-state 的 `runtime_disposal`（含 attempts、最近错误）和
-  `runtime_disposal_disposed` / `runtime_disposal_failed` event 仅作幂等诊断；
-  SDK error 或 API 缺失不能回退终态或阻止 parent 获得 final/merge-back 通知。child directory plugin
-  不得在自身 hook 中自释放。OpenCode dispose endpoint 在 HTTP response 返回后才由 middleware 执行
-  teardown，plugin event 又是 fire-and-forget；父 idle hook 必须 await SDK response，不能改成不可观测的
-  fire-and-forget，也不会与 plugin state queue 重入死锁。
+   不合并、不删除、不终止进程，也不影响 origin 或其他 directory。task-state 的
+   `runtime_disposal`（含 attempts、最近错误）和 `runtime_disposal_disposed` /
+   `runtime_disposal_failed` event 仅作幂等诊断；SDK error 或 API 缺失不能回退终态或阻止
+   parent 获得 final/merge-back 通知。child directory plugin 不得在自身 hook 中自释放。
 - 2026-07-13 真实 blocked smoke 验证 parent idle runtime disposal：`start_plan_runner` 回流 Change Request
   时 worktree 和 Swift 现场保留且尚未 dispose；父 session idle 后 task-state 写入 `runtime_disposal.status=disposed`。
   OpenCode 日志中该 target directory 仅各出现一次 instance 创建、plugin 初始化和 instance 释放，释放后没有
@@ -328,7 +332,9 @@ tool/event hook 行为。
   `reviews.round` 仅是 harness repair loop 计数，不复用为 external review 轮次。
 - `reviews.round` 只保留 repair 次数观测，不再作为全局 blocked 预算；预算按 gate source
   分别由 `gate_failures[].source` 计数。
-- `validated` / `blocked` / `interrupted` 是 `finish_plan` terminal gate 的缓存终态。
+- `validated` / `blocked` / `interrupted` 是 `finish_plan` terminal gate 的缓存终态。每次 parent terminal
+  通知必须以同一 run 已写入的 root terminal barrier 为前置条件；禁止因单独观察到 root error 而绕过 barrier
+  直接发送完成通知。
   `stale` 不再是 completion gate result，也不再是 `finish_plan` terminal status；
   `finish_plan` 等待超时时只写 `interrupted`。再次调用 `finish_plan` 只能回放既有结果，
   不能把 gate 改回 running 或重跑 audit/external review；terminal phase 下只有 `finish_plan`
@@ -395,8 +401,8 @@ description 和 hook 提示都是软建议，AGENTS.md 的"禁止"才是硬约�
   `init_opencode.sh` 的 `sync_opencode_agents` 仍会逐文件软链到用户级 agents 目录。
 - 不要在 `opencode.json` 里增加不存在的 agents 目录配置；schema 未支持的字段会导致
   OpenCode 配置校验失败。
-- 不要把 `writing-plans` 重新加入默认计划入口；先用 `plan-runner` 的 description 做
-  启发式触发，实际效果不好时再考虑 AGENTS.md 路由规则。
+- 多步方案必须先由主 agent 使用 `writing-plans` 生成完整计划，并让用户选择
+  Plan-Runner；`plan-runner` root 只消费已确认计划和 `write_plan.tasks` 契约。
 - `opencode/plugins/dag-dispatch-hint.js` 已删除。需要回退时从 git 历史恢复。
 - 不要把 `knowledge-retrieval`、`skill-catalog`、`mcp__skill-catalog` 或 tag 闭集
   获取流程放回 SubagentStart hook。

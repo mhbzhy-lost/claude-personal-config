@@ -604,7 +604,7 @@ async function prepareChildDispatch(stateDir, input, output, sessionIndex) {
   output.args.prompt = ensureChildWorktreePrompt(output.args.prompt, child)
 }
 
-async function bindChildDispatch(stateDir, input, output, sessionIndex) {
+async function bindChildDispatch(stateDir, client, input, output, sessionIndex, pendingChildTerminals) {
   const state = await readTaskState(stateDir, sessionIndex.task_id)
   if (!state) return
   const childSessionID = output.metadata?.sessionId
@@ -613,11 +613,15 @@ async function bindChildDispatch(stateDir, input, output, sessionIndex) {
   const child = childSessionByCall(state, input.callID)
   if (!child) return
 
-  state.child_sessions = (state.child_sessions || []).map((item) => (
-    item.call_id === input.callID
-      ? { ...item, session_id: childSessionID, status: "running" }
-      : item
-  ))
+  const pending = pendingChildTerminals.get(childSessionID)
+  if (pending) pendingChildTerminals.delete(childSessionID)
+  state.child_sessions = (state.child_sessions || []).map((item) => {
+    if (item.call_id !== input.callID) return item
+    if (pending?.type === "session.error") {
+      return { ...item, session_id: childSessionID, status: "failed", error: pending.error, failed_at: pending.at }
+    }
+    return { ...item, session_id: childSessionID, status: pending ? "completed" : "running" }
+  })
   state.updated_at = Date.now()
   await writeTaskState(stateDir, state)
   await writeSessionIndex(stateDir, childSessionID, state.task_id, "child")
@@ -628,6 +632,15 @@ async function bindChildDispatch(stateDir, input, output, sessionIndex) {
     worktree: child.worktree,
     branch: child.branch,
   })
+  if (pending) {
+    await appendEvent(stateDir, state.task_id, {
+      type: pending.type === "session.error" ? "child_session_failed" : "child_session_completed",
+      session_id: childSessionID,
+      ...(pending.error ? { error: pending.error } : {}),
+      recovered_before_binding: true,
+    })
+    await wakePlanRunnerAfterChildren({ stateDir, client, taskID: state.task_id })
+  }
 }
 
 function childToolPaths(tool, args = {}) {
@@ -1002,6 +1015,21 @@ function extractTextFromMessagePart(part = {}) {
   return part.text || part.content || ""
 }
 
+function assistantMessageID(message = {}) {
+  const id = message?.info?.id || message?.id || message?.messageID
+  return typeof id === "string" && id ? id : null
+}
+
+function assistantMessageCompleted(message = {}) {
+  const info = message?.info || message
+  return Boolean(
+    info?.time?.completed
+      || info?.completed_at
+      || info?.completedAt
+      || info?.completed === true,
+  )
+}
+
 function extractJsonObject(text) {
   const value = String(text || "").trim()
   if (!value) throw new Error("audit review did not return valid JSON")
@@ -1313,7 +1341,7 @@ function preflightBlockResultText(state, reasons) {
 
 async function notifyParentMergeBack({ stateDir, client, directory, state }) {
   const currentState = await readTaskState(stateDir, state.task_id) || state
-  if (!shouldNotifyParentMergeBack(currentState) || !currentState.plan_runner_terminal_idle_at) return currentState
+  if (!shouldNotifyParentMergeBack(currentState) || (!currentState.plan_runner_terminal_idle_at && !currentState.plan_runner_terminal_error_at)) return currentState
 
   const sendingState = cloneState(currentState)
   const headCommit = await currentGitHead(sendingState.worktree)
@@ -1459,6 +1487,61 @@ async function notifyParentTerminalResult({ stateDir, client, directory, state }
 async function notifyParentTerminalResultIfReady({ stateDir, client, directory, state }) {
   if (state.status === "validated") return notifyParentMergeBack({ stateDir, client, directory, state })
   return notifyParentTerminalResult({ stateDir, client, directory, state })
+}
+
+async function recordStartPlanRunnerDispatchFailure({ stateDir, taskID, phase, error }) {
+  const currentState = await readTaskState(stateDir, taskID)
+  if (!currentState) return
+  if (currentState.status === "interrupted" && currentState.plan_runner_terminal_error_at) return
+
+  const at = Date.now()
+  const failed = cloneState(currentState)
+  failed.status = "interrupted"
+  failed.plan_runner_error = {
+    message: formatDiagnosticError(error),
+    phase,
+    at,
+  }
+  failed.plan_runner_terminal_error_at = at
+  // The tool invocation itself synchronously delivered this failure to the parent.
+  failed.parent_notification = {
+    type: "dispatch_error",
+    status: "failed",
+    synchronous_delivery: true,
+    phase,
+  }
+  failed.updated_at = at
+  await writeTaskState(stateDir, failed)
+  await appendEvent(stateDir, taskID, {
+    type: "plan_runner_dispatch_failed",
+    phase,
+    session_id: failed.plan_runner_session_id || null,
+    error: failed.plan_runner_error.message,
+  })
+  await appendEvent(stateDir, taskID, {
+    type: "parent_dispatch_error_synchronously_delivered",
+    phase,
+    session_id: failed.parent_session_id,
+  })
+}
+
+async function recordStartPlanRunnerDispatchUnknown({ stateDir, taskID, phase, error }) {
+  const state = await readTaskState(stateDir, taskID)
+  if (!state) return
+  state.dispatch_delivery = {
+    status: "unknown",
+    phase,
+    error: formatDiagnosticError(error),
+    at: Date.now(),
+  }
+  state.updated_at = state.dispatch_delivery.at
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, taskID, {
+    type: "plan_runner_dispatch_delivery_unknown",
+    phase,
+    session_id: state.plan_runner_session_id || null,
+    error: state.dispatch_delivery.error,
+  })
 }
 
 async function finishPlanTool(args, context, stateDir, { client, directory, externalReview, pollMs, timeoutMs }) {
@@ -1844,9 +1927,22 @@ async function wakePlanRunnerAfterChildren({ stateDir, client, taskID }) {
       error: formatDiagnosticError(error),
       failed_at: Date.now(),
     }
+    if (Number(failed.root_wait.attempts || 0) >= 2) {
+      failed.status = "interrupted"
+      failed.plan_runner_error = { message: failed.root_wait.error, at: Date.now() }
+      failed.plan_runner_terminal_error_at = failed.plan_runner_error.at
+    }
     failed.updated_at = Date.now()
     await writeTaskState(stateDir, failed)
     await appendEvent(stateDir, taskID, { type: "plan_runner_root_reawaken_failed", session_id: failed.plan_runner_session_id, attempts: failed.root_wait.attempts, error: failed.root_wait.error })
+    if (Number(failed.root_wait.attempts || 0) === 1) {
+      await wakePlanRunnerAfterChildren({ stateDir, client, taskID })
+      return
+    }
+    if (failed.status === "interrupted") {
+      await appendEvent(stateDir, taskID, { type: "plan_runner_root_reawaken_terminal_failure", session_id: failed.plan_runner_session_id, attempts: failed.root_wait.attempts, error: failed.root_wait.error })
+      await notifyParentTerminalResultIfReady({ stateDir, client, directory: failed.worktree, state: failed })
+    }
   }
 }
 
@@ -1890,14 +1986,24 @@ async function handlePlanRunnerTerminalIdle({ stateDir, client, event }) {
     return
   }
   if (shouldSendWatchdogNudge(state, sessionID)) return
-  if (!client?.session?.messages) return
+  if (state.status === "self_checking") return
 
-  const message = await readPlanRunnerFinalMessage(client, state)
-  if (!message) return
-  const text = extractTextFromMessageInfo(message.info || {})
-    || (message.parts || []).map(extractTextFromMessagePart).filter(Boolean).join("\n")
+  let message
+  let collectionError
+  try {
+    if (!client?.session?.messages) throw new Error("client.session.messages is unavailable")
+    message = await readPlanRunnerFinalMessage(client, state)
+  } catch (error) {
+    collectionError = error
+  }
+
   const runningChildren = (state.child_sessions || []).filter((child) => child.status === "running")
   if (runningChildren.length) {
+    const messageID = message ? assistantMessageID(message) : null
+    const text = message
+      ? extractTextFromMessageInfo(message.info || {})
+        || (message.parts || []).map(extractTextFromMessagePart).filter(Boolean).join("\n")
+      : ""
     const nextState = cloneState(state)
     nextState.status = "waiting_for_children"
     nextState.root_wait = {
@@ -1905,6 +2011,8 @@ async function handlePlanRunnerTerminalIdle({ stateDir, client, event }) {
       resume_status: state.status,
       child_session_ids: runningChildren.map((child) => child.session_id),
       final_text: text || null,
+      ...(messageID ? { last_assistant_message_id: messageID } : {}),
+      ...(collectionError ? { message_collection_error: formatDiagnosticError(collectionError) } : {}),
       attempts: 0,
       started_at: Date.now(),
     }
@@ -1914,6 +2022,33 @@ async function handlePlanRunnerTerminalIdle({ stateDir, client, event }) {
     await appendEvent(stateDir, state.task_id, { type: "plan_runner_waiting_for_children", child_session_ids: nextState.root_wait.child_session_ids })
     return
   }
+
+  if (collectionError) {
+    const currentState = await readTaskState(stateDir, state.task_id) || state
+    if (currentState.status === "interrupted" && currentState.plan_runner_terminal_error_at) return
+    const failed = cloneState(currentState)
+    failed.status = "interrupted"
+    failed.plan_runner_error = {
+      message: formatDiagnosticError(collectionError),
+      at: Date.now(),
+    }
+    failed.plan_runner_terminal_error_at = failed.plan_runner_error.at
+    failed.updated_at = failed.plan_runner_error.at
+    await writeTaskState(stateDir, failed)
+    await appendEvent(stateDir, state.task_id, {
+      type: "plan_runner_final_message_collection_failed",
+      session_id: sessionID,
+      error: failed.plan_runner_error.message,
+    })
+    await notifyParentTerminalResultIfReady({ stateDir, client, directory: failed.origin_worktree, state: failed })
+    return
+  }
+  if (!message) return
+  const messageID = assistantMessageID(message)
+  if (state.root_wait?.status === "awake" && state.root_wait.last_assistant_message_id && messageID === state.root_wait.last_assistant_message_id) return
+  if (state.root_wait?.status === "awake" && messageID && !assistantMessageCompleted(message)) return
+  const text = extractTextFromMessageInfo(message.info || {})
+    || (message.parts || []).map(extractTextFromMessagePart).filter(Boolean).join("\n")
   const nextState = cloneState(state)
   nextState.status = "blocked"
   nextState.blocker = text
@@ -1936,7 +2071,27 @@ async function handlePlanRunnerSessionError({ stateDir, client, event }) {
   const index = await readSessionIndex(stateDir, sessionID)
   if (!index || index.role !== "plan-runner") return
   const state = await readTaskState(stateDir, index.task_id)
-  if (!state || TERMINAL_COMPLETION_GATE_STATUSES.has(state.status)) return
+  if (!state) return
+
+  if (TERMINAL_COMPLETION_GATE_STATUSES.has(state.status)) {
+    if (state.plan_runner_terminal_error_at) return
+    const nextState = cloneState(state)
+    nextState.plan_runner_error = {
+      message: formatDiagnosticError(event.properties?.error),
+      at: Date.now(),
+    }
+    nextState.plan_runner_terminal_error_at = nextState.plan_runner_error.at
+    nextState.updated_at = nextState.plan_runner_error.at
+    await writeTaskState(stateDir, nextState)
+    await appendEvent(stateDir, state.task_id, {
+      type: "plan_runner_terminal_error",
+      session_id: sessionID,
+      error: nextState.plan_runner_error.message,
+      terminal_status: state.status,
+    })
+    await notifyParentTerminalResultIfReady({ stateDir, client, directory: nextState.origin_worktree, state: nextState })
+    return
+  }
 
   const nextState = cloneState(state)
   nextState.status = "interrupted"
@@ -2318,34 +2473,59 @@ async function startPlanRunnerTool(args, context, stateDir, { client, directory,
   })
 
   const query = { directory: run.worktree }
-  const created = await client.session.create({
-    query,
-    body: {
-      parentID: parentSessionID,
-      title: `plan-runner: ${taskID}`,
-    },
-  })
-  throwIfSdkError(created, "plan-runner session create failed")
-  const planRunnerSessionID = sessionIDFromCreateResult(created)
-  if (!planRunnerSessionID) throw new Error("plan-runner session id missing")
+  let planRunnerSessionID
+  let nextState
+  let created
+  try {
+    created = await client.session.create({
+      query,
+      body: {
+        parentID: parentSessionID,
+        title: `plan-runner: ${taskID}`,
+      },
+    })
+  } catch (error) {
+    await recordStartPlanRunnerDispatchUnknown({ stateDir, taskID, phase: "session_create", error })
+    throw error
+  }
+  try {
+    throwIfSdkError(created, "plan-runner session create failed")
+    planRunnerSessionID = sessionIDFromCreateResult(created)
+    if (!planRunnerSessionID) throw new Error("plan-runner session id missing")
 
-  const nextState = await readTaskState(stateDir, taskID)
-  nextState.plan_runner_session_id = planRunnerSessionID
-  nextState.status = "planning_required"
-  nextState.updated_at = Date.now()
-  nextState.lease_expires_at = Date.now() + 10 * 60 * 1000
-  await writeTaskState(stateDir, nextState)
-  await writeSessionIndex(stateDir, planRunnerSessionID, taskID, "plan-runner")
+    nextState = await readTaskState(stateDir, taskID)
+    nextState.plan_runner_session_id = planRunnerSessionID
+    nextState.status = "planning_required"
+    nextState.updated_at = Date.now()
+    nextState.lease_expires_at = Date.now() + 10 * 60 * 1000
+    await writeTaskState(stateDir, nextState)
+    await writeSessionIndex(stateDir, planRunnerSessionID, taskID, "plan-runner")
 
-  const dispatched = await client.session.promptAsync({
-    path: { id: planRunnerSessionID },
-    query,
-    body: {
-      agent: "plan-runner",
-      parts: [{ type: "text", text: ensurePlanRunnerStartPrompt(prompt, nextState) }],
-    },
-  })
-  throwIfSdkError(dispatched, "plan-runner async prompt dispatch failed")
+  } catch (error) {
+    await recordStartPlanRunnerDispatchFailure({ stateDir, taskID, phase: "session_create", error })
+    throw error
+  }
+
+  let dispatched
+  try {
+    dispatched = await client.session.promptAsync({
+      path: { id: planRunnerSessionID },
+      query,
+      body: {
+        agent: "plan-runner",
+        parts: [{ type: "text", text: ensurePlanRunnerStartPrompt(prompt, nextState) }],
+      },
+    })
+  } catch (error) {
+    await recordStartPlanRunnerDispatchUnknown({ stateDir, taskID, phase: "prompt_async", error })
+    throw error
+  }
+  try {
+    throwIfSdkError(dispatched, "plan-runner async prompt dispatch failed")
+  } catch (error) {
+    await recordStartPlanRunnerDispatchFailure({ stateDir, taskID, phase: "prompt_async", error })
+    throw error
+  }
   await appendEvent(stateDir, taskID, { type: "plan_runner_dispatch_accepted", session_id: planRunnerSessionID, tool: "start_plan_runner" })
 
   return {
@@ -2416,6 +2596,8 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
   const completionGatePollMs = Number(options.completionGatePollMs || process.env.OPENCODE_PLAN_RUNNER_COMPLETION_GATE_POLL_MS || 1000)
   const completionGateTimeoutMs = Number(options.completionGateTimeoutMs || process.env.OPENCODE_PLAN_RUNNER_COMPLETION_GATE_TIMEOUT_MS || 1800000)
   let stateQueue = Promise.resolve()
+  const pendingChildTerminals = new Map()
+  const pendingChildDispatchCalls = new Set()
 
   function enqueueState(handler) {
     const run = stateQueue.then(handler)
@@ -2491,6 +2673,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       if (input.tool === "task" && sessionIndex?.role === "plan-runner") {
         await enforcePhaseGate(stateDir, input, output)
         await prepareChildDispatch(stateDir, input, output, sessionIndex)
+        pendingChildDispatchCalls.add(input.callID)
         return
       }
       if (input.tool !== "task" || !isPlanRunnerDispatch(output.args)) {
@@ -2528,7 +2711,9 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
     "tool.execute.after": async (input, output) => enqueueState(async () => {
       const sessionIndex = await readSessionIndex(stateDir, input.sessionID)
       if (input.tool === "task" && sessionIndex?.role === "plan-runner") {
-        await bindChildDispatch(stateDir, input, output, sessionIndex)
+        await bindChildDispatch(stateDir, client, input, output, sessionIndex, pendingChildTerminals)
+        pendingChildDispatchCalls.delete(input.callID)
+        if (pendingChildDispatchCalls.size === 0) pendingChildTerminals.clear()
         return
       }
       if (input.tool !== "task" || !isPlanRunnerDispatch(input.args)) {
@@ -2554,18 +2739,34 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       await appendEvent(stateDir, taskID, { type: "plan_runner_bound", session_id: childSessionID, call_id: input.callID })
     }),
 
-    event: async ({ event }) => enqueueState(async () => {
-      await handleSessionDiff(stateDir, event)
-      await handleMessageDiff(stateDir, event)
-      await handleAuditReviewMessage(stateDir, event)
-      await handleChildSessionIdle({ stateDir, client, event })
-      await handleAuditReviewIdle({ stateDir, client, directory: worktree, event, externalReview })
-      await handleParentSessionIdle({ stateDir, client, directory: worktree, event })
-      await handlePlanRunnerTerminalIdle({ stateDir, client, event })
-      await handlePlanRunnerSessionError({ stateDir, client, event })
-      await handleChildSessionError({ stateDir, client, event })
-      await handlePlanRunnerWatchdogIdle({ stateDir, client, directory: worktree, event })
-    }),
+    event: async ({ event }) => {
+      if ((event.type === "session.idle" || event.type === "session.error") && event.properties?.sessionID) {
+        const sessionID = event.properties.sessionID
+        const index = await readSessionIndex(stateDir, sessionID)
+        if (!index && pendingChildDispatchCalls.size > 0) {
+          const existing = pendingChildTerminals.get(sessionID)
+          if (pendingChildTerminals.size >= 64) pendingChildTerminals.delete(pendingChildTerminals.keys().next().value)
+          if (existing?.type === "session.error" && event.type === "session.idle") return
+          pendingChildTerminals.set(sessionID, {
+            type: event.type,
+            error: event.type === "session.error" ? formatDiagnosticError(event.properties?.error) : null,
+            at: Date.now(),
+          })
+        }
+      }
+      return enqueueState(async () => {
+        await handleSessionDiff(stateDir, event)
+        await handleMessageDiff(stateDir, event)
+        await handleAuditReviewMessage(stateDir, event)
+        await handleChildSessionIdle({ stateDir, client, event })
+        await handleAuditReviewIdle({ stateDir, client, directory: worktree, event, externalReview })
+        await handleParentSessionIdle({ stateDir, client, directory: worktree, event })
+        await handlePlanRunnerTerminalIdle({ stateDir, client, event })
+        await handlePlanRunnerSessionError({ stateDir, client, event })
+        await handleChildSessionError({ stateDir, client, event })
+        await handlePlanRunnerWatchdogIdle({ stateDir, client, directory: worktree, event })
+      })
+    },
   }
 }
 

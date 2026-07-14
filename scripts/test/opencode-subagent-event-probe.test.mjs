@@ -78,6 +78,29 @@ describe("opencode subagent event probe", () => {
     }
   })
 
+  it("clears stale prompt-async evidence when reusing a probe root", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-prompt-async-probe-test-"))
+    try {
+      const stalePaths = [
+        "prompt-async-events.jsonl",
+        "opencode-run.stdout",
+        "opencode-run.stderr",
+        "opencode-serve.log",
+      ]
+      for (const path of stalePaths) writeFileSync(join(root, path), "stale prompt-async evidence\n")
+      writeFileSync(join(root, "probe-events.jsonl"), "other mode evidence\n")
+
+      const paths = createPromptAsyncProbeWorkspace({ root })
+
+      for (const path of [paths.logPath, paths.stdoutPath, paths.stderrPath, paths.serveLogPath]) {
+        assert.equal(readFileSync(path, "utf8"), "")
+      }
+      assert.equal(readFileSync(join(root, "probe-events.jsonl"), "utf8"), "other mode evidence\n")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("builds attach-mode run args so server hooks execute", () => {
     const args = buildRunArgs({
       attachUrl: "http://127.0.0.1:41337",

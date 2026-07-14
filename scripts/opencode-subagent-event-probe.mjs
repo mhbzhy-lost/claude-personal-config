@@ -22,6 +22,10 @@ function ensureDir(path) {
   if (!existsSync(path)) mkdirSync(path, { recursive: true })
 }
 
+function clearRunEvidence(...paths) {
+  for (const path of paths) writeFileSync(path, "")
+}
+
 function pluginSource() {
   return String.raw`import { appendFileSync, mkdirSync } from "node:fs"
 import { dirname } from "node:path"
@@ -375,6 +379,8 @@ export function createProbeWorkspace({ root } = {}) {
   const stderrPath = join(workspace, "opencode-run.stderr")
   const serveLogPath = join(workspace, "opencode-serve.log")
 
+  clearRunEvidence(logPath, stdoutPath, stderrPath, serveLogPath)
+
   writeFileSync(configPath, JSON.stringify({
     $schema: "https://opencode.ai/config.json",
     permission: "allow",
@@ -402,6 +408,8 @@ export function createAuditChildProbeWorkspace({ root } = {}) {
   const stderrPath = join(workspace, "opencode-run.stderr")
   const serveLogPath = join(workspace, "opencode-serve.log")
 
+  clearRunEvidence(logPath, stdoutPath, stderrPath, serveLogPath)
+
   writeFileSync(configPath, JSON.stringify({
     $schema: "https://opencode.ai/config.json",
     permission: "allow",
@@ -425,6 +433,8 @@ export function createPromptAsyncProbeWorkspace({ root } = {}) {
   const stdoutPath = join(workspace, "opencode-run.stdout")
   const stderrPath = join(workspace, "opencode-run.stderr")
   const serveLogPath = join(workspace, "opencode-serve.log")
+
+  clearRunEvidence(logPath, stdoutPath, stderrPath, serveLogPath)
 
   writeFileSync(configPath, JSON.stringify({
     $schema: "https://opencode.ai/config.json",
