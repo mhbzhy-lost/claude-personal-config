@@ -19,7 +19,7 @@ git-commit skill 默认要求"主分支先建分支"——本仓覆盖：跳过�
 ## Commit Message 门禁
 
 `userconf/plugins/git-commit-gate.js`（opencode 插件）校验 commit message 格式，规范来自
-`userconf/AGENTS.md` 中 `Git Commit 规范` 一节。
+`git-commit-convention` skill。
 
 - 插件层：在 bash 工具执行 `git commit` 时拦截，agent 看到即时反馈
 - 逃逸：`GIT_COMMIT_HOOK_SKIP=1 git commit ...`

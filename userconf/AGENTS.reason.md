@@ -31,11 +31,10 @@ Superpowers 选择性规则已合入 AGENTS.md，作为同级章节，统一注�
 
 ## Git Commit 规范
 
-> **原因**：commit message 规范分散在 skill 文档中，agent 每次 commit 前先加载
-> skill 才能得知正确格式，反复重试校验浪费 token。收敛进 AGENTS.md 核心约束，
-> session 启动时一次注入到位；可机械校验的部分由插件与 git hook 兜底，主观部分
-> 靠 agent 自行判断。"禁止 AI 署名"避免 git 历史被 AI 辅助标识污染，同时保留对
-> AI 工具文件名的正常描述空间，避免误伤。
+> **原因**：commit message 规范从 AGENTS.md 迁出到 `git-commit-convention` skill，
+> 按需加载。机械校验部分由 `git-commit-gate` 插件兜底，主观约束由 skill 承载。
+> "禁止 AI 署名"避免 git 历史被 AI 辅助标识污染，同时保留对 AI 工具文件名的正常
+> 描述空间，避免误伤。
 
 ---
 
@@ -72,27 +71,6 @@ skill 本身不可修改，原 reason 保留在下方备查：
 
 ---
 
-## 并发与 Subagent
-
-> **原因**：并发阈值（<5 用 subagent，≥5 用 Dynamic Workflow）是经验性分界线——
-> 5 个以下并发在 LLM 单 turn 内可管理，再多则 LLM 容易遗漏 DAG 依赖或重复派发，
-> 脚本编排比 turn-by-turn 更可靠。
->
-> "串行多步也用 subagent" 是为了保护主对话上下文。主对话的每一轮 tool call 和
-> 文件内容都会累积进 context window，串行长任务的中间产物会把主对话挤到
-> compaction，丢失用户意图和方案讨论。subagent 是上下文隔离的边界。
->
-> 编码任务推荐使用 `executor`，因为它是确定性的代码执行代理；这只是默认倾向，
-> 不替代任务自身的代理选择，也不构成派发门禁。
->
-> Worktree 隔离对 coding 类 Dynamic Workflow 是强制的。脚本在启动 opencode server
-> 前自动 `git worktree add` 到独立目录并 `process.chdir` 过去，保证多个 coding agent
-> 不会互相覆盖。脚本不自动合并/删除 worktree（冲突需要 LLM 判断），而是在报告里
-> 输出 merge 指引让主 agent 执行。
-
-
----
-
 ## 决策报告
 
 > **原因**：用户审决策报告的目标是"2 分钟内能拍板"。5 行限制强制抽取关键信号；
@@ -119,6 +97,17 @@ skill 本身不可修改，原 reason 保留在下方备查：
 > external review、terminal gate）；Subagent-Driven 不依赖 `subagent-driven-development`，
 > 由主 agent 直接派发后台 subagent，保留对任务间审查的控制；Inline 不引入额外
 > skill，适合简单计划或无需门禁的场景。
+
+---
+
+## Subagent
+
+> **原因**：编码任务优先派发 subagent 是为了保护主对话上下文。主对话的每一轮
+> tool call 和文件内容都会累积进 context window，串行长任务的中间产物会把主对话
+> 挤到 compaction，丢失用户意图和方案讨论。subagent 是上下文隔离的边界。
+> 
+> AGENTS.md 只保留 trigger（"优先派发"），详细规则（类型选择、模型路由、输出检查、
+> 升级处理）收敛在 `subagent-dispatch` skill，按需加载，避免全局规则膨胀。
 
 ---
 

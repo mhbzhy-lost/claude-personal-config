@@ -21,59 +21,14 @@ memory 内容在支持 SessionStart 的环境已自动注入。
 
 ## Git Commit 规范
 
-格式：`type(scope): 中文祈使句`，scope 可选。
-
-**Type 白名单**（英文小写）：
-`feat` `fix` `refactor` `perf` `test` `docs` `style` `chore` `build` `ci` `revert`
-
-**标准示范**：
-
-```
-feat(plugins): 增加 commit message 门禁
-
-双层校验：opencode 插件层拦截 bash 工具中的 git commit，
-.githooks/commit-msg 兜底防止绕过 opencode 调用路径。
-
-Ref: #2847
-```
-
-**subject 规则**：
-- 必须包含至少一个中文字符
-- 不超过 50 字，不以句号（。/ .）结尾
-- 祈使句动词开头（增加 / 修复 / 重构），不用过去时（已修复 / 实现了 / 修复了）
-- 禁止零信息词单独作为 subject（fix / update / bugfix / wip / 修改 / 更新）
-- 描述做了什么，why 写到 body
-
-**禁止 AI 署名**：commit message 任何位置不得出现 `Co-Authored-By: Claude/Copilot/Cursor`、
-`Generated with Claude`、`AI-assisted` 等标识。改动描述中提及 AI 工具文件名
-（如 claude-config）不受此限制。
-
-**主观约束**：
-- body 解释 why 而非 what（diff 已说明 what）
-- 一次 commit 对应一个逻辑变更，不合并无关改动
-- 修复 + 测试可放一个 commit；重构 + 修复必须拆开
-- PR 标题遵循 subject 规则
+commit message 格式与主观约束见 `git-commit-convention` skill。
+机械校验由 `git-commit-gate` 插件执行。
 
 ## 输出语言
 
 编写 skill 可全英文；技术文档（需要人审的文章）默认中文。
 
 禁止：人审材料使用英文。
-
-## 并发与 Subagent
-
-**subagent 优先**：用并发数量决定编排方式。
-- 并发 < 5 → 用 subagent
-- 并发 ≥ 5 → 用 Dynamic Workflow
-- 串行多步操作也用 subagent，节省主对话上下文，避免 tool call 堆积
-- 编码任务推荐使用 `executor`，但不作为派发门禁
-
-派发规则：
-- 任何 subagent 必须后台模式（background: true）
-- 使用 Dynamic Workflow 前必须加载 `workflow-usage` skill
-- coding 类 Dynamic Workflow 必须启用 `worktree.enable: true`，脚本自动创建 git worktree；workflow 结束后由主 agent 执行合并与清理
-
-禁止：前台模式派发 subagent
 
 ## 决策报告
 
@@ -111,6 +66,11 @@ Ref: #2847
    不加载、也不依赖 `subagent-driven-development`；主 agent 使用 task 工具以后台模式逐任务派发 subagent
 3. **Inline Execution** — 按 skill 原始流程在当前会话逐任务执行，适合简单计划
    或无需门禁的场景；忽略其引用的未纳入白名单的 sub-skill
+
+## Subagent
+
+编码任务优先派发 subagent（节省上下文，避免主对话 compaction）。
+类型选择、模型路由、输出检查等规则见 `subagent-dispatch` skill。
 
 # Superpowers
 
