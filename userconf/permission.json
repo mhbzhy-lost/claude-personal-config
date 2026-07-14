@@ -9,6 +9,7 @@
     "*": "allow",
     "start_plan_runner": "deny",
     "get_plan_runner_status": "deny",
+    "dispatch_child": "deny",
     "write_plan": "deny",
     "start_task": "deny",
     "complete_task": "deny",

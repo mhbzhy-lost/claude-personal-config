@@ -666,6 +666,7 @@ describe("init_opencode agents sync", () => {
     assert.equal(permissionTemplate["*"], "allow")
     assert.equal(permissionTemplate.start_plan_runner, "deny")
     assert.equal(permissionTemplate.get_plan_runner_status, "deny")
+    assert.equal(permissionTemplate.dispatch_child, "deny")
     for (const tool of lifecycleTools) {
       assert.equal(permissionTemplate[tool], "deny", `${tool} should be globally hidden outside explicit agent overrides`)
     }
@@ -674,13 +675,25 @@ describe("init_opencode agents sync", () => {
       assert.equal(agents[agentName]?.permission?.start_plan_runner, "allow")
       assert.equal(agents[agentName]?.permission?.get_plan_runner_status, "allow")
       for (const tool of lifecycleTools) assert.notEqual(agents[agentName]?.permission?.[tool], "allow")
+      assert.notEqual(agents[agentName]?.permission?.dispatch_child, "allow")
     }
     assert.equal(agents.gpt, undefined)
     assert.equal(agents["gpt-pro"], undefined)
 
     assert.notEqual(agents.executor?.permission?.start_plan_runner, "allow")
     assert.notEqual(agents.executor?.permission?.get_plan_runner_status, "allow")
+    assert.notEqual(agents.executor?.permission?.dispatch_child, "allow")
     for (const tool of lifecycleTools) assert.notEqual(agents.executor?.permission?.[tool], "allow")
+  })
+
+  it("reserves dispatch_child for the plan-runner agent", () => {
+    const planRunner = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
+    const audit = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner-audit.md"), "utf8")
+
+    assert.match(planRunner, /^\s*task:\s*deny\s*$/m)
+    assert.match(planRunner, /^\s*dispatch_child:\s*allow\s*$/m)
+    assert.match(planRunner, /dispatch_child\(\{\s*description,\s*prompt\s*\}\)/)
+    assert.doesNotMatch(audit, /^\s*dispatch_child:/m)
   })
 
   it("project plan-runner troubleshooting skill documents task-state diagnostics", () => {
@@ -799,9 +812,10 @@ describe("init_opencode agents sync", () => {
   it("plan-runner delegates child agent selection to harness-managed dispatch", () => {
     const prompt = readFileSync(join(repoRoot, "userconf", "agents", "plan-runner.md"), "utf8")
 
-    assert.match(prompt, /task:\s*allow/)
+    assert.match(prompt, /task:\s*deny/)
+    assert.match(prompt, /dispatch_child:\s*allow/)
     assert.match(prompt, /harness-managed child dispatch|harness.*owns.*agent selection/i)
-    assert.match(prompt, /task\(background=true/i)
+    assert.match(prompt, /dispatch_child\(\{\s*description,\s*prompt\s*\}\)/)
     assert.doesNotMatch(prompt, /\bexecutor\b/i)
     assert.doesNotMatch(prompt, /default child subagent/i)
     assert.doesNotMatch(prompt, /do not use custom agents/i)

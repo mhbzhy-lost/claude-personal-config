@@ -18,7 +18,8 @@ permission:
     verification-before-completion: deny
     plan-runner-dispatch: deny
     workflow-usage: deny
-  task: allow
+  task: deny
+  dispatch_child: allow
   write_plan: allow
   start_task: allow
   complete_task: allow
@@ -70,7 +71,7 @@ Plan document requirements:
 Child subagent rules:
 
 - Use child subagents only for DAG execution nodes or validation nodes.
-- Use `task(background=true, ...)` when dispatching a child subagent. The harness owns child agent selection and will route through harness-managed child dispatch.
+- Use `dispatch_child({ description, prompt })` when dispatching a child subagent. The harness owns child agent selection, creates the worktree, and starts the child asynchronously.
 - Every child subagent must run with `background: true`.
 - If there is no concurrency, you may work directly in the main workspace. With concurrency, no concurrency may run in the main workspace directly.
 - For parallel/DAG independent branches, the harness creates and manages an independent child worktree per concurrent child and injects that path into the child prompt.
