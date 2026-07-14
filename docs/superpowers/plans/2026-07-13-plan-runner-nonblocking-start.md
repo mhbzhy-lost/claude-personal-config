@@ -4,7 +4,9 @@
 
 **目标：** `start_plan_runner` 在后台会话接受派发后立即返回任务启动报告，不阻塞主 agent；Plan-Runner 的 `validated`、`blocked`、`interrupted` 终态通过事件异步回流，并可按 task id 查询。
 
-**架构：** 启动路径改用 legacy SDK `session.promptAsync()`，只等待 HTTP 204 接受结果。Plan-Runner root session 的 message/idle/error 事件负责终态归集，统一 terminal notification 负责唤醒父 session；独立 parent-run registry 支持同一父 session 并发多个 run。Runtime disposal 要求 root terminal barrier 已记录且终态通知已完成，再由后续 parent idle 回收 run directory instance。
+**核心验收：** 行为应与原生后台 `task` 启动 subagent 一致：只等待派发被接受，不等待 root/child 的 message、idle、终态或执行耗时；工具返回后主 agent 可立即继续调用其他工具。
+
+**架构：** 启动路径改用 legacy SDK `session.promptAsync()`，只等待 HTTP 204 接受结果。Plan-Runner root session 的 message/idle/error 事件负责终态归集；root 返回时若仍有后台 child 存活，则进入 `waiting_for_children` 休眠态，最后一个 child settled 后由 harness 唤醒原 root session 继续 loop。统一 terminal notification 负责唤醒父 session；独立 parent-run registry 支持同一父 session 并发多个 run。Runtime disposal 要求 root terminal barrier 已记录且终态通知已完成，再由后续 parent idle 回收 run directory instance。
 
 **技术栈：** OpenCode PluginInput legacy SDK、Node.js `node:test`、Plan-Runner task-state/event/session index、Git worktree。
 
@@ -14,8 +16,10 @@
 
 - Create: `docs/bugs/bug-plan-runner-async-start-terminal-backflow.md`
   - 记录同步启动阻塞主 agent，以及直接改 `promptAsync` 会丢失终态回流的六要素根因。
+- Create: `docs/bugs/bug-plan-runner-background-child-does-not-resume-root.md`
+  - 记录 root 派发后台 child 后提前结束、child 完成却无法恢复 root loop 的六要素根因。
 - Modify: `userconf/plugins/plan-runner-harness.js`
-  - 非阻塞派发、root 终态归集、terminal notification、状态查询、parent-run registry 和 disposal barrier。
+  - 非阻塞派发、root 终态归集、后台 child 休眠/唤醒、terminal notification、状态查询、parent-run registry 和 disposal barrier。
 - Modify: `userconf/plugins/test/plan-runner-harness.test.mjs`
   - 覆盖 204 接受、异步终态、并发 run、查询权限和回收时序。
 - Modify: `userconf/permission.json`
@@ -158,6 +162,8 @@ output 必须明确“已后台派发，终态将异步通知，不要主动轮�
 
 增加 `promptAsync` 返回 `{ error }` 的测试，断言工具抛错、不得写 `plan_runner_dispatch_accepted`，也不得返回 started 报告。
 
+增加时序断言：`promptAsync` 204 后 `start_plan_runner` Promise 必须 settle，即使 root session 尚未产生 message/idle、后台 child 尚未启动或仍持续运行；不得以等待 root final 的方式模拟异步。
+
 - [ ] **Step 4：验证 GREEN**
 
 Run:
@@ -232,7 +238,92 @@ Expected: PASS。
 
 ---
 
-### Task 4：统一三种终态通知并增加状态查询
+### Task 4：后台 child 存活时休眠 root，并在全部 settled 后唤醒
+
+**Files:**
+- Create: `docs/bugs/bug-plan-runner-background-child-does-not-resume-root.md`
+- Modify: `userconf/plugins/plan-runner-harness.js`
+- Test: `userconf/plugins/test/plan-runner-harness.test.mjs`
+
+- [ ] **Step 1：记录六要素根因**
+
+文档必须记录真实失败 run `planrun-ses_0a6b9aaa2ffego3TZkaXaKElXA-start-440ecd9b-3e83-44e8-a9b8-2750dceb4a06`：root 派发 T1 background executor 后返回“已启动”，同步启动层将其判为 `plan_runner_stopped_before_finish_plan`；child 仍为 `running`，现有 `handleChildSessionIdle` 只更新状态、不唤醒 root。
+
+- [ ] **Step 2：写休眠 RED**
+
+覆盖 root final/idle 时仍有 running child：
+
+```js
+assert.equal(state.status, "waiting_for_children")
+assert.equal(state.active_task, "T1")
+assert.equal(state.blocker, undefined)
+assert.equal(state.parent_notification, undefined)
+assert.equal(state.runtime_disposal, undefined)
+assert.match(events, /"type":"plan_runner_waiting_for_children"/)
+```
+
+root final 文本只记入 `root_wait.final_text` 诊断，不得作为 Change Request/terminal result 回流。
+
+- [ ] **Step 3：写并行 child 唤醒 RED**
+
+同一 root 有两个 running child：第一个 idle 后仍休眠且不 prompt；最后一个 idle 后恰好调用一次：
+
+```js
+client.session.promptAsync({
+  path: { id: state.plan_runner_session_id },
+  query: { directory: state.worktree },
+  body: {
+    agent: "plan-runner",
+    parts: [{ type: "text", text: continuationPrompt }],
+  },
+})
+```
+
+重复 child idle、重复 event 或 root 已恢复时不得重复唤醒。child `session.error` 要落为 settled/failed，并参与“最后一个 child”判定。
+
+- [ ] **Step 4：实现 `waiting_for_children` 状态**
+
+root terminal collector 在任何 blocked/empty 判定前检查：
+
+```js
+const runningChildren = (state.child_sessions || []).filter((child) => child.status === "running")
+```
+
+若非空，则写：
+
+```js
+state.status = "waiting_for_children"
+state.root_wait = {
+  status: "sleeping",
+  child_session_ids: runningChildren.map((child) => child.session_id),
+  final_text: finalText || null,
+  started_at: Date.now(),
+}
+```
+
+并延长 lease。`waiting_for_children` 必须允许 child evidence/status 回流，但不是 completion gate terminal status。
+
+- [ ] **Step 5：实现最后一个 child settled 后的幂等唤醒**
+
+`handleChildSessionIdle` 和 child error handler 更新 child 后重新读取 state；仅当 `status === "waiting_for_children"` 且没有 running child 时，将 `root_wait.status` 原子推进到 `waking`，await `promptAsync` 接受结果，再写 `awake` 和 `plan_runner_root_reawakened` event。唤醒正文必须包含 task id、active task、全部 child 状态/worktree，并要求 root 合并或处理 child 结果后继续当前计划，禁止把“child 已启动”再次作为 final。
+
+- [ ] **Step 6：处理唤醒失败**
+
+promptAsync 返回 SDK error 时写 `root_wait.status=failed`、错误和时间，不得把整个 run 误报 validated；状态查询必须展示该失败，后续明确的 child/root event 最多重试一次，避免无限唤醒。
+
+- [ ] **Step 7：验证 GREEN**
+
+Run:
+
+```bash
+node --test userconf/plugins/test/plan-runner-harness.test.mjs --test-name-pattern='waiting_for_children|last child settled|root reawakened|child session error'
+```
+
+Expected: PASS。
+
+---
+
+### Task 5：统一三种终态通知并增加状态查询
 
 **Files:**
 - Modify: `userconf/plugins/plan-runner-harness.js`
@@ -297,7 +388,7 @@ Expected: PASS。
 
 ---
 
-### Task 5：支持同一父 session 多 run，并收紧 disposal barrier
+### Task 6：支持同一父 session 多 run，并收紧 disposal barrier
 
 **Files:**
 - Modify: `userconf/plugins/plan-runner-harness.js`
@@ -349,7 +440,7 @@ Expected: PASS。
 
 ---
 
-### Task 6：更新 dispatch 契约、探针和真实 smoke
+### Task 7：更新 dispatch 契约、探针和真实 smoke
 
 **Files:**
 - Modify: `userconf/skills/plan-runner-dispatch/SKILL.md`
@@ -392,7 +483,9 @@ Expected: 全部 PASS，`git diff --check` 无输出。
 promptAsync 204 后 start_plan_runner 立即返回 accepted
 主 agent 在 child 运行期间可继续调用工具
 新建 root session 确实产生 message/part/idle 或 error
-Change Request -> blocked terminal_result
+root 有 running child -> waiting_for_children，最后一个 child settled 后原 root 自动恢复
+并行 child 只在全部 settled 后唤醒一次，child error 不造成永久休眠
+Change Request -> blocked terminal_result（仅在没有 running child 时）
 正常完成 -> validated merge_back
 session.error/timeout -> interrupted terminal_result
 同一 parent 两个 run 均可查询和回流
@@ -406,7 +499,7 @@ smoke worktree/branch 清理前先确认现场保留和无 target cwd 残留。
 
 ## 自审结果
 
-- 需求覆盖：非阻塞返回、启动报告、三终态异步回流、状态查询、多 run、runtime disposal 和真实 promptAsync smoke 均有对应任务。
+- 需求覆盖：非阻塞返回、启动报告、后台 child 休眠/唤醒、三终态异步回流、状态查询、多 run、runtime disposal 和真实 promptAsync smoke 均有对应任务。
 - 占位符扫描：所有步骤均有具体文件、行为、命令和预期结果。
 - 类型一致性：统一使用 `task_id`、`session_id`、标准 metadata `sessionId`、`parent_notification` 和 `plan_runner_terminal_*` 字段。
 - 范围控制：不修改 OpenCode 源码，不承诺 GenericTool TUI 导航，不加入 timer/PID kill/全局锁重构。
