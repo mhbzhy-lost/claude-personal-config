@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import * as probe from "../opencode-subagent-event-probe.mjs"
-import { buildRunArgs, createAuditChildProbeWorkspace, createProbeWorkspace, createPromptAsyncProbeWorkspace, formatServeNotReadyError, parseArgs, readTextFromOffset, shouldWaitForRepairEvidence, summarizeAuditChildProbe, summarizeProbeEvents, summarizePromptAsyncProbe } from "../opencode-subagent-event-probe.mjs"
+import { buildRunArgs, createAuditChildProbeWorkspace, createProbeWorkspace, createPromptAsyncProbeWorkspace, formatServeNotReadyError, parseArgs, promptAsyncProbeExitStatus, readTextFromOffset, shouldStopWaitingForPromptAsyncProbe, shouldWaitForRepairEvidence, summarizeAuditChildProbe, summarizeProbeEvents, summarizePromptAsyncProbe } from "../opencode-subagent-event-probe.mjs"
 
 describe("opencode subagent event probe", () => {
   it("creates a self-contained OpenCode probe workspace", () => {
@@ -205,6 +205,64 @@ describe("opencode subagent event probe", () => {
 
     assert.equal(summary.terminal.type, "error")
     assert.equal(summary.accepted_before_terminal, false)
+  })
+
+  it("does not pass prompt-async when the SDK response has no HTTP status", () => {
+    const summary = summarizePromptAsyncProbe([
+      { ts: 20, kind: "prompt_async.create.ok", sessionID: "ses_child" },
+      { ts: 30, kind: "prompt_async.prompt.accepted", sessionID: "ses_child" },
+      { ts: 40, kind: "event", event: { type: "session.idle", properties: { sessionID: "ses_child" } } },
+    ])
+
+    assert.equal(summary.prompt.status_code, null)
+    assert.equal(summary.pass, false)
+  })
+
+  it("passes prompt-async only with accepted 204 before a child terminal event", () => {
+    const success = summarizePromptAsyncProbe([
+      { ts: 20, kind: "prompt_async.create.ok", sessionID: "ses_child" },
+      { ts: 30, kind: "prompt_async.prompt.accepted", sessionID: "ses_child", status: 204 },
+      { ts: 40, kind: "event", event: { type: "message.updated", properties: { info: { sessionID: "ses_child" } } } },
+      { ts: 50, kind: "event", event: { type: "session.idle", properties: { sessionID: "ses_child" } } },
+    ])
+    const missingTerminal = summarizePromptAsyncProbe([
+      { ts: 20, kind: "prompt_async.create.ok", sessionID: "ses_child" },
+      { ts: 30, kind: "prompt_async.prompt.accepted", sessionID: "ses_child", status: 204 },
+    ])
+    const badOrder = summarizePromptAsyncProbe([
+      { ts: 20, kind: "prompt_async.create.ok", sessionID: "ses_child" },
+      { ts: 30, kind: "event", event: { type: "session.error", properties: { sessionID: "ses_child" } } },
+      { ts: 40, kind: "prompt_async.prompt.accepted", sessionID: "ses_child", status: 204 },
+    ])
+
+    assert.equal(success.pass, true)
+    assert.equal(missingTerminal.pass, false)
+    assert.equal(badOrder.pass, false)
+  })
+
+  it("makes prompt-async exit nonzero when a successful parent run lacks probe proof", () => {
+    assert.equal(promptAsyncProbeExitStatus({ status: 0, signal: null, error: null }, { pass: false }), 1)
+    assert.equal(promptAsyncProbeExitStatus({ status: 0, signal: null, error: null }, { pass: true }), 0)
+    assert.equal(promptAsyncProbeExitStatus({ status: 2, signal: null, error: null }, { pass: true }), 2)
+  })
+
+  it("stops waiting for prompt-async as soon as a child terminal event arrives", () => {
+    assert.equal(shouldStopWaitingForPromptAsyncProbe({ create: { status: "ok" }, prompt: { status: "accepted" }, terminal: { type: "idle" }, pass: false }), true)
+    assert.equal(shouldStopWaitingForPromptAsyncProbe({ create: { status: "ok" }, prompt: { status: "accepted" }, terminal: { type: null }, pass: false }), false)
+  })
+
+  it("rejects unknown modes, arguments, and invalid numeric CLI values", () => {
+    assert.throws(() => parseArgs(["--mode", "prompt-asnyc"]), /Unknown mode/)
+    assert.throws(() => parseArgs(["--unknown"]), /Unknown argument/)
+    assert.throws(() => parseArgs(["--timeout-ms", "0"]), /positive finite number/)
+    assert.throws(() => parseArgs(["--timeout-ms", "NaN"]), /positive finite number/)
+    assert.throws(() => parseArgs(["--port", "0"]), /integer between 1 and 65535/)
+    assert.throws(() => parseArgs(["--port", "41339.5"]), /integer between 1 and 65535/)
+    assert.deepEqual(parseArgs(["--mode", "audit-child", "--timeout-ms", "1", "--port", "65535"]), {
+      mode: "audit-child",
+      timeoutMs: 1,
+      port: 65535,
+    })
   })
 
   it("includes serve log path when reporting server startup failure", () => {

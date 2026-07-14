@@ -346,7 +346,7 @@ export default async ({ client, directory }) => ({
         record("prompt_async.prompt.error", { sessionID: childSessionID, result: prompted, error: promptError })
         return
       }
-      record("prompt_async.prompt.accepted", { sessionID: childSessionID, status: prompted?.response?.status ?? prompted?.status ?? 204, result: prompted })
+      record("prompt_async.prompt.accepted", { sessionID: childSessionID, status: prompted?.response?.status ?? prompted?.status ?? null, result: prompted })
     } catch (error) {
       record("prompt_async.error", {
         sessionID: childSessionID,
@@ -512,17 +512,22 @@ export function summarizePromptAsyncProbe(events = []) {
   const terminalType = terminalEvent?.kind === "prompt_async.child.error" || terminalEvent?.event?.type === "session.error" ? "error" : terminalEvent ? "idle" : null
   const acceptedTs = promptEvent?.kind === "prompt_async.prompt.accepted" ? promptEvent.ts : null
   const terminalTs = terminalEvent?.ts ?? null
+  const promptAccepted = promptEvent?.kind === "prompt_async.prompt.accepted"
+  const promptStatusCode = promptEvent?.status ?? null
+  const acceptedBeforeTerminal = typeof acceptedTs === "number" && typeof terminalTs === "number" && acceptedTs < terminalTs
+  const pass = promptAccepted && promptStatusCode === 204 && Boolean(terminalType) && acceptedBeforeTerminal
   return {
     child_session_id: childSessionID,
     create: { status: createEvent?.kind === "prompt_async.create.ok" ? "ok" : createEvent ? "error" : "missing", ts: createEvent?.ts ?? null },
     prompt: {
-      status: promptEvent?.kind === "prompt_async.prompt.accepted" ? "accepted" : promptEvent ? "error" : "missing",
-      status_code: promptEvent?.status ?? null,
+      status: promptAccepted ? "accepted" : promptEvent ? "error" : "missing",
+      status_code: promptStatusCode,
       ts: acceptedTs,
       error: promptEvent?.error || null,
     },
     terminal: { type: terminalType, ts: terminalTs },
-    accepted_before_terminal: typeof acceptedTs === "number" && typeof terminalTs === "number" && acceptedTs < terminalTs,
+    accepted_before_terminal: acceptedBeforeTerminal,
+    pass,
     evidence: {
       message_updated: childEvents.some((event) => event.kind === "prompt_async.child.message_updated" || event.event?.type === "message.updated"),
       message_part_updated: childEvents.some((event) => event.kind === "prompt_async.child.message_part_updated" || event.event?.type === "message.part.updated"),
@@ -607,10 +612,19 @@ function waitForPromptAsyncProbe(logPath, timeoutMs) {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     const summary = summarizePromptAsyncProbe(readProbeEvents(logPath))
-    if (summary.create.status === "error" || summary.prompt.status === "error" || summary.terminal.type) return true
+    if (shouldStopWaitingForPromptAsyncProbe(summary)) return true
     sleepMs(200)
   }
   return false
+}
+
+export function shouldStopWaitingForPromptAsyncProbe(summary) {
+  return summary.create.status === "error" || summary.prompt.status === "error" || Boolean(summary.terminal.type)
+}
+
+export function promptAsyncProbeExitStatus(result, summary) {
+  if (result.status !== 0 || result.signal || result.error) return result.status ?? 1
+  return summary.pass ? 0 : 1
 }
 
 function sqliteQuote(value) {
@@ -787,12 +801,13 @@ export function runPromptAsyncProbe({ root, model, timeoutMs = 120000, port = 41
   closeSync(serveErr)
   writeFileSync(paths.stdoutPath, result.stdout || "")
   writeFileSync(paths.stderrPath, result.stderr || "")
+  const summary = summarizePromptAsyncProbe(readProbeEvents(paths.logPath))
   return {
     ...paths,
-    status: result.status,
+    status: promptAsyncProbeExitStatus(result, summary),
     signal: result.signal,
     error: result.error ? String(result.error.message || result.error) : null,
-    summary: summarizePromptAsyncProbe(readProbeEvents(paths.logPath)),
+    summary,
   }
 }
 
@@ -814,7 +829,11 @@ export function parseArgs(argv) {
     else if (arg === "--audit-agent") options.auditAgent = requireArgValue(argv, i++, arg)
     else if (arg === "--dry-run") options.dryRun = true
     else if (arg === "--help" || arg === "-h") options.help = true
+    else throw new Error(`Unknown argument: ${arg}`)
   }
+  if (options.mode && !["default", "audit-child", "prompt-async"].includes(options.mode)) throw new Error(`Unknown mode: ${options.mode}`)
+  if (options.timeoutMs !== undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)) throw new Error("--timeout-ms must be a positive finite number")
+  if (options.port !== undefined && (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535)) throw new Error("--port must be an integer between 1 and 65535")
   return options
 }
 
