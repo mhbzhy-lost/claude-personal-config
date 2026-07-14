@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import * as probe from "../opencode-subagent-event-probe.mjs"
-import { buildRunArgs, createAuditChildProbeWorkspace, createProbeWorkspace, formatServeNotReadyError, parseArgs, readTextFromOffset, shouldWaitForRepairEvidence, summarizeAuditChildProbe, summarizeProbeEvents } from "../opencode-subagent-event-probe.mjs"
+import { buildRunArgs, createAuditChildProbeWorkspace, createProbeWorkspace, createPromptAsyncProbeWorkspace, formatServeNotReadyError, parseArgs, readTextFromOffset, shouldWaitForRepairEvidence, summarizeAuditChildProbe, summarizeProbeEvents, summarizePromptAsyncProbe } from "../opencode-subagent-event-probe.mjs"
 
 describe("opencode subagent event probe", () => {
   it("creates a self-contained OpenCode probe workspace", () => {
@@ -53,6 +53,26 @@ describe("opencode subagent event probe", () => {
       assert.ok(agent.includes("mode: subagent"))
       assert.ok(agent.includes("probe-audit"))
       assert.ok(agent.includes("write: deny"))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("creates a self-contained prompt-async child probe workspace", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-prompt-async-probe-test-"))
+    try {
+      const paths = createPromptAsyncProbeWorkspace({ root })
+      const config = JSON.parse(readFileSync(paths.configPath, "utf8"))
+      assert.deepEqual(config.plugin, ["./plugins/prompt-async-probe.js"])
+      assert.equal(config.permission, "allow")
+
+      const plugin = readFileSync(paths.pluginPath, "utf8")
+      assert.ok(plugin.includes("client.session.create"))
+      assert.ok(plugin.includes("client.session.promptAsync"))
+      assert.ok(plugin.includes("prompt_async.create.start"))
+      assert.ok(plugin.includes("prompt_async.prompt.accepted"))
+      assert.ok(plugin.includes("message.part.updated"))
+      assert.ok(plugin.includes("session.error"))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -155,6 +175,36 @@ describe("opencode subagent event probe", () => {
 
     assert.equal(summary.backflow.message_updated, true)
     assert.equal(summary.backflow.idle, true)
+  })
+
+  it("summarizes prompt-async acceptance strictly before child terminal evidence", () => {
+    const summary = summarizePromptAsyncProbe([
+      { ts: 10, kind: "prompt_async.create.start" },
+      { ts: 20, kind: "prompt_async.create.ok", sessionID: "ses_child" },
+      { ts: 30, kind: "prompt_async.prompt.accepted", sessionID: "ses_child", status: 204 },
+      { ts: 40, kind: "event", event: { type: "message.updated", properties: { info: { sessionID: "ses_child" } } } },
+      { ts: 50, kind: "event", event: { type: "message.part.updated", properties: { sessionID: "ses_child" } } },
+      { ts: 60, kind: "event", event: { type: "session.idle", properties: { sessionID: "ses_child" } } },
+    ])
+
+    assert.equal(summary.child_session_id, "ses_child")
+    assert.equal(summary.create.status, "ok")
+    assert.equal(summary.prompt.status, "accepted")
+    assert.equal(summary.prompt.status_code, 204)
+    assert.equal(summary.terminal.type, "idle")
+    assert.equal(summary.accepted_before_terminal, true)
+    assert.deepEqual(summary.evidence, { message_updated: true, message_part_updated: true })
+  })
+
+  it("does not treat acceptance at the terminal timestamp as before terminal", () => {
+    const summary = summarizePromptAsyncProbe([
+      { ts: 20, kind: "prompt_async.create.ok", sessionID: "ses_child" },
+      { ts: 30, kind: "prompt_async.prompt.accepted", sessionID: "ses_child", status: 204 },
+      { ts: 30, kind: "event", event: { type: "session.error", properties: { sessionID: "ses_child" } } },
+    ])
+
+    assert.equal(summary.terminal.type, "error")
+    assert.equal(summary.accepted_before_terminal, false)
   })
 
   it("includes serve log path when reporting server startup failure", () => {

@@ -6,7 +6,7 @@ applies_to:
   - userconf/plugins/plan-runner-harness.js
   - userconf/skills/plan-runner-dispatch/SKILL.md
   - OpenCode TUI
-last_verified: 2026-07-13
+last_verified: 2026-07-14
 source: https://github.com/anomalyco/opencode/issues/21018
 ---
 
@@ -22,9 +22,10 @@ source: https://github.com/anomalyco/opencode/issues/21018
 `task` tool。原生 `task` 的优势则在展示层：OpenCode TUI 能把它渲染为可点击的
 subagent 卡片，用户可以进入子会话观察实时输出。
 
-当前 `start_plan_runner` 是普通 plugin tool。它启动的子会话本身会产生流式事件，
-但父会话中的工具卡片没有稳定的子会话入口，也不会展示或跳转到子会话的实时进度。
-用户通常只能等待工具结束，无法从启动位置持续观察执行过程。
+当前 `start_plan_runner` 是普通 plugin tool。其 custom GenericTool metadata 虽包含
+`sessionId`，但当前 TUI 没有像原生 `task` 一样的可点击子会话导航；父会话工具卡片
+不会展示或跳转到该子会话的实时进度。异步派发仍以 terminal notification 回流，不以
+TUI 导航能力为前提。
 
 ## 问题边界
 
@@ -103,12 +104,11 @@ issue 因重复和模板合规原因关闭，并不代表功能已经实现。�
 - 将完整 renderer 插件 API 作为后续能力，避免首个改动范围过大。
 - 验证原生 task、普通 plugin tool 和带 child session 的 plugin tool 三条路径。
 
-## 临时方案
+## 当前决定
 
-在上游能力可用前，可以维护 OpenCode 本地补丁，让 GenericTool 在发现有效 child session
-metadata 时提供导航。该方案只适合短期验证，需要承担版本升级后的补丁维护成本。
-
-不建议为了临时 TUI 体验修改 Plan-Runner 的执行架构或取消独立 worktree。
+本次不修改 `/Users/leshi.zhy/opencode`，也不为 TUI 导航缺口阻塞异步派发。上游的
+metadata-aware GenericTool 能力仍可作为独立 proposal 推进；在其落地前，不建议维护
+本地补丁或改变 Plan-Runner 的独立 worktree 架构。
 
 ## 验收标准
 

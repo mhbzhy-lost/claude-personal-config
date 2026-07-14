@@ -267,6 +267,98 @@ You are probe-audit. Return only the exact JSON requested by the prompt and stop
 `
 }
 
+function promptAsyncPluginSource() {
+  return String.raw`import { appendFileSync, mkdirSync } from "node:fs"
+import { dirname } from "node:path"
+
+const logPath = process.env.OPENCODE_PROMPT_ASYNC_PROBE_LOG
+let started = false
+let childSessionID = null
+
+function sanitize(value) {
+  try {
+    return JSON.parse(JSON.stringify(value, (_key, current) => {
+      if (typeof current === "function") return "[Function]"
+      if (typeof current === "bigint") return String(current)
+      return current
+    }))
+  } catch (error) {
+    return { unserializable: true, message: String(error?.message || error) }
+  }
+}
+
+function record(kind, payload = {}) {
+  if (!logPath) return
+  mkdirSync(dirname(logPath), { recursive: true })
+  appendFileSync(logPath, JSON.stringify({ ts: Date.now(), kind, ...sanitize(payload) }) + "\n")
+}
+
+function sessionIDFromCreateResult(result) {
+  const value = result?.data?.id ?? result?.data ?? result?.id
+  return typeof value === "object" ? value?.id : value
+}
+
+function sdkErrorText(result) {
+  if (!result?.error) return null
+  const data = result.error?.data || result.error
+  return data?.message || data?.name || JSON.stringify(data)
+}
+
+function eventSessionID(event) {
+  return event?.properties?.sessionID || event?.properties?.info?.sessionID || event?.properties?.message?.sessionID || null
+}
+
+export default async ({ client, directory }) => ({
+  event: async ({ event }) => {
+    record("event", { event })
+    const sessionID = eventSessionID(event)
+    if (childSessionID && sessionID === childSessionID) {
+      if (event?.type === "message.updated") record("prompt_async.child.message_updated", { sessionID: childSessionID })
+      if (event?.type === "message.part.updated") record("prompt_async.child.message_part_updated", { sessionID: childSessionID })
+      if (event?.type === "session.idle") record("prompt_async.child.idle", { sessionID: childSessionID })
+      if (event?.type === "session.error") record("prompt_async.child.error", { sessionID: childSessionID })
+    }
+    if (started || event?.type !== "session.idle") return
+    const parentSessionID = eventSessionID(event)
+    if (!parentSessionID) return
+    started = true
+    record("prompt_async.create.start", { parentSessionID })
+    try {
+      const created = await client.session.create({
+        query: { directory },
+        body: { parentID: parentSessionID, title: "prompt async probe" },
+      })
+      childSessionID = sessionIDFromCreateResult(created)
+      const createError = sdkErrorText(created)
+      if (createError) {
+        record("prompt_async.create.error", { sessionID: childSessionID, result: created, error: createError })
+        return
+      }
+      record("prompt_async.create.ok", { sessionID: childSessionID, result: created })
+
+      const prompted = await client.session.promptAsync({
+        path: { id: childSessionID },
+        query: { directory },
+        body: { parts: [{ type: "text", text: "Return exactly: PROMPT_ASYNC_PROBE_OK" }] },
+      })
+      const promptError = sdkErrorText(prompted)
+      if (promptError) {
+        record("prompt_async.prompt.error", { sessionID: childSessionID, result: prompted, error: promptError })
+        return
+      }
+      record("prompt_async.prompt.accepted", { sessionID: childSessionID, status: prompted?.response?.status ?? prompted?.status ?? 204, result: prompted })
+    } catch (error) {
+      record("prompt_async.error", {
+        sessionID: childSessionID,
+        error: String(error?.stack || error?.message || error),
+        data: error?.data || error?.response?.data || null,
+      })
+    }
+  },
+})
+`
+}
+
 export function createProbeWorkspace({ root } = {}) {
   const workspace = root || join(tmpdir(), `opencode-subagent-probe-${Date.now()}`)
   const opencodeDir = join(workspace, ".opencode")
@@ -319,6 +411,29 @@ export function createAuditChildProbeWorkspace({ root } = {}) {
   writeFileSync(agentPath, auditAgentSource())
 
   return { workspace, configPath, pluginPath, agentPath, logPath, stdoutPath, stderrPath, serveLogPath }
+}
+
+export function createPromptAsyncProbeWorkspace({ root } = {}) {
+  const workspace = root || join(tmpdir(), `opencode-prompt-async-probe-${Date.now()}`)
+  const opencodeDir = join(workspace, ".opencode")
+  const pluginDir = join(opencodeDir, "plugins")
+  ensureDir(pluginDir)
+
+  const configPath = join(opencodeDir, "opencode.json")
+  const pluginPath = join(pluginDir, "prompt-async-probe.js")
+  const logPath = join(workspace, "prompt-async-events.jsonl")
+  const stdoutPath = join(workspace, "opencode-run.stdout")
+  const stderrPath = join(workspace, "opencode-run.stderr")
+  const serveLogPath = join(workspace, "opencode-serve.log")
+
+  writeFileSync(configPath, JSON.stringify({
+    $schema: "https://opencode.ai/config.json",
+    permission: "allow",
+    plugin: ["./plugins/prompt-async-probe.js"],
+  }, null, 2) + "\n")
+  writeFileSync(pluginPath, promptAsyncPluginSource())
+
+  return { workspace, configPath, pluginPath, logPath, stdoutPath, stderrPath, serveLogPath }
 }
 
 export function readProbeEvents(logPath) {
@@ -385,6 +500,33 @@ export function summarizeAuditChildProbe({ events = [], dbRows = {}, serveLogTex
     },
     events: [...new Set(events.map((event) => event.kind))],
     log_excerpt: compactLogExcerpt(serveLogText),
+  }
+}
+
+export function summarizePromptAsyncProbe(events = []) {
+  const createEvent = findProbeEvent(events, ["prompt_async.create.ok", "prompt_async.create.error"])
+  const promptEvent = findProbeEvent(events, ["prompt_async.prompt.accepted", "prompt_async.prompt.error", "prompt_async.error"])
+  const childSessionID = promptEvent?.sessionID || createEvent?.sessionID || null
+  const childEvents = events.filter((event) => event.sessionID === childSessionID || probeEventSessionID(event) === childSessionID)
+  const terminalEvent = childEvents.find((event) => event.kind === "prompt_async.child.idle" || event.kind === "prompt_async.child.error" || event.event?.type === "session.idle" || event.event?.type === "session.error") || null
+  const terminalType = terminalEvent?.kind === "prompt_async.child.error" || terminalEvent?.event?.type === "session.error" ? "error" : terminalEvent ? "idle" : null
+  const acceptedTs = promptEvent?.kind === "prompt_async.prompt.accepted" ? promptEvent.ts : null
+  const terminalTs = terminalEvent?.ts ?? null
+  return {
+    child_session_id: childSessionID,
+    create: { status: createEvent?.kind === "prompt_async.create.ok" ? "ok" : createEvent ? "error" : "missing", ts: createEvent?.ts ?? null },
+    prompt: {
+      status: promptEvent?.kind === "prompt_async.prompt.accepted" ? "accepted" : promptEvent ? "error" : "missing",
+      status_code: promptEvent?.status ?? null,
+      ts: acceptedTs,
+      error: promptEvent?.error || null,
+    },
+    terminal: { type: terminalType, ts: terminalTs },
+    accepted_before_terminal: typeof acceptedTs === "number" && typeof terminalTs === "number" && acceptedTs < terminalTs,
+    evidence: {
+      message_updated: childEvents.some((event) => event.kind === "prompt_async.child.message_updated" || event.event?.type === "message.updated"),
+      message_part_updated: childEvents.some((event) => event.kind === "prompt_async.child.message_part_updated" || event.event?.type === "message.part.updated"),
+    },
   }
 }
 
@@ -456,6 +598,16 @@ function waitForAuditChildProbe(logPath, timeoutMs) {
     if (events.some((event) => ["audit.prompt.error", "audit.prompt.throw", "audit.create.error"].includes(event.kind))) return true
     const summary = summarizeAuditChildProbe({ events })
     if (summary.prompt === "ok" && summary.backflow.message_updated && summary.backflow.idle) return true
+    sleepMs(200)
+  }
+  return false
+}
+
+function waitForPromptAsyncProbe(logPath, timeoutMs) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    const summary = summarizePromptAsyncProbe(readProbeEvents(logPath))
+    if (summary.create.status === "error" || summary.prompt.status === "error" || summary.terminal.type) return true
     sleepMs(200)
   }
   return false
@@ -604,6 +756,46 @@ export function runAuditChildProbe({ root, model, timeoutMs = 120000, port = 413
   }
 }
 
+export function runPromptAsyncProbe({ root, model, timeoutMs = 120000, port = 41339 } = {}) {
+  const paths = createPromptAsyncProbeWorkspace({ root })
+  const serveOut = openSync(paths.serveLogPath, "a")
+  const serveErr = openSync(paths.serveLogPath, "a")
+  const serve = spawn("opencode", ["serve", "--port", String(port), "--hostname", "127.0.0.1", "--print-logs", "--log-level", "DEBUG"], {
+    cwd: paths.workspace,
+    stdio: ["ignore", serveOut, serveErr],
+    env: { ...process.env, OPENCODE_PROMPT_ASYNC_PROBE_LOG: paths.logPath },
+  })
+
+  const attachUrl = `http://127.0.0.1:${port}`
+  const ready = waitForServer({ logPath: paths.serveLogPath, port, process: serve, timeoutMs: Math.min(timeoutMs, 15000) })
+  if (!ready) {
+    try { serve.kill() } catch {}
+    closeSync(serveOut)
+    closeSync(serveErr)
+    return { ...paths, status: 1, signal: null, error: formatServeNotReadyError({ attachUrl, serveLogPath: paths.serveLogPath }), summary: summarizePromptAsyncProbe(readProbeEvents(paths.logPath)) }
+  }
+
+  const result = spawnSync("opencode", buildRunArgs({ attachUrl, workspace: paths.workspace, model, prompt: "Say PROMPT_ASYNC_PROBE_PARENT_READY and stop." }), {
+    cwd: process.cwd(),
+    timeout: timeoutMs,
+    encoding: "utf8",
+  })
+  if (shouldWaitForRepairEvidence(result)) waitForPromptAsyncProbe(paths.logPath, Math.min(30000, timeoutMs))
+
+  try { serve.kill() } catch {}
+  closeSync(serveOut)
+  closeSync(serveErr)
+  writeFileSync(paths.stdoutPath, result.stdout || "")
+  writeFileSync(paths.stderrPath, result.stderr || "")
+  return {
+    ...paths,
+    status: result.status,
+    signal: result.signal,
+    error: result.error ? String(result.error.message || result.error) : null,
+    summary: summarizePromptAsyncProbe(readProbeEvents(paths.logPath)),
+  }
+}
+
 function requireArgValue(argv, index, arg) {
   const value = argv[index + 1]
   if (!value || value.startsWith("--")) throw new Error(`Missing value for ${arg}`)
@@ -627,7 +819,7 @@ export function parseArgs(argv) {
 }
 
 function usage() {
-  return `Usage: node ${basename(fileURLToPath(import.meta.url))} [--mode default|audit-child] [--dry-run] [--root DIR] [--model provider/model] [--timeout-ms N] [--port N] [--audit-agent NAME]`
+  return `Usage: node ${basename(fileURLToPath(import.meta.url))} [--mode default|audit-child|prompt-async] [--dry-run] [--root DIR] [--model provider/model] [--timeout-ms N] [--port N] [--audit-agent NAME]`
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -635,10 +827,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (options.help) {
     console.log(usage())
   } else if (options.dryRun) {
-    const paths = options.mode === "audit-child" ? createAuditChildProbeWorkspace({ root: options.root }) : createProbeWorkspace({ root: options.root })
+    const paths = options.mode === "audit-child" ? createAuditChildProbeWorkspace({ root: options.root }) : options.mode === "prompt-async" ? createPromptAsyncProbeWorkspace({ root: options.root }) : createProbeWorkspace({ root: options.root })
     console.log(JSON.stringify(paths, null, 2))
   } else {
-    const result = options.mode === "audit-child" ? runAuditChildProbe(options) : runProbe(options)
+    const result = options.mode === "audit-child" ? runAuditChildProbe(options) : options.mode === "prompt-async" ? runPromptAsyncProbe(options) : runProbe(options)
     console.log(JSON.stringify(result, null, 2))
     process.exitCode = result.status ?? (result.signal ? 1 : 0)
   }

@@ -49,6 +49,24 @@ The `prompt` must include:
 If `start_plan_runner` is not available, stop and report the configuration
 mismatch. Do not fall back to the native `task` tool.
 
+## After Dispatch
+
+`dispatch_status=accepted` means only that the harness accepted the start
+request. It is not a completion result and is not a terminal state.
+
+After the tool returns `accepted`, the primary agent may continue with
+non-conflicting work that is outside this implementation plan, or end the
+current turn. It must not personally implement, steer, or otherwise continue
+the dispatched plan.
+
+Wait for the harness to asynchronously notify the parent session with one of
+the terminal results: `validated`, `blocked`, or `interrupted`. Do not actively
+or repeatedly poll for progress.
+
+Call `get_plan_runner_status` at most once only when the expected notification
+is missing, the user explicitly asks for status, or manual diagnosis is needed.
+Report the observed status; never present `accepted` as completion.
+
 ## If Context Is Missing
 
 Ask one concise clarification only when the execution goal or agreed approach is
@@ -63,3 +81,5 @@ re-planning in the primary agent.
 - Do not use the native `task` tool for plan-runner dispatch.
 - Do not replace `plan-runner` with `general`, `explore`, or another custom
   agent.
+- Do not wait in the current turn, poll, or personally continue the accepted
+  implementation plan.

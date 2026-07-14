@@ -13,7 +13,7 @@ applies_to:
   - userconf/agents/plan-runner.md
   - userconf/plugins/plan-runner-harness.js
   - scripts/opencode-subagent-event-probe.mjs
-last_verified: 2026-07-09
+last_verified: 2026-07-14
 source: opencode plan-runner agent
 ---
 
@@ -101,15 +101,16 @@ harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-st
   `origin_worktree/.plan-runner-worktrees/<task_id>` run worktree，写入 dispatch brief，
   记录 parent / plan-runner session index，并把 Harness Task ID、assigned worktree、branch、
   base commit 注入 plan-runner prompt。
-- `start_plan_runner` 同步等待 plan-runner 的 `session.prompt()` 完成，并将 assistant final text 直接作为
-  tool output 返回父 agent。若 final text 返回时 run 尚未进入 `validated` / `blocked` / `interrupted`，
-  harness 将该 run 标记为现有 `blocked` 终态，保留 task/worktree/evidence，并记录
-  `plan_runner_stopped_before_finish_plan` blocker/event；该路径不启动 completion gate 或任何 review，
-  也不向 parent 额外 `promptAsync` 通知。phase gate 拒绝 `blocked` 等终态的后续工具调用；继续执行必须
-  新建 run，而非恢复或改写旧 state。prompt 后的终态写入只进入与 event handler 共用的 state queue，
-  在队列内重新读取 state，避免覆盖先入队的 evidence；真实 SDK 响应结构存在但没有 text 时同样标记
-  `blocked`，使用 `plan_runner_empty_response` blocker/event 并返回非空诊断。缺少该响应结构的
-  `{ data: {} }` 测试桩不视为空响应。
+- 旧版同步 `session.prompt()`、直接返回 assistant final text、以及“final 未完成即标记 `blocked`”的
+  实现已被替代。`start_plan_runner` 通过 `promptAsync` 投递 root prompt；HTTP 204 后立即返回
+  `dispatch_status=accepted`，只表示启动请求被接受，不是完成或终态。root 的 message、part、idle 和
+  error 事件异步归集到 task-state。
+- root 派发 child 后，存在 running child 时 root 进入 `waiting_for_children`；全部 child settled 后，
+  harness 有限次唤醒同一个 root 继续执行。root 的 `validated`、`blocked`、`interrupted` 终态通过 parent
+  `promptAsync` 异步通知。通知发送失败会记录诊断，不会把终态回退为运行中。
+- 状态查询仅限 owner parent session。parent registry 支持同一 parent 的多个 run；主 agent 不主动或循环
+  轮询。仅在预期通知缺失、用户明确询问状态或人工诊断时，可调用一次 `get_plan_runner_status`，并只能报告
+  实际观察到的状态，不能把 `accepted` 解释为完成。
 - `tool.execute.before(task)` / `tool.execute.after(task)` 仍用于 plan-runner root session
   派发普通 child subagent：harness 创建 child worktree、改写 prompt，并通过
   `output.metadata.sessionId` 绑定 child session。
@@ -161,11 +162,11 @@ harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-st
   workspace 检查 `git status --short`；clean 时再执行通知里的 fast-forward merge 和 cleanup。
    dirty 时停止并询问用户。
 - dedicated run 到达 `validated`、`blocked` 或 `interrupted` 后，只有 origin directory 的
-  PlanRunnerHarnessPlugin instance 会调用 `client.instance.dispose({ query: { directory: run_worktree } })`
-  回收该 run directory 缓存的 MCP/LSP/plugin runtime。三种终态都由绑定的 parent session
-  `session.idle` 消费；不得在 plan-runner idle 或 `start_plan_runner` 工具返回前释放，因为 child session
-  的尾部 event 会通过 `Plugin.trigger` 重新读取已失效的 directory cache 并重建 plugin。该回收与 parent
-  merge-back、git worktree/branch 清理、session 保留完全分离：
+   PlanRunnerHarnessPlugin instance 会调用 `client.instance.dispose({ query: { directory: run_worktree } })`
+   回收该 run directory 缓存的 MCP/LSP/plugin runtime。root terminal barrier 还要求对应 parent 通知已
+   `sent` 或 `failed`，其后 parent 才能在 idle 时 dispose；不得在 plan-runner idle 或
+   `start_plan_runner` 返回前释放，因为 child session 的尾部 event 会通过 `Plugin.trigger` 重新读取已失效的
+   directory cache 并重建 plugin。该回收与 parent merge-back、git worktree/branch 清理、session 保留完全分离：
   不合并、不删除、不终止进程，也不影响 origin 或其他 directory。失败状态最多在后续终态触发中重试两次，
   `disposing` / `disposed` 或达到上限后停止；task-state 的 `runtime_disposal`（含 attempts、最近错误）和
   `runtime_disposal_disposed` / `runtime_disposal_failed` event 仅作幂等诊断；
