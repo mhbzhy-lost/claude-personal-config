@@ -665,18 +665,21 @@ describe("init_opencode agents sync", () => {
 
     assert.equal(permissionTemplate["*"], "allow")
     assert.equal(permissionTemplate.start_plan_runner, "deny")
+    assert.equal(permissionTemplate.get_plan_runner_status, "deny")
     for (const tool of lifecycleTools) {
       assert.equal(permissionTemplate[tool], "deny", `${tool} should be globally hidden outside explicit agent overrides`)
     }
 
     for (const agentName of ["GPT", "GPT-Pro", "qwen", "claude"]) {
       assert.equal(agents[agentName]?.permission?.start_plan_runner, "allow")
+      assert.equal(agents[agentName]?.permission?.get_plan_runner_status, "allow")
       for (const tool of lifecycleTools) assert.notEqual(agents[agentName]?.permission?.[tool], "allow")
     }
     assert.equal(agents.gpt, undefined)
     assert.equal(agents["gpt-pro"], undefined)
 
     assert.notEqual(agents.executor?.permission?.start_plan_runner, "allow")
+    assert.notEqual(agents.executor?.permission?.get_plan_runner_status, "allow")
     for (const tool of lifecycleTools) assert.notEqual(agents.executor?.permission?.[tool], "allow")
   })
 

@@ -1280,7 +1280,7 @@ function preflightBlockResultText(state, reasons) {
 
 async function notifyParentMergeBack({ stateDir, client, directory, state }) {
   const currentState = await readTaskState(stateDir, state.task_id) || state
-  if (!shouldNotifyParentMergeBack(currentState)) return currentState
+  if (!shouldNotifyParentMergeBack(currentState) || !currentState.plan_runner_terminal_idle_at) return currentState
 
   const sendingState = cloneState(currentState)
   const headCommit = await currentGitHead(sendingState.worktree)
@@ -1301,10 +1301,8 @@ async function notifyParentMergeBack({ stateDir, client, directory, state }) {
   try {
     const promptParent = client?.session?.promptAsync
       ? (payload) => client.session.promptAsync(payload)
-      : client?.session?.prompt
-        ? (payload) => client.session.prompt(payload)
-        : null
-    if (!promptParent) throw new Error("client.session.promptAsync/client.session.prompt is unavailable")
+      : null
+    if (!promptParent) throw new Error("client.session.promptAsync is unavailable")
     const query = { directory: sendingState.origin_worktree || directory || sendingState.worktree }
     const prompted = await promptParent({
       path: { id: sendingState.parent_session_id },
@@ -1364,6 +1362,72 @@ async function notifyParentMergeBack({ stateDir, client, directory, state }) {
   }
 }
 
+function terminalResultPromptText(state) {
+  const code = state.blocker?.code || state.plan_runner_error?.message || "unknown"
+  const finalText = state.blocker?.final_text || null
+  return [
+    "Plan-runner reached a terminal result; preserve the run worktree for review.",
+    `Harness Task ID: ${state.task_id}`,
+    `Result status: ${state.status}`,
+    `Code or error: ${code}`,
+    ...(finalText ? [`Final text: ${finalText}`] : []),
+    `Run worktree: ${state.worktree}`,
+    `Branch: ${state.branch || "unknown"}`,
+    "The worktree and branch are preserved; inspect them before deciding next steps.",
+  ].join("\n")
+}
+
+async function notifyParentTerminalResult({ stateDir, client, directory, state }) {
+  const currentState = await readTaskState(stateDir, state.task_id) || state
+  if (!(["blocked", "interrupted"].includes(currentState.status)) || !currentState.parent_session_id) return currentState
+  if (!currentState.plan_runner_terminal_idle_at && !currentState.plan_runner_terminal_error_at) return currentState
+  if (["sending", "sent", "failed"].includes(currentState.parent_notification?.status)) return currentState
+
+  const sending = cloneState(currentState)
+  sending.parent_notification = {
+    type: "terminal_result",
+    status: "sending",
+    result_status: sending.status,
+    session_id: sending.parent_session_id,
+    task_id: sending.task_id,
+    code: sending.blocker?.code || sending.plan_runner_error?.message || null,
+    final_text: sending.blocker?.final_text || null,
+    worktree: sending.worktree,
+    branch: sending.branch,
+    started_at: Date.now(),
+  }
+  sending.updated_at = Date.now()
+  await writeTaskState(stateDir, sending)
+
+  try {
+    if (!client?.session?.promptAsync) throw new Error("client.session.promptAsync is unavailable")
+    const prompted = await client.session.promptAsync({
+      path: { id: sending.parent_session_id },
+      query: { directory: sending.origin_worktree || directory || sending.worktree },
+      body: { parts: [{ type: "text", text: terminalResultPromptText(sending) }] },
+    })
+    throwIfSdkError(prompted, "parent terminal result prompt failed")
+    const sent = cloneState(await readTaskState(stateDir, state.task_id) || sending)
+    sent.parent_notification = { ...sending.parent_notification, status: "sent", sent_at: Date.now() }
+    sent.updated_at = Date.now()
+    await writeTaskState(stateDir, sent)
+    await appendEvent(stateDir, state.task_id, { type: "parent_terminal_result_notified", session_id: sending.parent_session_id, result_status: sending.status })
+    return sent
+  } catch (error) {
+    const failed = cloneState(await readTaskState(stateDir, state.task_id) || sending)
+    failed.parent_notification = { ...sending.parent_notification, status: "failed", error: formatDiagnosticError(error), failed_at: Date.now() }
+    failed.updated_at = Date.now()
+    await writeTaskState(stateDir, failed)
+    await appendEvent(stateDir, state.task_id, { type: "parent_terminal_result_notify_failed", session_id: sending.parent_session_id, error: failed.parent_notification.error })
+    return failed
+  }
+}
+
+async function notifyParentTerminalResultIfReady({ stateDir, client, directory, state }) {
+  if (state.status === "validated") return notifyParentMergeBack({ stateDir, client, directory, state })
+  return notifyParentTerminalResult({ stateDir, client, directory, state })
+}
+
 async function finishPlanTool(args, context, stateDir, { client, directory, externalReview, pollMs, timeoutMs }) {
   if (context.agent !== "plan-runner") throw new Error("finish_plan is only available to the plan-runner agent")
   const sessionID = context.sessionID
@@ -1371,15 +1435,12 @@ async function finishPlanTool(args, context, stateDir, { client, directory, exte
   if (!state) throw new Error("finish_plan task state is not readable")
   if (state.plan_runner_session_id !== sessionID) throw new Error("finish_plan must run in the bound plan-runner session")
   if (TERMINAL_COMPLETION_GATE_STATUSES.has(state.status)) {
-    const notifiedState = state.status === "validated"
-      ? await notifyParentMergeBack({ stateDir, client, directory, state })
-      : state
     return {
-      output: completionGateResultText(notifiedState),
+      output: completionGateResultText(state),
       metadata: {
-        task_id: notifiedState.task_id,
-        status: notifiedState.status,
-        completion_gate: notifiedState.completion_gate || null,
+        task_id: state.task_id,
+        status: state.status,
+        completion_gate: state.completion_gate || null,
       },
     }
   }
@@ -1419,14 +1480,12 @@ async function finishPlanTool(args, context, stateDir, { client, directory, exte
   await continuePlanRunnerReview({ stateDir, client, directory, sessionID, state: nextState, externalReview })
   const finishedState = await waitForCompletionGateState(stateDir, nextState.task_id, { pollMs, timeoutMs })
   if (!finishedState) throw new Error("finish_plan task state disappeared while waiting for completion gate")
-  const notifiedState = await notifyParentMergeBack({ stateDir, client, directory, state: finishedState })
-
   return {
-    output: completionGateResultText(notifiedState),
+    output: completionGateResultText(finishedState),
     metadata: {
-      task_id: notifiedState.task_id,
-      status: notifiedState.status,
-      completion_gate: notifiedState.completion_gate || null,
+      task_id: finishedState.task_id,
+      status: finishedState.status,
+      completion_gate: finishedState.completion_gate || null,
     },
   }
 }
@@ -1470,8 +1529,7 @@ async function finalizeIfComplete({ stateDir, client, directory, state }) {
       nextState.updated_at = Date.now()
       await writeTaskState(stateDir, nextState)
       await appendEvent(stateDir, state.task_id, { type: "task_validated", fail_open: true })
-      await notifyParentMergeBack({ stateDir, client, directory, state: nextState })
-      return
+       return
     }
     await promptRepair({ stateDir, state, source: "completeness_check", reasons })
     return
@@ -1483,7 +1541,6 @@ async function finalizeIfComplete({ stateDir, client, directory, state }) {
   nextState.updated_at = Date.now()
   await writeTaskState(stateDir, nextState)
   await appendEvent(stateDir, state.task_id, { type: "task_validated" })
-  await notifyParentMergeBack({ stateDir, client, directory, state: nextState })
 }
 
 async function runExternalReview({ stateDir, client, directory, state, externalReview }) {
@@ -1790,6 +1847,7 @@ async function handlePlanRunnerTerminalIdle({ stateDir, client, event }) {
     state.plan_runner_terminal_idle_at = Date.now()
     state.updated_at = Date.now()
     await writeTaskState(stateDir, state)
+    await notifyParentTerminalResultIfReady({ stateDir, client, directory: state.origin_worktree, state })
     return
   }
   if (shouldSendWatchdogNudge(state, sessionID)) return
@@ -1829,9 +1887,10 @@ async function handlePlanRunnerTerminalIdle({ stateDir, client, event }) {
     type: nextState.blocker.code,
     ...(text ? { final_text: text } : { message: nextState.blocker.message }),
   })
+  await notifyParentTerminalResultIfReady({ stateDir, client, directory: nextState.origin_worktree, state: nextState })
 }
 
-async function handlePlanRunnerSessionError({ stateDir, event }) {
+async function handlePlanRunnerSessionError({ stateDir, client, event }) {
   if (event.type !== "session.error") return
   const sessionID = event.properties?.sessionID
   if (!sessionID) return
@@ -1854,6 +1913,7 @@ async function handlePlanRunnerSessionError({ stateDir, event }) {
     session_id: sessionID,
     error: nextState.plan_runner_error.message,
   })
+  await notifyParentTerminalResultIfReady({ stateDir, client, directory: nextState.origin_worktree, state: nextState })
 }
 
 async function handlePlanRunnerWatchdogIdle({ stateDir, client, directory, event }) {
@@ -2140,6 +2200,40 @@ async function completeTaskTool(args, context, stateDir) {
   return { output: `task completed: ${args.id}`, metadata: { task_id: state.task_id, completed_task: args.id } }
 }
 
+async function getPlanRunnerStatusTool(args, context, stateDir) {
+  const taskID = String(args?.task_id || "")
+  if (!taskID || safeId(taskID) !== taskID) throw new Error("get_plan_runner_status requires a safe task id")
+  const state = await readTaskState(stateDir, taskID)
+  if (!state) throw new Error(`plan-runner task not found: ${taskID}`)
+  if (state.parent_session_id !== context.sessionID) throw new Error("plan-runner task is not owned by this parent session")
+  const summary = {
+    task_id: state.task_id,
+    status: state.status,
+    session_id: state.plan_runner_session_id || null,
+    origin_worktree: state.origin_worktree || null,
+    worktree: state.worktree || null,
+    branch: state.branch || null,
+    base_commit: state.base_commit || state.git_base || null,
+    active_task: state.active_task || null,
+    task_counts: {
+      total: (state.tasks || []).length,
+      completed: (state.tasks || []).filter((task) => task.status === "completed").length,
+      in_progress: (state.tasks || []).filter((task) => task.status === "in_progress").length,
+    },
+    completion_gate: state.completion_gate || null,
+    blocker: state.blocker || null,
+    plan_runner_error: state.plan_runner_error || null,
+    root_wait: state.root_wait || null,
+    parent_notification: state.parent_notification || null,
+    runtime_disposal: state.runtime_disposal || null,
+    updated_at: state.updated_at || null,
+  }
+  return {
+    output: `Plan-runner task ${summary.task_id}: ${summary.status}`,
+    metadata: summary,
+  }
+}
+
 async function startPlanRunnerTool(args, context, stateDir, { client, directory }) {
   if (!client?.session?.create || !client?.session?.promptAsync) {
     throw new Error("start_plan_runner requires client.session.create and client.session.promptAsync")
@@ -2298,6 +2392,13 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
         },
         execute: (args, context) => startPlanRunnerTool(args, context, stateDir, { client, directory: worktree }),
       }),
+      get_plan_runner_status: tool({
+        description: "Read a parent-owned plan-runner task status summary.",
+        args: {
+          task_id: tool.schema.string().min(1),
+        },
+        execute: (args, context) => getPlanRunnerStatusTool(args, context, stateDir),
+      }),
       write_plan: tool({
         description: "Write the structured plan-runner task contract and advance harness state.",
         args: {
@@ -2421,7 +2522,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       await handleAuditReviewIdle({ stateDir, client, directory: worktree, event, externalReview })
       await handleParentSessionIdle({ stateDir, client, directory: worktree, event })
       await handlePlanRunnerTerminalIdle({ stateDir, client, event })
-      await handlePlanRunnerSessionError({ stateDir, event })
+      await handlePlanRunnerSessionError({ stateDir, client, event })
       await handleChildSessionError({ stateDir, client, event })
       await handlePlanRunnerWatchdogIdle({ stateDir, client, directory: worktree, event })
     }),

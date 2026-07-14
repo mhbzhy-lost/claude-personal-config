@@ -12,7 +12,8 @@
     "prompt": "{file:./prompts/gpt-coding.txt}",
     "color": "#10a37f",
     "permission": {
-      "start_plan_runner": "allow"
+      "start_plan_runner": "allow",
+      "get_plan_runner_status": "allow"
     }
   },
   "GPT-Pro": {
@@ -23,7 +24,8 @@
     "prompt": "{file:./prompts/gpt-coding.txt}",
     "color": "#0d8f70",
     "permission": {
-      "start_plan_runner": "allow"
+      "start_plan_runner": "allow",
+      "get_plan_runner_status": "allow"
     }
   },
   "qwen": {
@@ -34,7 +36,8 @@
     "temperature": 0.6,
     "color": "#6366f1",
     "permission": {
-      "start_plan_runner": "allow"
+      "start_plan_runner": "allow",
+      "get_plan_runner_status": "allow"
     }
   },
   "claude": {
@@ -43,7 +46,8 @@
     "model": "anthropic-idealab/claude-opus-4-6-1m",
     "color": "#d97706",
     "permission": {
-      "start_plan_runner": "allow"
+      "start_plan_runner": "allow",
+      "get_plan_runner_status": "allow"
     }
   },
   "executor": {

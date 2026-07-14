@@ -486,6 +486,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       const workspace = join(root, "workspace")
       initGitWorkspace(workspace)
       const stateDir = join(root, "state")
+      let promptCalls = 0
       const hooks = await createPlanRunnerHarness({
         workspace,
         stateDir,
@@ -557,6 +558,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       const workspace = join(root, "workspace")
       initGitWorkspace(workspace)
       const stateDir = join(root, "state")
+      let promptCalls = 0
       const hooks = await createPlanRunnerHarness({
         workspace,
         stateDir,
@@ -831,6 +833,7 @@ describe("PlanRunnerHarnessPlugin", () => {
       const workspace = join(root, "workspace")
       initGitWorkspace(workspace)
       const stateDir = join(root, "state")
+      let promptCalls = 0
       const hooks = await createPlanRunnerHarness({
         workspace,
         stateDir,
@@ -871,6 +874,7 @@ describe("PlanRunnerHarnessPlugin", () => {
             create: async () => ({ data: { id: "ses_plan_runner" } }),
             promptAsync: async (payload) => {
               prompts.push(payload)
+              if (payload.path.id === "ses_parent") return { data: {} }
               taskID = payload.body.parts[0].text.match(/Harness Task ID: (\S+)/)[1]
               const runWorkspace = readJson(join(stateDir, "tasks", `${taskID}.json`)).worktree
               await hooks.tool.write_plan.execute(
@@ -912,7 +916,9 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.equal(state.blocker.final_text, finalText)
       assert.match(events, /"type":"plan_runner_stopped_before_finish_plan"/)
       assert.doesNotMatch(events, /"type":"(self_check_completed|audit_review_dispatched|external_review_started|task_validated)"/)
-      assert.equal(prompts.length, 1)
+      assert.equal(prompts.length, 2)
+      assert.equal(state.parent_notification.type, "terminal_result")
+      assert.equal(state.parent_notification.status, "sent")
       await hooks["tool.execute.before"](
         { tool: "finish_plan", sessionID: "ses_plan_runner", callID: "call_terminal_read" },
         { args: {} },
@@ -1110,13 +1116,14 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
-  it("records root session errors as interrupted without a parent notification", async () => {
+  it("records root session errors as interrupted and notifies the parent", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
       const workspace = join(root, "workspace")
       initGitWorkspace(workspace)
       const stateDir = join(root, "state")
-      const hooks = await createPlanRunnerHarness({ workspace, stateDir, client: planRunnerClient() })
+      const prompts = []
+      const hooks = await createPlanRunnerHarness({ workspace, stateDir, client: planRunnerClient({ prompts }) })
       const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks, workspace, stateDir })
 
       await hooks.event({ event: { type: "session.error", properties: { sessionID: "ses_plan_runner", error: { message: "root crashed" } } } })
@@ -1125,7 +1132,9 @@ describe("PlanRunnerHarnessPlugin", () => {
       assert.equal(state.status, "interrupted")
       assert.match(state.plan_runner_error.message, /root crashed/)
       assert.equal(typeof state.plan_runner_terminal_error_at, "number")
-      assert.equal(state.parent_notification, undefined)
+      assert.equal(state.parent_notification.type, "terminal_result")
+      assert.equal(state.parent_notification.status, "sent")
+      assert.equal(prompts.at(-1).path.id, "ses_parent")
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1343,6 +1352,144 @@ describe("PlanRunnerHarnessPlugin", () => {
 
       assert.deepEqual(disposals, [])
       assert.equal(readJson(statePath).runtime_disposal, undefined)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("notifies the parent of a blocked root terminal result after the idle barrier", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const prompts = []
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          session: {
+            create: async () => ({ data: { id: "ses_plan_runner" } }),
+            promptAsync: async (payload) => { prompts.push(payload); return { data: {} } },
+            messages: async () => ({ data: [{ info: { role: "assistant" }, parts: [{ type: "text", text: "Change Request: decide." }] }] }),
+          },
+        },
+      })
+      const result = await hooks.tool.start_plan_runner.execute(
+        { prompt: "Implement isolated work." },
+        makeContext({ sessionID: "ses_parent", workspace }),
+      )
+
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: result.metadata.sessionId } } })
+
+      const state = readJson(join(stateDir, "tasks", `${result.metadata.task_id}.json`))
+      const parentPrompt = prompts.at(-1)
+      assert.equal(state.status, "blocked")
+      assert.equal(state.parent_notification.type, "terminal_result")
+      assert.equal(state.parent_notification.status, "sent")
+      assert.equal(parentPrompt.path.id, "ses_parent")
+      assert.equal(parentPrompt.query.directory, workspace)
+      assert.match(parentPrompt.body.parts[0].text, /blocked/)
+      assert.match(parentPrompt.body.parts[0].text, /Change Request: decide/)
+      assert.match(parentPrompt.body.parts[0].text, /preserved/i)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("notifies the parent of an interrupted root terminal result without changing the terminal status on failure", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      let promptCalls = 0
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          session: {
+            create: async () => ({ data: { id: "ses_plan_runner" } }),
+            promptAsync: async () => {
+              promptCalls += 1
+              return promptCalls === 1 ? { data: {} } : { error: { data: { message: "parent unavailable" } } }
+            },
+          },
+        },
+      })
+      const result = await hooks.tool.start_plan_runner.execute(
+        { prompt: "Implement isolated work." },
+        makeContext({ sessionID: "ses_parent", workspace }),
+      )
+
+      await hooks.event({ event: { type: "session.error", properties: { sessionID: result.metadata.sessionId, error: { message: "root crashed" } } } })
+
+      const state = readJson(join(stateDir, "tasks", `${result.metadata.task_id}.json`))
+      assert.equal(state.status, "interrupted")
+      assert.equal(state.parent_notification.type, "terminal_result")
+      assert.equal(state.parent_notification.status, "failed")
+      assert.match(state.parent_notification.error, /parent unavailable/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("does not notify validated runs until root idle records the terminal barrier", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const prompts = []
+      const hooks = await createPlanRunnerHarness({ workspace, stateDir, client: planRunnerClient({ prompts }) })
+      const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks, workspace, stateDir })
+      const state = readJson(statePath)
+      state.status = "validated"
+      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+
+      assert.equal(prompts.length, 1)
+      await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_plan_runner" } } })
+
+      const notified = readJson(statePath)
+      assert.equal(prompts.length, 2)
+      assert.equal(notified.parent_notification.type, "merge_back")
+      assert.equal(notified.parent_notification.status, "sent")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("returns a restricted plan-runner status only to the owning parent", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const hooks = await createPlanRunnerHarness({ workspace, stateDir })
+      const statePath = await dispatchDedicatedPlanRunnerStatePath({ hooks, workspace, stateDir })
+      const state = readJson(statePath)
+      state.blocker = { code: "blocked-code" }
+      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+
+      const result = await hooks.tool.get_plan_runner_status.execute(
+        { task_id: state.task_id },
+        makeContext({ sessionID: "ses_parent", workspace, agent: "gpt" }),
+      )
+      assert.equal(result.metadata.task_id, state.task_id)
+      assert.equal(result.metadata.worktree, state.worktree)
+      assert.deepEqual(result.metadata.blocker, { code: "blocked-code" })
+      await assert.rejects(
+        () => hooks.tool.get_plan_runner_status.execute({ task_id: state.task_id }, makeContext({ sessionID: "ses_other", workspace, agent: "gpt" })),
+        /not owned by this parent session/i,
+      )
+      await assert.rejects(
+        () => hooks.tool.get_plan_runner_status.execute({ task_id: "../bad" }, makeContext({ sessionID: "ses_parent", workspace, agent: "gpt" })),
+        /safe task id/i,
+      )
+      await assert.rejects(
+        () => hooks.tool.get_plan_runner_status.execute({ task_id: "planrun-missing" }, makeContext({ sessionID: "ses_parent", workspace, agent: "gpt" })),
+        /not found/i,
+      )
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
