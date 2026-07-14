@@ -1676,6 +1676,78 @@ async function handleParentSessionIdle({ stateDir, client, directory, event }) {
   await disposeRunRuntime({ stateDir, client, directory, state })
 }
 
+async function readPlanRunnerFinalMessage(client, state) {
+  const result = await client.session.messages({
+    path: { id: state.plan_runner_session_id },
+    query: { directory: state.worktree, limit: 20 },
+  })
+  throwIfSdkError(result, "plan-runner final message read failed")
+  const messages = Array.isArray(result?.data) ? result.data : []
+  return [...messages].reverse().find((item) => item?.info?.role === "assistant") || null
+}
+
+async function handlePlanRunnerTerminalIdle({ stateDir, client, event }) {
+  if (event.type !== "session.idle") return
+  const sessionID = event.properties?.sessionID
+  if (!sessionID) return
+  const index = await readSessionIndex(stateDir, sessionID)
+  if (!index || index.role !== "plan-runner") return
+  const state = await readTaskState(stateDir, index.task_id)
+  if (!state) return
+
+  if (TERMINAL_COMPLETION_GATE_STATUSES.has(state.status)) {
+    if (state.plan_runner_terminal_idle_at) return
+    state.plan_runner_terminal_idle_at = Date.now()
+    state.updated_at = Date.now()
+    await writeTaskState(stateDir, state)
+    return
+  }
+  if (shouldSendWatchdogNudge(state, sessionID)) return
+  if (!client?.session?.messages) return
+
+  const message = await readPlanRunnerFinalMessage(client, state)
+  if (!message) return
+  const text = extractTextFromMessageInfo(message.info || {})
+    || (message.parts || []).map(extractTextFromMessagePart).filter(Boolean).join("\n")
+  const nextState = cloneState(state)
+  nextState.status = "blocked"
+  nextState.blocker = text
+    ? { code: "plan_runner_stopped_before_finish_plan", final_text: text }
+    : { code: "plan_runner_empty_response", message: "Plan-runner returned an empty response before finish_plan; the run was blocked." }
+  nextState.plan_runner_terminal_idle_at = Date.now()
+  nextState.updated_at = Date.now()
+  await writeTaskState(stateDir, nextState)
+  await appendEvent(stateDir, state.task_id, {
+    type: nextState.blocker.code,
+    ...(text ? { final_text: text } : { message: nextState.blocker.message }),
+  })
+}
+
+async function handlePlanRunnerSessionError({ stateDir, event }) {
+  if (event.type !== "session.error") return
+  const sessionID = event.properties?.sessionID
+  if (!sessionID) return
+  const index = await readSessionIndex(stateDir, sessionID)
+  if (!index || index.role !== "plan-runner") return
+  const state = await readTaskState(stateDir, index.task_id)
+  if (!state || TERMINAL_COMPLETION_GATE_STATUSES.has(state.status)) return
+
+  const nextState = cloneState(state)
+  nextState.status = "interrupted"
+  nextState.plan_runner_error = {
+    message: formatDiagnosticError(event.properties?.error),
+    at: Date.now(),
+  }
+  nextState.plan_runner_terminal_error_at = nextState.plan_runner_error.at
+  nextState.updated_at = nextState.plan_runner_error.at
+  await writeTaskState(stateDir, nextState)
+  await appendEvent(stateDir, state.task_id, {
+    type: "plan_runner_error",
+    session_id: sessionID,
+    error: nextState.plan_runner_error.message,
+  })
+}
+
 async function handlePlanRunnerWatchdogIdle({ stateDir, client, directory, event }) {
   if (event.type !== "session.idle") return
   const sessionID = event.properties?.sessionID
@@ -1960,9 +2032,9 @@ async function completeTaskTool(args, context, stateDir) {
   return { output: `task completed: ${args.id}`, metadata: { task_id: state.task_id, completed_task: args.id } }
 }
 
-async function startPlanRunnerTool(args, context, stateDir, { client, directory, serializeState = (handler) => handler() }) {
-  if (!client?.session?.create || !client?.session?.prompt) {
-    throw new Error("start_plan_runner requires client.session.create and client.session.prompt")
+async function startPlanRunnerTool(args, context, stateDir, { client, directory }) {
+  if (!client?.session?.create || !client?.session?.promptAsync) {
+    throw new Error("start_plan_runner requires client.session.create and client.session.promptAsync")
   }
   const prompt = String(args?.prompt || "").trim()
   if (!prompt) throw new Error("start_plan_runner requires prompt")
@@ -2023,7 +2095,7 @@ async function startPlanRunnerTool(args, context, stateDir, { client, directory,
   await writeTaskState(stateDir, nextState)
   await writeSessionIndex(stateDir, planRunnerSessionID, taskID, "plan-runner")
 
-  const prompted = await client.session.prompt({
+  const dispatched = await client.session.promptAsync({
     path: { id: planRunnerSessionID },
     query,
     body: {
@@ -2031,34 +2103,20 @@ async function startPlanRunnerTool(args, context, stateDir, { client, directory,
       parts: [{ type: "text", text: ensurePlanRunnerStartPrompt(prompt, nextState) }],
     },
   })
-  throwIfSdkError(prompted, "plan-runner prompt dispatch failed")
-  await appendEvent(stateDir, taskID, { type: "plan_runner_bound", session_id: planRunnerSessionID, tool: "start_plan_runner" })
-
-  const finalText = extractPromptResultText(prompted)
-  const emptySdkResponse = !finalText && promptResultHasSdkResponseShape(prompted)
-  const output = finalText || (emptySdkResponse
-    ? "Plan-runner returned an empty response before finish_plan; the run was blocked."
-    : "")
-  await serializeState(async () => {
-    const finishedState = await readTaskState(stateDir, taskID)
-    if (!finishedState || TERMINAL_COMPLETION_GATE_STATUSES.has(finishedState.status)) return
-    const code = emptySdkResponse ? "plan_runner_empty_response" : "plan_runner_stopped_before_finish_plan"
-    if (!finalText && !emptySdkResponse) return
-    finishedState.status = "blocked"
-    finishedState.blocker = { code, ...(finalText ? { final_text: finalText } : { message: output }) }
-    finishedState.updated_at = Date.now()
-    await writeTaskState(stateDir, finishedState)
-    await appendEvent(stateDir, taskID, {
-      type: code,
-      ...(finalText ? { final_text: finalText } : { message: output }),
-    })
-  })
+  throwIfSdkError(dispatched, "plan-runner async prompt dispatch failed")
+  await appendEvent(stateDir, taskID, { type: "plan_runner_dispatch_accepted", session_id: planRunnerSessionID, tool: "start_plan_runner" })
 
   return {
-    output,
+    output: "Plan-Runner 已后台派发，终态将异步通知；请勿主动轮询。",
     metadata: {
       task_id: taskID,
+      status: "planning_required",
+      dispatch_status: "accepted",
       session_id: planRunnerSessionID,
+      sessionId: planRunnerSessionID,
+      parentSessionId: parentSessionID,
+      background: true,
+      origin_worktree: originWorktree,
       worktree: run.worktree,
       branch: run.branch,
       base_commit: run.base_commit,
@@ -2130,7 +2188,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
         args: {
           prompt: tool.schema.string().min(1),
         },
-        execute: (args, context) => startPlanRunnerTool(args, context, stateDir, { client, directory: worktree, serializeState: enqueueState }),
+        execute: (args, context) => startPlanRunnerTool(args, context, stateDir, { client, directory: worktree }),
       }),
       write_plan: tool({
         description: "Write the structured plan-runner task contract and advance harness state.",
@@ -2254,6 +2312,8 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       await handleChildSessionIdle(stateDir, event)
       await handleAuditReviewIdle({ stateDir, client, directory: worktree, event, externalReview })
       await handleParentSessionIdle({ stateDir, client, directory: worktree, event })
+      await handlePlanRunnerTerminalIdle({ stateDir, client, event })
+      await handlePlanRunnerSessionError({ stateDir, event })
       await handlePlanRunnerWatchdogIdle({ stateDir, client, directory: worktree, event })
     }),
   }
