@@ -780,6 +780,73 @@ describe("PlanRunnerHarnessPlugin", () => {
     }
   })
 
+  it("start_plan_runner returns after promptAsync acceptance without waiting for root idle", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      let acceptDispatch
+      const accepted = new Promise((resolve) => { acceptDispatch = resolve })
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          session: {
+            create: async () => ({ data: { id: "ses_plan_runner" } }),
+            promptAsync: async () => accepted,
+          },
+        },
+      })
+
+      let settled = false
+      const running = hooks.tool.start_plan_runner.execute(
+        { prompt: "Implement isolated work." },
+        makeContext({ sessionID: "ses_parent", workspace }),
+      ).then((result) => { settled = true; return result })
+
+      await Promise.resolve()
+      assert.equal(settled, false)
+      acceptDispatch({ data: undefined })
+      const result = await running
+      assert.equal(result.metadata.dispatch_status, "accepted")
+      assert.equal(result.metadata.background, true)
+      assert.equal(result.metadata.sessionId, "ses_plan_runner")
+      assert.equal(result.metadata.status, "planning_required")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("start_plan_runner does not report accepted when promptAsync returns an SDK error", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          session: {
+            create: async () => ({ data: { id: "ses_plan_runner" } }),
+            promptAsync: async () => ({ error: { data: { message: "dispatch unavailable" } } }),
+          },
+        },
+      })
+
+      await assert.rejects(
+        () => hooks.tool.start_plan_runner.execute(
+          { prompt: "Implement isolated work." },
+          makeContext({ sessionID: "ses_parent", workspace }),
+        ),
+        /async prompt dispatch failed: dispatch unavailable/i,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("returns an unfinished plan-runner final response and preserves executing evidence without entering completion gate", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
