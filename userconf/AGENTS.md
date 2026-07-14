@@ -59,7 +59,7 @@ commit message 格式与主观约束见 `git-commit-convention` skill。
 
 每个 Task 必须在 `**Files:**` 前声明可选的 `**Deps:**` 字段，列出依赖的上游任务
 （如 `**Deps:** Task 1, Task 2`）。无依赖时省略该字段。此字段供 Subagent-Driven
-模式构建 DAG 并行派发，也供 Plan-Runner 的 `write_plan` 消费。
+模式由主 agent 构建任务 DAG；Plan-Runner 不直接解析 writing-plans 文档中的该字段。
 
 计划完成后使用提问工具（question）让用户选择执行方式（覆盖 skill 原始的两种）：
 

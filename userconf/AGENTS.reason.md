@@ -97,6 +97,8 @@ skill 本身不可修改，原 reason 保留在下方备查：
 > external review、terminal gate）；Subagent-Driven 不依赖 `subagent-driven-development`，
 > 由主 agent 直接派发后台 subagent，保留对任务间审查的控制；Inline 不引入额外
 > skill，适合简单计划或无需门禁的场景。
+> `Deps` 字段只供 Subagent-Driven 的主 agent 构建任务 DAG；Plan-Runner 会根据 Execution
+> Brief 自行调用 `write_plan({ tasks })` 建立机器契约，不直接解析 writing-plans 文档。
 
 ---
 
