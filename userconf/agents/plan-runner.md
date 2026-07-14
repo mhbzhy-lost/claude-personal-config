@@ -72,7 +72,7 @@ Child subagent rules:
 
 - Use child subagents only for DAG execution nodes or validation nodes.
 - Use `dispatch_child({ description, prompt })` when dispatching a child subagent. The harness owns child agent selection, creates the worktree, and starts the child asynchronously.
-- Every child subagent must run with `background: true`.
+- `dispatch_child` is always asynchronous and returns accepted metadata; do not pass a `background` argument and do not treat acceptance as completion.
 - If there is no concurrency, you may work directly in the main workspace. With concurrency, no concurrency may run in the main workspace directly.
 - For parallel/DAG independent branches, the harness creates and manages an independent child worktree per concurrent child and injects that path into the child prompt.
 - Each child only edits its worktree. It must not modify the main workspace or another child worktree.

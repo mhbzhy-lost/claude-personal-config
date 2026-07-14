@@ -25,7 +25,7 @@
     - 先调用 `write_plan({ tasks })`，tasks 写清 id、标题、文件范围、验证命令、停止条件；
     - 不再调用 `todowrite`，不再让 harness 从 todo 派生结构化状态；
     - 每个执行切片先调用 `start_task({ id })`，实现与验证完成后调用 `complete_task({ id })`；
-    - 如需并发，才通过 `task(background=true, ...)` 派发 child 工作，确认 harness 注入 child worktree / branch 信息；
+    - 如需并发，才通过 `dispatch_child({ description, prompt })` 派发 child；该工具不接受 `background`，确认 create/prompt 的 session directory 都等于 child worktree；
     - child 只改自己的 worktree，root 合并回 run worktree 后再运行最终验证；
     - 不要把“审计 / external review / finish_plan / 汇报 smoke 结果”写成 plan task；
     - 所有 plan tasks completed 且验证命令完成后，先创建本地 commit，确认 repo clean，再调用 `finish_plan`，只有返回 `validated` 后再写最终报告；
@@ -50,8 +50,9 @@
 - child running 时 task-state 为 `waiting_for_children`；全部 settled 后仅有限次唤醒原 root。
 - `validated`、`blocked`、`interrupted` 都能异步通知；每条通知前都已写入对应 root terminal barrier。通知失败时 owner 仅做一次状态诊断，root 不在尾部即时 dispose，当前回合结束后的 parent idle 才提供安全 disposal 触发，不承诺 timer。
 - task-state 中 `version == 2`，`tasks[]` 来自 `write_plan({ tasks })`，状态通过 `start_task` / `complete_task` 推进；不应出现 `todo` 或 `plan_contract` 作为新账本。
-- 若任务使用 child session，至少一个 child session 记录独立 worktree、branch、base commit；child prompt 或 task output 可见 `Child worktree` / `Child branch` 元数据。
-- 若任务使用并发 executor DAG，应看到至少两个 `child_worktree_created`、两个 `child_session_bound`、两个 `child_session_completed`，且第二个 `child_worktree_created` 早于第一个 `child_session_completed`，证明不是串行执行。
+- 若任务使用 child session，至少一个 child session 记录独立 worktree、branch、base commit；OpenCode session create 与 prompt 的 `query.directory` 都等于该 worktree，相对 Bash/文件路径只落入该目录。
+- 若任务使用并发 executor DAG，应看到至少两个 `child_worktree_created`、两个 `child_dispatch_accepted`、两个 `child_session_completed`，且第二个 `child_worktree_created` 早于第一个 `child_session_completed`，证明不是串行执行。
+- child settled 后，root 下一次工具活动应写入 `runtime_disposal.status=disposed`；在此之前 `git worktree remove` 必须被拒绝。释放成功后 root 才合并并清理 child worktree，origin/root/其他 child worktree 不应出现误写。
 - 并发 executor DAG 结束后，origin workspace 应包含所有 child 输出和 root 汇总提交；所有 child worktree、child branch、root run worktree 和 `planrunner*` branch 都已清理。
 - plan-runner 创建了本地 commit；external review 范围是 dispatch 时记录的 base commit 到当前 `HEAD`。
 - parent/main session 收到 merge-back 通知，正文包含 origin worktree、run worktree、branch、base commit、head commit、`git merge --ff-only <branch>` 和 `git worktree remove <run_worktree>`。
@@ -74,6 +75,8 @@
 - 若 `prompt-async` probe 的真实 SDK `status_code` 不是 `204`、缺少 terminal 或 `accepted_before_terminal != true`，按失败处理；参数拼写错误也必须为非 `0` 退出，不能用模拟输出替代。
 - 若同 parent 双 run 的状态或通知串线，检查 parent registry 是否按 run id 独立保存，以及 owner-only 查询是否拒绝非 parent session。
 - 若 child 全部 settled 后 root 未继续，检查 `waiting_for_children`、child settled event 和有限唤醒计数；不要新建 root 或由 parent 代替实施。
+- 若 Plan-Runner root 的原生 `task` 被拒绝，改用 `dispatch_child({ description, prompt })`；不要恢复 prompt 路径重写或 `tool.execute.after(task)` session 绑定。
+- 若 child worktree cleanup 被 `plan_runner_requires_child_runtime_disposal` 拒绝，先检查对应 child 的 `runtime_disposal`、`child_runtime_disposed` / `child_runtime_disposal_failed` event；不要强制删除仍绑定 directory runtime 的 worktree。
 - 若通知失败后 runtime 未回收，owner 仅调用一次 `get_plan_runner_status` 诊断；不要让 root 尾部即时 dispose。等待当前回合结束后的 parent idle 安全触发，不承诺 timer。
 - 若 smoke 汇总脚本报告失败但 state 中没有 `gate_failures` 字段，按空数组处理后重算；缺失字段不等于 gate failure。
 - 用 Node wrapper 跑 `opencode run --attach` 时，`spawn` 必须设置 `stdio: ["ignore", "pipe", "pipe"]` 或主动关闭 stdin；否则 CLI 会等待 stdin EOF，server 侧看不到 session/task-state，误判为 plan-runner 未启动。

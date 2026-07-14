@@ -70,21 +70,21 @@ Change Request。
 它只消费已确认计划和 `write_plan.tasks` 机器契约。`write_plan.tasks` 契约、并发 worktree
 约束和验证方式都维护在 `userconf/agents/plan-runner.md`。
 
-`plan-runner` 作为 root 执行容器可以使用 `task` 工具编排 DAG child subagents。child
-agent 类型、工作区隔离和路径门禁由 harness-managed child dispatch 接管；root agent
-只决定何时调用 `task(background=true, ...)`。child 只能返回执行结果摘要，不能继续递归
-派发 subagent，也不能更新 root task 的完成状态。
+`plan-runner` 作为 root 执行容器只通过 `dispatch_child({ description, prompt })` 编排 DAG
+child subagents。该 custom tool 始终异步启动 child，不接受 `background`、agent 或 directory
+参数；child agent 类型、工作区创建、session directory 绑定和路径门禁均由 harness 接管。
+child 只能返回执行结果摘要，不能继续递归派发 subagent，也不能更新 root task 的完成状态。
 
 无并发时，root plan-runner 可以直接在主工作区执行。只要存在并发 child，禁止多个执行者
 共享主工作区：harness 必须为每个并发 child 准备独立 `git worktree`，child 只改自己的
 worktree；child 返回后由 root 合并回主工作区，处理冲突/失败、清理 worktree，并在主工作区
 运行必要验证和最终提交。
 
-OpenCode `task` 工具当前参数只有 `description/prompt/subagent_type/task_id/command/background`，
-没有 `directory` / `workdir` 字段；`TaskTool` 创建 child session 时也没有从参数传入独立
-location。因此 harness 在 `tool.execute.before(task)` 中为 plan-runner child dispatch 创建
-worktree，改写 child prompt，记录 `{ session_id, worktree, branch, base_commit }`，并对 child
-session 的 bash / file 工具做路径门禁。
+OpenCode 原生 `task` 没有 `directory` / `workdir` 参数，不能建立 session 级 worktree
+隔离，因此 Plan-Runner root 已禁止使用该入口。`dispatch_child` 先创建 child worktree，再调用
+`client.session.create({ query: { directory: childWorktree } })`，持久化 session index 后用相同
+directory 执行 `promptAsync(agent=executor)`。Bash 和文件工具路径门禁继续保留为纵深防御，
+但不再承担 session directory 绑定职责。
 
 `start_plan_runner` 是 plan-runner root session 的唯一启动入口。它每次都创建新的
 harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-state 只作为历史诊断/
@@ -110,10 +110,10 @@ harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-st
 - `session.create` / `promptAsync` 返回 SDK `{ error }` 表示明确拒绝，派发 state 收敛为
   `interrupted`；调用直接 throw 时投递结果未知，只记录 `dispatch_delivery.status=unknown`，保留非终态和
   现场，不写 terminal barrier，也不允许 parent idle 提前 dispose 可能已启动的 root。
-- root 派发 child 后，存在 running child 时 root 进入 `waiting_for_children`；全部 child settled 后，
+- root 派发 child 后，存在 `dispatching` / `starting` / `running` child 时 root 进入 `waiting_for_children`；全部 child settled 后，
   harness 有限次唤醒同一个 root 继续执行。`root_wait` 是 task-state 中持久化的 root 等待与恢复记录；
-  plugin instance 的 child pending map 只用于补偿 `tool.execute.after(task)` 绑定前到达的 child terminal
-  事件，不能跨 instance 持久化或替代 `root_wait`。root 的 `validated`、`blocked`、`interrupted` 终态必须
+  child session index 在 prompt 前写入，不再需要 `tool.execute.after(task)` 绑定或 pending terminal map。
+  root 的 `validated`、`blocked`、`interrupted` 终态必须
   先写入 root terminal barrier，随后才通过 parent `promptAsync` 异步通知。通知发送失败会记录诊断，不会把
   终态回退为运行中。
 - root idle 归集先检查 running child；即使 final message 读取失败也进入 `waiting_for_children`。没有 running
@@ -122,9 +122,9 @@ harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-st
 - 状态查询仅限 owner parent session。parent registry 支持同一 parent 的多个 run；主 agent 不主动或循环
   轮询。仅在预期通知缺失、用户明确询问状态或人工诊断时，可调用一次 `get_plan_runner_status`，并只能报告
   实际观察到的状态，不能把 `accepted` 解释为完成。
-- `tool.execute.before(task)` / `tool.execute.after(task)` 仍用于 plan-runner root session
-  派发普通 child subagent：harness 创建 child worktree、改写 prompt，并通过
-  `output.metadata.sessionId` 绑定 child session。
+- Plan-Runner root 调用原生 `task` 会被拒绝并提示改用 `dispatch_child`。该 custom tool 返回
+  `dispatch_status=accepted` 只表示 child prompt 已被 SDK 接受；明确 SDK error 写失败终态，
+  transport throw 写 `dispatch_delivery.status=unknown` 并保留非终态现场。
 - `write_plan` custom tool 的公开协议是 `tasks: Task[]`。它负责写 reviewer-facing execution
   brief、保存 sha、把 `state.tasks` 初始化为 `pending`，并推进到 `ready_to_execute`。
   `tasks` 是唯一机器执行契约；不再从 OpenCode `todowrite` 派生任务账本。
@@ -157,10 +157,12 @@ harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-st
   `message.part.updated` patch、`session.diff` 写入
   evidence 索引；harness 自己生成的 stateDir `plans/<task_id>.md` 不计入实现 diff evidence。
 - 普通 harness-managed executor child 的 `session.idle` 会把对应 `child_sessions[]` 从
-  `running` 标记为 `completed` 并写入 `child_session_completed` event；audit child 继续由
+  `starting` / `running` 标记为 `completed` 并写入 `child_session_completed` event；audit child 继续由
   audit 专用 idle handler 消费 JSON 结果并推进后续 gate。
-- harness 会在 `task` 工具 description 中补充说明：plan-runner 派发 child subagent 时会
-  自动为该 child 创建独立 git worktree，并把 assigned worktree / branch 注入 child prompt。
+- child settled 后不能从 child directory plugin 自释放 runtime。原 root session 的下一次安全工具
+  边界调用 `client.instance.dispose({ query: { directory: childWorktree } })`，按 child 记录
+  `runtime_disposal` 并有限重试。runtime 未成功释放时，root 的 `git worktree remove` 被
+  `plan_runner_requires_child_runtime_disposal` 阻断；harness 不自动删除 worktree 或 branch。
 - `finish_plan` 的 deterministic commit boundary 会先做同步 preflight：检查 root repo clean、
   base..HEAD 有 diff，也检查所有 harness-managed child worktree 已合并并清理。root dirty、无
   commit range 或残留 child worktree 会返回 `preflight_blocked`，但不把 state 切到
