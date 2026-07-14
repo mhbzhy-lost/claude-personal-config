@@ -57,13 +57,18 @@ commit message 格式与主观约束见 `git-commit-convention` skill。
 ### `writing-plans`
 计划文档必须使用中文撰写（代码片段、命令、文件路径等技术标识除外）。
 
+每个 Task 必须在 `**Files:**` 前声明可选的 `**Deps:**` 字段，列出依赖的上游任务
+（如 `**Deps:** Task 1, Task 2`）。无依赖时省略该字段。此字段供 Subagent-Driven
+模式构建 DAG 并行派发，也供 Plan-Runner 的 `write_plan` 消费。
+
 计划完成后使用提问工具（question）让用户选择执行方式（覆盖 skill 原始的两种）：
 
 1. **Plan-Runner（推荐）** — 加载 `plan-runner-dispatch` skill，由 plan-runner
    subagent 接管执行，自带 harness 门禁、audit review 和 terminal gate
 2. **Subagent-Driven** — 主 agent 自行编排计划执行，任务间可审查，适合
    plan-runner 不稳定或需要主 agent 保持控制的场景。此模式
-   不加载、也不依赖 `subagent-driven-development`；主 agent 使用 task 工具以后台模式逐任务派发 subagent
+   不加载、也不依赖 `subagent-driven-development`；主 agent 读取计划的 `Deps`
+   字段构建 DAG，无依赖的任务并行派发（后台模式），有依赖的等上游完成后再派发
 3. **Inline Execution** — 按 skill 原始流程在当前会话逐任务执行，适合简单计划
    或无需门禁的场景；忽略其引用的未纳入白名单的 sub-skill
 
