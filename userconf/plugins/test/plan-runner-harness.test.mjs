@@ -5940,6 +5940,437 @@ console.log("### Issues\\n\\n#### Critical (Must Fix)\\nNone\\n\\n#### Important
     }
   })
 
+  describe("dispatch_child", () => {
+    it("creates an executor session in its assigned worktree", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        const baseCommit = initGitWorkspace(workspace)
+        const creates = []
+        const promptAsyncCalls = []
+        let createCalls = 0
+        const hooks = await createPlanRunnerHarness({
+          workspace,
+          stateDir,
+          client: {
+            session: {
+              create: async (payload) => {
+                createCalls += 1
+                creates.push(payload)
+                if (createCalls === 1) return { data: { id: "ses_plan_runner" } }
+                return { data: { id: "ses_child_executor" } }
+              },
+              promptAsync: async (payload) => {
+                promptAsyncCalls.push(payload)
+                return { data: {} }
+              },
+            },
+          },
+        })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir, prompt: "Execution Brief." })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+
+        const result = await hooks.tool.dispatch_child.execute(
+          { description: "Validate child slice", prompt: "Run child validation tasks." },
+          makeContext({ sessionID: "ses_plan_runner", workspace }),
+        )
+
+        const taskID = readJson(statePath).task_id
+        assert.equal(result.metadata.dispatch_status, "accepted")
+        assert.equal(result.metadata.background, true)
+        assert.equal(result.metadata.sessionId, "ses_child_executor")
+        assert.equal(result.metadata.parentSessionId, "ses_plan_runner")
+        assert.ok(result.metadata.worktree.startsWith(join(stateDir, "child-worktrees", taskID)))
+        assert.match(result.metadata.branch, new RegExp(`^planrunner-child/${escapeRegExp(taskID)}/`))
+        assert.equal(result.metadata.base_commit, baseCommit)
+        assert.equal(result.metadata.task_id, "T1")
+
+        assert.equal(creates.length, 2)
+        assert.equal(creates[1].body.parentID, "ses_plan_runner")
+        assert.equal(creates[1].body.title, "plan-runner child: Validate child slice")
+        assert.equal(creates[1].query.directory, result.metadata.worktree)
+
+        assert.equal(promptAsyncCalls.length, 1)
+        assert.equal(promptAsyncCalls[0].path.id, "ses_child_executor")
+        assert.equal(promptAsyncCalls[0].query.directory, result.metadata.worktree)
+        assert.match(promptAsyncCalls[0].body.parts[0].text, /Harness Task ID:/)
+        assert.match(promptAsyncCalls[0].body.parts[0].text, /Validate child slice/)
+        assert.match(promptAsyncCalls[0].body.parts[0].text, /Do not dispatch nested plan-runners/i)
+        assert.match(promptAsyncCalls[0].body.parts[0].text, /Do not set the root plan task status/i)
+
+        const state = readJson(statePath)
+        const child = state.child_sessions.find((item) => item.session_id === "ses_child_executor")
+        assert.equal(child.role, "executor")
+        assert.equal(child.status, "running")
+        assert.equal(child.task_id, "T1")
+        assert.equal(child.base_commit, baseCommit)
+
+        const events = readFileSync(join(stateDir, "events", `${taskID}.jsonl`), "utf8")
+        assert.match(events, /"type":"child_dispatch_accepted"/)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("binds the child session before promptAsync", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        let sessionIndexWritten = false
+        let createCalls = 0
+        const hooks = await createPlanRunnerHarness({
+          workspace,
+          stateDir,
+          client: {
+            session: {
+              create: async () => {
+                createCalls += 1
+                if (createCalls === 1) return { data: { id: "ses_plan_runner" } }
+                return { data: { id: "ses_child_executor" } }
+              },
+              promptAsync: async (payload) => {
+                const index = readJson(join(stateDir, "sessions", "ses_child_executor.json"))
+                if (index && index.role === "child" && index.task_id) {
+                  sessionIndexWritten = true
+                }
+                return { data: {} }
+              },
+            },
+          },
+        })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir, prompt: "Execution Brief." })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+
+        await hooks.tool.dispatch_child.execute(
+          { description: "Validate child slice", prompt: "Run child validation tasks." },
+          makeContext({ sessionID: "ses_plan_runner", workspace }),
+        )
+
+        assert.equal(sessionIndexWritten, true)
+        const state = readJson(statePath)
+        const child = state.child_sessions.find((item) => item.session_id === "ses_child_executor")
+        assert.equal(child.status, "running")
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("assigns distinct identities and worktrees to repeated child dispatches", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        let createCalls = 0
+        const hooks = await createPlanRunnerHarness({
+          workspace,
+          stateDir,
+          client: {
+            session: {
+              create: async () => {
+                createCalls += 1
+                return { data: { id: createCalls === 1 ? "ses_plan_runner" : `ses_child_${createCalls}` } }
+              },
+              promptAsync: async () => ({ data: {} }),
+            },
+          },
+        })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir, prompt: "Execution Brief." })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+
+        const first = await hooks.tool.dispatch_child.execute(
+          { description: "first", prompt: "Run first slice." },
+          makeContext({ sessionID: "ses_plan_runner", workspace }),
+        )
+        const second = await hooks.tool.dispatch_child.execute(
+          { description: "second", prompt: "Run second slice." },
+          makeContext({ sessionID: "ses_plan_runner", workspace }),
+        )
+
+        const children = readJson(statePath).child_sessions
+        assert.equal(children.length, 2)
+        assert.notEqual(children[0].call_id, children[1].call_id)
+        assert.notEqual(first.metadata.worktree, second.metadata.worktree)
+        assert.notEqual(first.metadata.branch, second.metadata.branch)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("allows dispatch_child through the execution phase gate", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        const hooks = await createPlanRunnerHarness({ workspace, stateDir })
+        await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir, prompt: "Execution Brief." })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+
+        await assert.doesNotReject(() => hooks["tool.execute.before"](
+          { tool: "dispatch_child", sessionID: "ses_plan_runner", callID: "call_dispatch_child" },
+          { args: { description: "slice", prompt: "Run." } },
+        ))
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("rejects non Plan-Runner callers and missing active task", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        const hooks = await createPlanRunnerHarness({ workspace, stateDir })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir, prompt: "Execution Brief." })
+
+        await assert.rejects(
+          () => hooks.tool.dispatch_child.execute(
+            { description: "test", prompt: "Run." },
+            makeContext({ sessionID: "ses_parent", workspace, agent: "gpt" }),
+          ),
+          /dispatch_child is only available to the plan-runner agent/i,
+        )
+
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+
+        await assert.rejects(
+          () => hooks.tool.dispatch_child.execute(
+            { description: "test", prompt: "Run." },
+            makeContext({ sessionID: "ses_plan_runner", workspace }),
+          ),
+          /dispatch_child requires an active task/i,
+        )
+
+        await assert.rejects(
+          () => hooks.tool.dispatch_child.execute(
+            { description: "", prompt: "Run." },
+            makeContext({ sessionID: "ses_plan_runner", workspace }),
+          ),
+          /dispatch_child requires description/,
+        )
+
+        await assert.rejects(
+          () => hooks.tool.dispatch_child.execute(
+            { description: "test", prompt: "" },
+            makeContext({ sessionID: "ses_plan_runner", workspace }),
+          ),
+          /dispatch_child requires prompt/,
+        )
+
+        const unboundState = readJson(statePath)
+        unboundState.status = "executing"
+        unboundState.active_task = "T1"
+        unboundState.tasks[0].status = "in_progress"
+        writeFileSync(statePath, `${JSON.stringify(unboundState, null, 2)}\n`)
+        await assert.rejects(
+          () => hooks.tool.dispatch_child.execute(
+            { description: "test", prompt: "Run." },
+            makeContext({ sessionID: "ses_other_runner", workspace, agent: "plan-runner" }),
+          ),
+          /not bound to a plan-runner task/i,
+        )
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("rejects when session.create returns an SDK error", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        let createCalls = 0
+        const hooks = await createPlanRunnerHarness({
+          workspace,
+          stateDir,
+          client: {
+            session: {
+              create: async () => {
+                createCalls += 1
+                if (createCalls === 1) return { data: { id: "ses_plan_runner" } }
+                return { error: { data: { message: "create unavailable" } } }
+              },
+              promptAsync: async () => ({ data: {} }),
+            },
+          },
+        })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir, prompt: "Execution Brief." })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+
+        await assert.rejects(
+          () => hooks.tool.dispatch_child.execute(
+            { description: "test", prompt: "Run." },
+            makeContext({ sessionID: "ses_plan_runner", workspace }),
+          ),
+          /dispatch_child session create failed: create unavailable/i,
+        )
+
+        const state = readJson(statePath)
+        const taskID = state.task_id
+        const child = state.child_sessions[0]
+        assert.equal(child.status, "failed")
+        assert.equal(child.session_id, null)
+        const events = readFileSync(join(stateDir, "events", `${taskID}.jsonl`), "utf8")
+        assert.match(events, /"type":"child_dispatch_failed"/)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("rejects when promptAsync returns an SDK error", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        let createCalls = 0
+        const hooks = await createPlanRunnerHarness({
+          workspace,
+          stateDir,
+          client: {
+            session: {
+              create: async () => {
+                createCalls += 1
+                if (createCalls === 1) return { data: { id: "ses_plan_runner" } }
+                return { data: { id: "ses_child_executor" } }
+              },
+              promptAsync: async () => ({ error: { data: { message: "dispatch unavailable" } } }),
+            },
+          },
+        })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir, prompt: "Execution Brief." })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+
+        await assert.rejects(
+          () => hooks.tool.dispatch_child.execute(
+            { description: "test", prompt: "Run." },
+            makeContext({ sessionID: "ses_plan_runner", workspace }),
+          ),
+          /dispatch_child async prompt dispatch failed: dispatch unavailable/i,
+        )
+
+        const state = readJson(statePath)
+        const child = state.child_sessions.find((item) => item.session_id === "ses_child_executor")
+        assert.equal(child.status, "failed")
+        assert.equal(child.session_id, "ses_child_executor")
+        const taskID = state.task_id
+        const events = readFileSync(join(stateDir, "events", `${taskID}.jsonl`), "utf8")
+        assert.match(events, /"type":"child_dispatch_failed"/)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("preserves unknown delivery state when session.create throws", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        let createCalls = 0
+        const hooks = await createPlanRunnerHarness({
+          workspace,
+          stateDir,
+          client: {
+            session: {
+              create: async () => {
+                createCalls += 1
+                if (createCalls === 1) return { data: { id: "ses_plan_runner" } }
+                throw new Error("create transport timeout")
+              },
+              promptAsync: async () => ({ data: {} }),
+            },
+          },
+        })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir, prompt: "Execution Brief." })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+
+        await assert.rejects(
+          () => hooks.tool.dispatch_child.execute(
+            { description: "test", prompt: "Run." },
+            makeContext({ sessionID: "ses_plan_runner", workspace }),
+          ),
+          /create transport timeout/,
+        )
+
+        const state = readJson(statePath)
+        const taskID = state.task_id
+        const child = state.child_sessions[0]
+        assert.equal(child.status, "dispatching")
+        assert.equal(child.session_id, null)
+        assert.equal(child.dispatch_delivery.status, "unknown")
+        assert.equal(child.dispatch_delivery.phase, "session_create")
+        assert.match(child.dispatch_delivery.error, /create transport timeout/)
+        const events = readFileSync(join(stateDir, "events", `${taskID}.jsonl`), "utf8")
+        assert.match(events, /"type":"child_dispatch_delivery_unknown"/)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("preserves unknown delivery state when promptAsync throws", async () => {
+      const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+      try {
+        const workspace = join(root, "workspace")
+        const stateDir = join(root, "state")
+        initGitWorkspace(workspace)
+        let createCalls = 0
+        const hooks = await createPlanRunnerHarness({
+          workspace,
+          stateDir,
+          client: {
+            session: {
+              create: async () => {
+                createCalls += 1
+                if (createCalls === 1) return { data: { id: "ses_plan_runner" } }
+                return { data: { id: "ses_child_executor" } }
+              },
+              promptAsync: async () => { throw new Error("transport timeout") },
+            },
+          },
+        })
+        const statePath = await dispatchPlanRunnerStatePath({ hooks, workspace, stateDir, prompt: "Execution Brief." })
+        await hooks.tool.write_plan.execute({ tasks: structuredPlanTasks() }, makeContext({ sessionID: "ses_plan_runner", workspace }))
+        await startStructuredTask({ hooks, workspace })
+
+        await assert.rejects(
+          () => hooks.tool.dispatch_child.execute(
+            { description: "test", prompt: "Run." },
+            makeContext({ sessionID: "ses_plan_runner", workspace }),
+          ),
+          /transport timeout/,
+        )
+
+        const state = readJson(statePath)
+        const child = state.child_sessions.find((item) => item.session_id === "ses_child_executor")
+        assert.equal(child.session_id, "ses_child_executor")
+        assert.equal(child.dispatch_delivery.status, "unknown")
+        assert.equal(child.dispatch_delivery.phase, "prompt_async")
+        assert.match(child.dispatch_delivery.error, /transport timeout/)
+        assert.equal(child.status, "starting")
+        const taskID = state.task_id
+        const events = readFileSync(join(stateDir, "events", `${taskID}.jsonl`), "utf8")
+        assert.match(events, /"type":"child_dispatch_delivery_unknown"/)
+        assert.ok(existsSync(join(stateDir, "sessions", "ses_child_executor.json")))
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  })
+
   it("binds repair diff evidence to the missing completed task before unrelated active work", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {

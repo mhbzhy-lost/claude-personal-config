@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 const STATE_VERSION = 2
 const PLANNING_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "write_plan"])
 const READY_TO_EXECUTE_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "start_task", "finish_plan"])
-const EXECUTION_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "start_task", "edit", "write", "apply_patch", "bash", "task", "complete_task", "finish_plan"])
+const EXECUTION_TOOLS = new Set(["read", "glob", "grep", "webfetch", "question", "skill", "start_task", "edit", "write", "apply_patch", "bash", "task", "dispatch_child", "complete_task", "finish_plan"])
 const EXECUTION_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash", "task"])
 const REPAIR_CONTEXT_TOOLS = new Set(["edit", "write", "apply_patch", "bash"])
 const COMPLETION_GATE_RESULT_STATUSES = new Set(["validated", "repairing", "blocked", "interrupted"])
@@ -2546,6 +2546,223 @@ async function startPlanRunnerTool(args, context, stateDir, { client, directory,
   }
 }
 
+function dispatchChildPromptText(state, child, description, userPrompt) {
+  const task = activeTask(state)
+  return [
+    ensureHarnessMarker(userPrompt, state.task_id),
+    "",
+    `Active task: ${child.task_id}${task ? ` - ${task.title}` : ""}`,
+    `Assigned child worktree: ${child.worktree}`,
+    `Child branch: ${child.branch}`,
+    `Child base commit: ${child.base_commit}`,
+    `Root plan task: ${state.task_id}`,
+    `Dispatch description: ${description}`,
+    "Use the assigned child worktree for all file operations and bash workdir values.",
+    "Do not modify the main workspace or any other child worktree.",
+    "Do not dispatch nested plan-runners or subagents with plan-runner agent.",
+    "Do not set the root plan task status. Only return task-level results.",
+    `Return a concise outcome with files touched, commands run, validation output, blockers, and risks.`,
+  ].join("\n").trim()
+}
+
+async function dispatchChildTool(args, context, stateDir, { client }) {
+  if (context.agent !== "plan-runner") throw new Error("dispatch_child is only available to the plan-runner agent")
+
+  const description = String(args?.description || "").trim()
+  if (!description) throw new Error("dispatch_child requires description")
+  const prompt = String(args?.prompt || "").trim()
+  if (!prompt) throw new Error("dispatch_child requires prompt")
+
+  const sessionIndex = await readSessionIndex(stateDir, context.sessionID)
+  if (!sessionIndex) throw new Error("dispatch_child session is not bound to a plan-runner task")
+  const state = await readTaskState(stateDir, sessionIndex.task_id)
+  if (!state) throw new Error("dispatch_child task state is not readable")
+  if (state.plan_runner_session_id !== context.sessionID) throw new Error("dispatch_child must run in the bound plan-runner session")
+  if (!Array.isArray(state.tasks)) throw new Error("dispatch_child requires structured tasks")
+  const task = activeTask(state)
+  if (!task) throw new Error("dispatch_child requires an active task")
+
+  const callID = context.callID || `dispatch_child_${randomUUID()}`
+  const worktree = await createChildWorktree(stateDir, state, callID)
+
+  const child = {
+    call_id: callID,
+    session_id: null,
+    role: "executor",
+    status: "dispatching",
+    task_id: task.id,
+    ...worktree,
+  }
+
+  state.child_sessions = (state.child_sessions || []).filter((item) => item.call_id !== callID)
+  state.child_sessions.push(child)
+  state.updated_at = Date.now()
+  await writeTaskState(stateDir, state)
+  await appendEvent(stateDir, state.task_id, {
+    type: "child_worktree_created",
+    call_id: callID,
+    task_id: task.id,
+    worktree: child.worktree,
+    branch: child.branch,
+    base_commit: child.base_commit,
+  })
+
+  const query = { directory: child.worktree }
+  let childSessionID
+  let created
+  try {
+    created = await client.session.create({
+      query,
+      body: {
+        parentID: state.plan_runner_session_id,
+        title: `plan-runner child: ${description}`,
+      },
+    })
+  } catch (error) {
+    child.dispatch_delivery = {
+      status: "unknown",
+      phase: "session_create",
+      error: formatDiagnosticError(error),
+      at: Date.now(),
+    }
+    const current = await readTaskState(stateDir, state.task_id)
+    if (current) {
+      current.child_sessions = (current.child_sessions || []).map((item) => (
+        item.call_id === callID ? child : item
+      ))
+      current.updated_at = Date.now()
+      await writeTaskState(stateDir, current)
+      await appendEvent(stateDir, current.task_id, {
+        type: "child_dispatch_delivery_unknown",
+        call_id: callID,
+        phase: "session_create",
+        error: child.dispatch_delivery.error,
+      })
+    }
+    throw error
+  }
+  try {
+    throwIfSdkError(created, "dispatch_child session create failed")
+    childSessionID = sessionIDFromCreateResult(created)
+    if (!childSessionID) throw new Error("dispatch_child session id missing")
+
+    const next = await readTaskState(stateDir, state.task_id)
+    child.session_id = childSessionID
+    child.status = "starting"
+    next.child_sessions = (next.child_sessions || []).map((item) => (
+      item.call_id === callID ? child : item
+    ))
+    next.updated_at = Date.now()
+    await writeTaskState(stateDir, next)
+    await writeSessionIndex(stateDir, childSessionID, state.task_id, "child")
+  } catch (error) {
+    const current = await readTaskState(stateDir, state.task_id)
+    if (current) {
+      current.child_sessions = (current.child_sessions || []).map((item) => (
+        item.call_id === callID ? { ...child, status: "failed", session_id: child.session_id || null } : item
+      ))
+      current.updated_at = Date.now()
+      await writeTaskState(stateDir, current)
+      await appendEvent(stateDir, current.task_id, {
+        type: "child_dispatch_failed",
+        call_id: callID,
+        phase: "session_create",
+        error: formatDiagnosticError(error),
+      })
+    }
+    throw error
+  }
+
+  let dispatched
+  try {
+    const awake = await readTaskState(stateDir, state.task_id)
+    dispatched = await client.session.promptAsync({
+      path: { id: childSessionID },
+      query,
+      body: {
+        agent: "executor",
+        parts: [{ type: "text", text: dispatchChildPromptText(awake, child, description, prompt) }],
+      },
+    })
+  } catch (error) {
+    const current = await readTaskState(stateDir, state.task_id)
+    if (current) {
+      current.child_sessions = (current.child_sessions || []).map((item) => {
+        if (item.call_id !== callID) return item
+        return {
+          ...item,
+          session_id: childSessionID,
+          status: "starting",
+          dispatch_delivery: {
+            status: "unknown",
+            phase: "prompt_async",
+            error: formatDiagnosticError(error),
+            at: Date.now(),
+          },
+        }
+      })
+      current.updated_at = Date.now()
+      await writeTaskState(stateDir, current)
+      await appendEvent(stateDir, current.task_id, {
+        type: "child_dispatch_delivery_unknown",
+        call_id: callID,
+        session_id: childSessionID,
+        phase: "prompt_async",
+        error: current.child_sessions.find((item) => item.call_id === callID).dispatch_delivery.error,
+      })
+    }
+    throw error
+  }
+  try {
+    throwIfSdkError(dispatched, "dispatch_child async prompt dispatch failed")
+  } catch (error) {
+    const current = await readTaskState(stateDir, state.task_id)
+    if (current) {
+      current.child_sessions = (current.child_sessions || []).map((item) => (
+        item.call_id === callID ? { ...item, session_id: childSessionID, status: "failed" } : item
+      ))
+      current.updated_at = Date.now()
+      await writeTaskState(stateDir, current)
+      await appendEvent(stateDir, current.task_id, {
+        type: "child_dispatch_failed",
+        call_id: callID,
+        session_id: childSessionID,
+        phase: "prompt_async",
+        error: formatDiagnosticError(error),
+      })
+    }
+    throw error
+  }
+
+  const accepted = await readTaskState(stateDir, state.task_id)
+  accepted.child_sessions = (accepted.child_sessions || []).map((item) => (
+    item.call_id === callID ? { ...item, session_id: childSessionID, status: "running" } : item
+  ))
+  accepted.updated_at = Date.now()
+  await writeTaskState(stateDir, accepted)
+  await appendEvent(stateDir, accepted.task_id, {
+    type: "child_dispatch_accepted",
+    call_id: callID,
+    session_id: childSessionID,
+    tool: "dispatch_child",
+  })
+
+  return {
+    output: "Child executor session dispatched asynchronously.",
+    metadata: {
+      task_id: child.task_id,
+      dispatch_status: "accepted",
+      session_id: childSessionID,
+      sessionId: childSessionID,
+      parentSessionId: state.plan_runner_session_id,
+      background: true,
+      worktree: child.worktree,
+      branch: child.branch,
+      base_commit: child.base_commit,
+    },
+  }
+}
+
 async function writePlanTool(args, context, stateDir) {
   if (context.agent !== "plan-runner") throw new Error("write_plan is only available to the plan-runner agent")
 
@@ -2613,6 +2830,14 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
           prompt: tool.schema.string().min(1),
         },
         execute: (args, context) => startPlanRunnerTool(args, context, stateDir, { client, directory: worktree, enqueueState }),
+      }),
+      dispatch_child: tool({
+        description: "Dispatch a child executor subagent in a dedicated git worktree bound to an active structured plan task.",
+        args: {
+          description: tool.schema.string().min(1),
+          prompt: tool.schema.string().min(1),
+        },
+        execute: (args, context) => enqueueState(() => dispatchChildTool(args, context, stateDir, { client })),
       }),
       get_plan_runner_status: tool({
         description: "Read a parent-owned plan-runner task status summary.",
