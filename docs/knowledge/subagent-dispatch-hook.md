@@ -39,13 +39,16 @@ schema 没有 `agents.paths` 配置，不能在 `opencode.json` 中增加自定�
 
 `userconf/agents.json` 是全局 inline agent 配置来源，由 `init_opencode.sh` 合并到
 `opencode.json.agent`。同步器保留 primary agent 的 live model 选择，但会刷新 SSOT 显式声明的
-`prompt`、`permission` 和 `variant`，避免工具权限或推理档位漂移。旧安装中的
+`prompt`、`permission`、`variant` 和 `options`，避免工具权限或推理档位漂移。旧安装中的
 `gpt` / `gpt-pro` 会显式迁移为 `GPT` / `GPT-Pro`：只有旧键时保留其
 本地字段后迁移，新旧键并存时保留新键并删除旧键，且不影响其他自定义 agent。默认 `GPT` 使用 GPT 5.6
-Sol 的标准模式与服务端默认 effort；`GPT-Pro` 使用 GPT 5.6 Sol Pro，并通过顶层
-`variant: xhigh` 选择 OpenCode 模型档位，承担质量优先的复杂任务；显式选择
-`gpt-5.6-sol-pro`，避免无后缀 `gpt-5.6-pro` 在 ChatGPT Codex 账户下映射到不受支持的
-`gpt-5.6`。`executor` agent
+Sol 的标准模式与服务端默认 effort；`GPT-Pro` 使用同一 GPT 5.6 Sol 模型，通过 `variant: max`
+选择最高 reasoning effort，并通过 `options.reasoningMode: "pro"` 启用 OpenAI 的 pro 执行模式
+（`@ai-sdk/openai@3.0.53+` 原生支持），承担质量优先的复杂任务。
+GPT-5.6 起 OpenAI 取消了独立的 `-pro` 模型 slug，`-pro` 后缀模型从 API 模型列表中消失；
+OpenCode v1.17.19+ 的 variants 从 models.dev 的 `reasoning_options` 自动推导，GPT-5.6 家族
+新增 `max` effort tier。`reasoningMode`（`standard`/`pro`）和 `reasoningEffort`（`none`~`max`）
+是两个独立维度。`executor` agent
 使用 GPT 5.6 Terra，定位为确定性执行器：`temperature = 0` 控制低随机性，
 `effort/reasoningEffort = none` 避免执行器过度推理；需要深度方案推理时应交给主 agent、
 `GPT-Pro` 或 plan-runner，而不是提高 executor 的 thinking budget。
@@ -340,8 +343,8 @@ tool/event hook 行为。
   `corrupt/tasks/<task_id>.json`。
 
 提示内容：
-- shared policy 精简为后台模式约束（编排决策由 `claude/CLAUDE.md` 管辖）
-- `claude/CLAUDE.md` 的 `## 并发与 Subagent` 包含完整的并发阈值决策树
+- shared policy 精简为后台模式约束（编排决策由 `subagent-dispatch` skill 管辖）
+- `subagent-dispatch` skill 包含完整的模型路由、类型选择、输出检查、升级处理规则
 
 编排决策（在 AGENTS.md 中，不在 hook/plugin 中）：
 - 并发 < 3 → 用 subagent（task 工具直接派发）

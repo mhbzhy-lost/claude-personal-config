@@ -17,10 +17,10 @@
     }
   },
   "GPT-Pro": {
-    "description": "GPT 5.6 Pro coding agent with maximum reasoning effort",
+    "description": "GPT 5.6 Sol coding agent with max reasoning effort for maximum quality",
     "mode": "primary",
-    "model": "openai/gpt-5.6-sol-pro",
-    "variant": "xhigh",
+    "model": "openai/gpt-5.6-sol",
+    "variant": "max",
     "prompt": "{file:./prompts/gpt-coding.txt}",
     "color": "#0d8f70",
     "permission": {
@@ -54,7 +54,7 @@
     "description": "Deterministic code executor. Temperature 0, low divergence, precise tool calls, minimal-diff edits. Not for exploration or brainstorming.",
     "mode": "subagent",
     "model": "openai/gpt-5.6-terra",
-    "variant": "none",
+    "variant": "low",
     "temperature": 0,
     "permission": {
       "skill": {
@@ -65,6 +65,24 @@
         "plan-runner-dispatch": "deny",
         "workflow-usage": "deny",
         "receiving-code-review": "deny"
+      }
+    }
+  },
+  "spark": {
+    "description": "Ultra-fast real-time coding subagent. 1000+ tok/s, optimized for single-file targeted edits and rapid iteration. Lower quality than executor — use for speed-sensitive tasks where the user reviews output.",
+    "mode": "subagent",
+    "model": "openai/gpt-5.3-codex-spark",
+    "temperature": 0,
+    "permission": {
+      "skill": {
+        "*": "allow",
+        "external-llm-review": "deny",
+        "writing-plans": "deny",
+        "verification-before-completion": "deny",
+        "plan-runner-dispatch": "deny",
+        "workflow-usage": "deny",
+        "receiving-code-review": "deny",
+        "subagent-dispatch": "deny"
       }
     }
   }

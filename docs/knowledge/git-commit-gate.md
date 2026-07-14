@@ -1,6 +1,6 @@
 # git-commit-gate 插件
 
-Commit message 门禁，将 Conventional Commits 规范（`userconf/AGENTS.md` `Git Commit 规范` 一节）从文档升级为可执行策略。**仅插件层**：拦截 opencode bash 工具中的 `git commit` 命令，校验 message 格式。
+Commit message 门禁，将 Conventional Commits 规范（`git-commit-convention` skill）从文档升级为可执行策略。**仅插件层**：拦截 opencode bash 工具中的 `git commit` 命令，校验 message 格式。
 
 | 文件 | 触发时机 | 作用 |
 |---|---|---|
@@ -48,7 +48,7 @@ Commit message 门禁，将 Conventional Commits 规范（`userconf/AGENTS.md` `
 ## 架构决策
 
 - **仅插件层**：opencode 调度场景下所有 `git commit` 必经 bash 工具，插件层拦截即充分；删除 git 钩子层减少路径依赖
-- **不修改规范文档**：规范收敛在 `userconf/AGENTS.md`，插件只做可执行部分
+- **不修改规范文档**：规范收敛在 `git-commit-convention` skill，插件只做可执行部分
 
 ## 验证方式
 

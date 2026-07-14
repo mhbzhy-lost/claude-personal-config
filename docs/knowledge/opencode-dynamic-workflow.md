@@ -45,8 +45,8 @@ Subagent）。
 ## 修改时注意
 
 - subagent-hint（原 workflow-hint）已精简为只检查 `background: true`，编排决策从插件层移到
-  `claude/CLAUDE.md` 的 `## 并发与 Subagent`。修改 CLAUDE.md 的决策树时，
-  必须同步维护 `claude/CLAUDE.reason.md`
+  `subagent-dispatch` skill。修改 skill 的分发规则时，
+  必须同步维护 `userconf/AGENTS.reason.md`
 - subagent-hint.js 只能导出真正的 OpenCode plugin 入口函数。OpenCode 1.17.7
   legacy loader 会把模块里每个导出的函数都当作 server plugin 执行；helper 函数
   必须保持模块内私有，否则返回 `null` 会污染 hooks 列表并导致 `Provider.list`

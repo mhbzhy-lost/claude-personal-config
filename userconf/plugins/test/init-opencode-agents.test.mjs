@@ -246,8 +246,8 @@ describe("init_opencode agents sync", () => {
     assert.equal(agents.executor.variant, "none")
     assert.equal(agents.executor.options, undefined)
     assert.match(agents.executor.description, /Deterministic code executor/i)
-    assert.equal(agents["GPT-Pro"].variant, "xhigh")
-    assert.equal(agents["GPT-Pro"].options, undefined)
+    assert.equal(agents["GPT-Pro"].variant, "max")
+    assert.deepEqual(agents["GPT-Pro"].options, { reasoningMode: "pro" })
   })
 
   it("updates an existing executor config during opencode.json sync", () => {
@@ -310,9 +310,9 @@ describe("init_opencode agents sync", () => {
           agent: {
             GPT: { model: "openai/local-choice", mode: "primary" },
             "GPT-Pro": {
-              model: "openai/gpt-5.6-sol-pro",
+              model: "openai/gpt-5.6-sol",
               mode: "primary",
-              options: { effort: "xhigh", reasoningEffort: "xhigh", keep: true },
+              options: { reasoningEffort: "xhigh", keep: true },
             },
           },
         }),
@@ -336,8 +336,8 @@ describe("init_opencode agents sync", () => {
       const config = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"))
       assert.equal(config.agent.GPT.model, "openai/local-choice")
       assert.deepEqual(config.agent.GPT.permission, desiredAgents.GPT.permission)
-      assert.equal(config.agent["GPT-Pro"].variant, "xhigh")
-      assert.deepEqual(config.agent["GPT-Pro"].options, { keep: true })
+      assert.equal(config.agent["GPT-Pro"].variant, "max")
+      assert.deepEqual(config.agent["GPT-Pro"].options, desiredAgents["GPT-Pro"].options)
     } finally {
       rmSync(configDir, { recursive: true, force: true })
     }
@@ -379,7 +379,7 @@ describe("init_opencode agents sync", () => {
       assert.equal(config.agent.GPT.local, true)
       assert.deepEqual(config.agent.GPT.permission, desiredAgents.GPT.permission)
       assert.equal(config.agent["GPT-Pro"].model, "openai/local-gpt-pro")
-      assert.equal(config.agent["GPT-Pro"].variant, "xhigh")
+      assert.equal(config.agent["GPT-Pro"].variant, "max")
       assert.match(output, /\[agent\] gpt -> GPT 已迁移/)
       assert.match(output, /\[agent\] gpt-pro -> GPT-Pro 已迁移/)
     } finally {
