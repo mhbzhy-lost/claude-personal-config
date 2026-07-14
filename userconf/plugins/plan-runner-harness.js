@@ -16,6 +16,7 @@ const TERMINAL_COMPLETION_GATE_STATUSES = new Set(["validated", "blocked", "inte
 const MAX_AUDIT_INVALID_JSON_ATTEMPTS = 2
 const MAX_GATE_FAILURES = 2
 const MAX_WATCHDOG_NUDGES = 1
+const MAX_RUNTIME_DISPOSAL_ATTEMPTS = 2
 
 function defaultStateDir() {
   return join(homedir(), ".config", "opencode", "task-state")
@@ -867,6 +868,78 @@ function throwIfSdkError(result, context) {
   throw new Error(`${context}: ${message}`)
 }
 
+function shouldDisposeRunRuntime(state, directory) {
+  const disposal = state?.runtime_disposal || {}
+  return Boolean(
+    TERMINAL_COMPLETION_GATE_STATUSES.has(state?.status)
+      && state.harness_owned_worktree
+      && state.worktree
+      && state.origin_worktree
+      && state.worktree !== state.origin_worktree
+      && directory === state.origin_worktree
+      && disposal.status !== "disposing"
+      && disposal.status !== "disposed"
+      && (disposal.status !== "failed" || Number(disposal.attempts || 0) < MAX_RUNTIME_DISPOSAL_ATTEMPTS),
+  )
+}
+
+async function disposeRunRuntime({ stateDir, client, directory, state }) {
+  if (!shouldDisposeRunRuntime(state, directory)) return state
+
+  const disposingState = cloneState(state)
+  const previousDisposal = disposingState.runtime_disposal || {}
+  disposingState.runtime_disposal = {
+    status: "disposing",
+    directory: disposingState.worktree,
+    attempts: Number(previousDisposal.attempts || 0) + 1,
+    ...(previousDisposal.error ? { last_error: previousDisposal.error } : {}),
+    ...(previousDisposal.failed_at ? { last_failed_at: previousDisposal.failed_at } : {}),
+    started_at: Date.now(),
+  }
+  disposingState.updated_at = Date.now()
+  await writeTaskState(stateDir, disposingState)
+
+  try {
+    if (typeof client?.instance?.dispose !== "function") {
+      throw new Error("client.instance.dispose is unavailable")
+    }
+    const disposed = await client.instance.dispose({ query: { directory: disposingState.worktree } })
+    throwIfSdkError(disposed, "run worktree runtime disposal failed")
+    const disposedState = cloneState(await readTaskState(stateDir, state.task_id) || disposingState)
+    disposedState.runtime_disposal = {
+      status: "disposed",
+      directory: disposingState.worktree,
+      attempts: disposingState.runtime_disposal.attempts,
+      ...(disposingState.runtime_disposal.last_error ? { last_error: disposingState.runtime_disposal.last_error } : {}),
+      ...(disposingState.runtime_disposal.last_failed_at ? { last_failed_at: disposingState.runtime_disposal.last_failed_at } : {}),
+      disposed_at: Date.now(),
+    }
+    disposedState.updated_at = Date.now()
+    await writeTaskState(stateDir, disposedState)
+    await appendEvent(stateDir, state.task_id, { type: "runtime_disposal_disposed", directory: disposingState.worktree })
+    return disposedState
+  } catch (error) {
+    const failedState = cloneState(await readTaskState(stateDir, state.task_id) || disposingState)
+    failedState.runtime_disposal = {
+      status: "failed",
+      directory: disposingState.worktree,
+      attempts: disposingState.runtime_disposal.attempts,
+      error: formatDiagnosticError(error),
+      ...(disposingState.runtime_disposal.last_error ? { last_error: disposingState.runtime_disposal.last_error } : {}),
+      ...(disposingState.runtime_disposal.last_failed_at ? { last_failed_at: disposingState.runtime_disposal.last_failed_at } : {}),
+      failed_at: Date.now(),
+    }
+    failedState.updated_at = Date.now()
+    await writeTaskState(stateDir, failedState)
+    await appendEvent(stateDir, state.task_id, {
+      type: "runtime_disposal_failed",
+      directory: disposingState.worktree,
+      error: failedState.runtime_disposal.error,
+    })
+    return failedState
+  }
+}
+
 function extractTextFromMessageInfo(info = {}) {
   const parts = Array.isArray(info.parts) ? info.parts : []
   const texts = parts.map((part) => part?.text || part?.content).filter(Boolean)
@@ -1592,6 +1665,17 @@ async function handleChildSessionIdle(stateDir, event) {
   await appendEvent(stateDir, state.task_id, { type: "child_session_completed", session_id: sessionID })
 }
 
+async function handleParentSessionIdle({ stateDir, client, directory, event }) {
+  if (event.type !== "session.idle") return
+  const sessionID = event.properties?.sessionID
+  if (!sessionID) return
+  const index = await readSessionIndex(stateDir, sessionID)
+  if (!index || index.role !== "parent") return
+  let state = await readTaskState(stateDir, index.task_id)
+  if (state && !state.task_id) state = { ...state, task_id: index.task_id }
+  await disposeRunRuntime({ stateDir, client, directory, state })
+}
+
 async function handlePlanRunnerWatchdogIdle({ stateDir, client, directory, event }) {
   if (event.type !== "session.idle") return
   const sessionID = event.properties?.sessionID
@@ -2169,6 +2253,7 @@ export const PlanRunnerHarnessPlugin = async (ctx = {}, options = {}) => {
       await handleAuditReviewMessage(stateDir, event)
       await handleChildSessionIdle(stateDir, event)
       await handleAuditReviewIdle({ stateDir, client, directory: worktree, event, externalReview })
+      await handleParentSessionIdle({ stateDir, client, directory: worktree, event })
       await handlePlanRunnerWatchdogIdle({ stateDir, client, directory: worktree, event })
     }),
   }

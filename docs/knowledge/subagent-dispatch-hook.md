@@ -159,7 +159,25 @@ harness-owned run worktree 和新的 task-state；非 `validated` 的旧 task-st
   `git merge --ff-only <branch>` / `git worktree remove <run_worktree>` 步骤；通知失败只记录
   `parent_merge_back_notify_failed`，不回退 `validated`。主 agent 若要合回，必须先在 origin
   workspace 检查 `git status --short`；clean 时再执行通知里的 fast-forward merge 和 cleanup。
-  dirty 时停止并询问用户。
+   dirty 时停止并询问用户。
+- dedicated run 到达 `validated`、`blocked` 或 `interrupted` 后，只有 origin directory 的
+  PlanRunnerHarnessPlugin instance 会调用 `client.instance.dispose({ query: { directory: run_worktree } })`
+  回收该 run directory 缓存的 MCP/LSP/plugin runtime。三种终态都由绑定的 parent session
+  `session.idle` 消费；不得在 plan-runner idle 或 `start_plan_runner` 工具返回前释放，因为 child session
+  的尾部 event 会通过 `Plugin.trigger` 重新读取已失效的 directory cache 并重建 plugin。该回收与 parent
+  merge-back、git worktree/branch 清理、session 保留完全分离：
+  不合并、不删除、不终止进程，也不影响 origin 或其他 directory。失败状态最多在后续终态触发中重试两次，
+  `disposing` / `disposed` 或达到上限后停止；task-state 的 `runtime_disposal`（含 attempts、最近错误）和
+  `runtime_disposal_disposed` / `runtime_disposal_failed` event 仅作幂等诊断；
+  SDK error 或 API 缺失不能回退终态或阻止 parent 获得 final/merge-back 通知。child directory plugin
+  不得在自身 hook 中自释放。OpenCode dispose endpoint 在 HTTP response 返回后才由 middleware 执行
+  teardown，plugin event 又是 fire-and-forget；父 idle hook 必须 await SDK response，不能改成不可观测的
+  fire-and-forget，也不会与 plugin state queue 重入死锁。
+- 2026-07-13 真实 blocked smoke 验证 parent idle runtime disposal：`start_plan_runner` 回流 Change Request
+  时 worktree 和 Swift 现场保留且尚未 dispose；父 session idle 后 task-state 写入 `runtime_disposal.status=disposed`。
+  OpenCode 日志中该 target directory 仅各出现一次 instance 创建、plugin 初始化和 instance 释放，释放后没有
+  plugin 重建；`lsof -a -d cwd +D <run_worktree>` 无残留。首版在 plan-runner idle/工具返回前释放会被 child
+  尾部 event 重建 target plugin，因此 parent idle 是该回收契约的必要边界。
 - 2026-07-09 真实两阶段 `opencode serve` smoke 验证：root plan-runner 可并发派发两个
   executor child；harness 为两个 child 分别创建 worktree / branch；两个
   `child_worktree_created` 都早于第一个 `child_session_completed`；root 合并 child 输出并清理
