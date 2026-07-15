@@ -738,6 +738,26 @@ describe("PlanRunnerHarnessPlugin", () => {
     assert.doesNotMatch(source, /\b(appendFileSync|existsSync|mkdirSync|readFileSync|renameSync|writeFileSync)\b/)
   })
 
+  it("start_plan_runner rejects a missing parent session before creating a worktree", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      const stateDir = join(root, "state")
+      initGitWorkspace(workspace)
+      const hooks = await createPlanRunnerHarness({ workspace, stateDir })
+      const context = makeContext({ sessionID: "ses_parent", workspace })
+      delete context.sessionID
+
+      await assert.rejects(
+        () => hooks.tool.start_plan_runner.execute({ prompt: "Implement." }, context),
+        /requires a parent session/i,
+      )
+      assert.equal(existsSync(join(workspace, ".plan-runner-worktrees")), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("start_plan_runner creates a harness-owned run worktree and binds the plan-runner session", async () => {
     const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
     try {
@@ -2322,6 +2342,38 @@ describe("PlanRunnerHarnessPlugin", () => {
       ].sort((a, b) => a.query.directory.localeCompare(b.query.directory)))
       assert.equal(readJson(firstPath).runtime_disposal.status, "disposed")
       assert.equal(readJson(secondPath).runtime_disposal.status, "disposed")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("serializes concurrent run registration for the same parent", async () => {
+    const root = mkdtempSync(join(tmpdir(), "plan-runner-harness-test-"))
+    try {
+      const workspace = join(root, "workspace")
+      initGitWorkspace(workspace)
+      const stateDir = join(root, "state")
+      let creates = 0
+      const hooks = await createPlanRunnerHarness({
+        workspace,
+        stateDir,
+        client: {
+          session: {
+            create: async () => ({ data: { id: `ses_plan_runner_${++creates}` } }),
+            promptAsync: async () => ({ data: {} }),
+          },
+        },
+      })
+      const context = makeContext({ sessionID: "ses_parent", workspace })
+
+      const runs = await Promise.all([
+        hooks.tool.start_plan_runner.execute({ prompt: "First run." }, context),
+        hooks.tool.start_plan_runner.execute({ prompt: "Second run." }, context),
+        hooks.tool.start_plan_runner.execute({ prompt: "Third run." }, context),
+      ])
+
+      const registry = readJson(join(stateDir, "parents", "ses_parent.json"))
+      assert.deepEqual(registry.task_ids.sort(), runs.map((run) => run.metadata.task_id).sort())
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

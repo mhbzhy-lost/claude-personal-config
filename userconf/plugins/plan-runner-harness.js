@@ -182,6 +182,8 @@ async function readParentTaskIDs(stateDir, sessionID) {
 }
 
 async function appendParentTaskID(stateDir, sessionID, taskID) {
+  // startPlanRunnerTool calls this only through the plugin instance state queue;
+  // writeJsonAtomic prevents torn files while the queue prevents lost RMW updates.
   const path = parentPath(stateDir, sessionID)
   const parent = await readJson(path)
   const taskIDs = [...new Set([
@@ -2327,10 +2329,11 @@ async function startPlanRunnerTool(args, context, stateDir, { client, directory,
   if (!client?.session?.create || !client?.session?.promptAsync) {
     throw new Error("start_plan_runner requires client.session.create and client.session.promptAsync")
   }
+  const parentSessionID = String(context?.sessionID || "").trim()
+  if (!parentSessionID) throw new Error("start_plan_runner requires a parent session")
   const prompt = String(args?.prompt || "").trim()
   if (!prompt) throw new Error("start_plan_runner requires prompt")
 
-  const parentSessionID = context.sessionID
   const taskID = planRunnerToolTaskID(parentSessionID)
   const originWorktree = directory || context.worktree || context.directory || process.cwd()
   const originGit = await inspectGitWorktree(originWorktree)
