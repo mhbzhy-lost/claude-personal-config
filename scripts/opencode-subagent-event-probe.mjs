@@ -280,10 +280,15 @@ let started = false
 let childSessionID = null
 
 function sanitize(value) {
+  const seen = new WeakSet()
   try {
     return JSON.parse(JSON.stringify(value, (_key, current) => {
       if (typeof current === "function") return "[Function]"
       if (typeof current === "bigint") return String(current)
+      if (typeof current === "object" && current !== null) {
+        if (seen.has(current)) return "[Circular]"
+        seen.add(current)
+      }
       return current
     }))
   } catch (error) {

@@ -3,6 +3,7 @@ import { describe, it } from "node:test"
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 
 import * as probe from "../opencode-subagent-event-probe.mjs"
 import { buildRunArgs, createAuditChildProbeWorkspace, createProbeWorkspace, createPromptAsyncProbeWorkspace, formatServeNotReadyError, parseArgs, promptAsyncProbeExitStatus, readTextFromOffset, shouldStopWaitingForPromptAsyncProbe, shouldWaitForRepairEvidence, summarizeAuditChildProbe, summarizeProbeEvents, summarizePromptAsyncProbe } from "../opencode-subagent-event-probe.mjs"
@@ -74,6 +75,31 @@ describe("opencode subagent event probe", () => {
       assert.ok(plugin.includes("message.part.updated"))
       assert.ok(plugin.includes("session.error"))
     } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("preserves prompt-async event evidence when the event contains a cycle", async () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-prompt-async-probe-test-"))
+    const previousLogPath = process.env.OPENCODE_PROMPT_ASYNC_PROBE_LOG
+    try {
+      const paths = createPromptAsyncProbeWorkspace({ root })
+      process.env.OPENCODE_PROMPT_ASYNC_PROBE_LOG = paths.logPath
+      const pluginModule = await import(`${pathToFileURL(paths.pluginPath).href}?test=${Date.now()}`)
+      const hooks = await pluginModule.default({ client: {}, directory: root })
+      const event = { type: "message.updated", properties: { sessionID: "ses_cycle" } }
+      event.self = event
+
+      await hooks.event({ event })
+
+      const [record] = readFileSync(paths.logPath, "utf8").trim().split("\n").map(JSON.parse)
+      assert.equal(record.kind, "event")
+      assert.equal(record.event.type, "message.updated")
+      assert.equal(record.event.properties.sessionID, "ses_cycle")
+      assert.equal(record.event.self, "[Circular]")
+    } finally {
+      if (previousLogPath === undefined) delete process.env.OPENCODE_PROMPT_ASYNC_PROBE_LOG
+      else process.env.OPENCODE_PROMPT_ASYNC_PROBE_LOG = previousLogPath
       rmSync(root, { recursive: true, force: true })
     }
   })
