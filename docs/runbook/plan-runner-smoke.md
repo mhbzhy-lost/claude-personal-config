@@ -9,6 +9,7 @@
 - 2026-07-03：基于 `e6e677b fix(plan-runner): 删除 runtime stale 扫描` 执行最小文档型 live smoke，验证新 plan-runner runtime 不再写入 `task_stale`，并能在本地提交后由 `finish_plan` 进入 `validated`。
 - 2026-07-09：两阶段 `opencode serve` smoke 验证 DAG executor 并发、child worktree 自动创建、child 合回/清理、parent/main session 合回 dedicated run worktree 并清理。临时证据目录：`/var/folders/27/6bnn8n7d4px6s33fvdpns89c0000gn/T/opencode/plan-runner-dag-executor-smoke2-jKj52y`。
 - 2026-07-09：基于 `writing-plans` 产出的明确 DAG 计划执行 contract smoke，验证 parent 创建 plan-runner/run worktree、两个 executor child 各自创建 worktree、child commit 被 merge 回 run worktree 且 child worktree 清理、parent 将 run worktree 合回 main workspace 并清理 root worktree。临时证据目录：`/var/folders/27/6bnn8n7d4px6s33fvdpns89c0000gn/T/opencode/plan-runner-dag-contract-smoke-K62R7J`。
+- 2026-07-15：本次新 run 的 session-bound child fresh smoke。child 分配路径、`pwd` 与 git root 均为 `/Users/leshi.zhy/.config/opencode/task-state/child-worktrees/planrun-ses_0a6b9aaa2ffego3TZkaXaKElXA-start-9fec0271-c7d0-45b1-9c18-6b2b4619eb7b/call_Xluu3wj46apxeLscBgu2XV0I`；child branch 为 `planrunner-child/planrun-ses_0a6b9aaa2ffego3TZkaXaKElXA-start-9fec0271-c7d0-45b1-9c18-6b2b4619eb7b/call_Xluu3wj46apxeLscBgu2XV0I`，base HEAD 为 `1a4394b31c02f9e453f3b395d02d8a5204afbbbc`。child 仅修改本 runbook，`git diff --check` 成功并创建本地 commit；未对 root terminal、runtime disposal、merge、cleanup 或 terminal gate 作结论。
 - 本轮只执行自动化回归；重启后的 live smoke 待执行，不得把本轮描述为已运行 live smoke。
 
 ## 步骤
